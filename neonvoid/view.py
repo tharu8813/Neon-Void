@@ -367,6 +367,9 @@ class VisualMixin:
         c.create_text(W / 2, 512,
                       text=f"최고 기록  {best:,}  ·  최고 웨이브  {self.save['best_wave']}",
                       fill=C_GOLD, font=F_HUD, tags="scr")
+        c.create_text(W / 2, 555,
+                      text=f"누적 처치 {self.profile.total_kills:,}   ·   보스 {self.profile.boss_kills:,}   ·   완료 {self.profile.completed_runs:,}회",
+                      fill=C_DIM, font=F_UI, tags="scr")
         self.title_press = c.create_text(W / 2, 600, text="PRESS  ENTER",
                                          fill=C_PLAYER, font=F_BIG, tags="scr")
         c.create_rectangle(W / 2 - 125, 624, W / 2 + 125, 666,

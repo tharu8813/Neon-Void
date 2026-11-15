@@ -17,3 +17,6 @@ htmlcov/
 
 /settings.json
 /.neon-settings-*.tmp
+
+/profile.json
+/.neon-profile-*.tmp
