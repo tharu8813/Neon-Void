@@ -11,7 +11,7 @@
 
 ## P1 | Product-ready settings and data
 
-- [x] First settings menu (sound, reduced effects, FPS); key binding, DPI/scaling and accessibility remain.
+- [x] Settings and key remapping for movement/dash/pause; DPI/scaling and broader accessibility remain.
 - [x] Versioned profile and validated atomic files; version-to-version migrations remain.
 - [x] Stage catalog, validation and deterministic wave director; balancing presets remain.
 - [x] Recent run history and lifetime stats; achievements/permanent unlocks remain.

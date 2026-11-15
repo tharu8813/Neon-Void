@@ -34,3 +34,24 @@ python neon_void.py --selftest 3600 --seed 42 --god --no-sound
 ```
 
 The GUI test requires a real Tk display (Linux CI runs it with Xvfb). It doesn't simulate actual mouse-driven UX judgement; confirm visually on Windows before a release.
+
+## Keyboard remapping (settings schema v2)
+
+Select **O** from the title or a paused run, then **Tab** to open the key-binding page. Navigate the six actions (up/down/left/right/dash/pause) with arrow keys or WASD. Press **Enter** or click an action to capture the next key. Press **Esc** to cancel capture. Press **Delete** or **Backspace** on that page to reset all bindings.
+
+- A single letter A-Z (excluding the protected M, R, O commands), or Space, may be assigned to each action.
+- Each action must have a unique primary key. An invalid, reserved or duplicate key is refused without changing another action.
+- Arrow keys always remain alternate movement inputs, and Shift remains an alternate dash input.
+- **O** opens/closes the settings window, **M** toggles mute and **R** restarts, regardless of bindings; **Esc** remains a safety/menu command.
+- The settings file is now **schema_version 2** with a `bindings` mapping. Existing version 1 preferences load with the previous WASD/Space/P defaults and retain all volume, mute, FPS and reduced-effects values. The new schema is written upon the next settings change.
+
+This is an input remapping foundation, not gamepad support or a generic OS-wide hotkey system. Visual menu navigation remains on WASD/arrow keys independently of gameplay bindings.
+
+### Additional validation
+
+```powershell
+python -m unittest discover -s tests -v
+python -m tests.gui_bindings_smoke
+```
+
+The GUI smoke check runs on real tkinter under Windows or a Linux virtual display. Actual keyboard-layout behavior (for example, non-US layouts) still needs manual validation.

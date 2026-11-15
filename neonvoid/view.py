@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import tkinter as tk
 from .content.enemies import E_PARAMS
+from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
@@ -376,10 +377,10 @@ class VisualMixin:
         self.title_line = c.create_line(W / 2 - 240, 278, W / 2 + 240, 278,
                                         fill="#1d4a55", width=2, tags="scr")
         lines = [
-            "WASD / 방향키  ·  이동",
+            "설정한 이동 키 / 방향키  ·  이동",
             "마우스  ·  조준 (자동 사격)",
-            "Space / Shift  ·  이동 방향 대시 (무적)",
-            "P  ·  일시정지      R  ·  재시작      M  ·  음소거",
+            f"{self.settings.bindings['dash'].upper()} / Shift  ·  이동 방향 대시 (무적)",
+            f"{self.settings.bindings['pause'].upper()}  ·  일시정지      R  ·  재시작      M  ·  음소거",
         ]
         for i, t in enumerate(lines):
             c.create_text(W / 2, 330 + i * 26, text=t, fill=C_TEXT,
@@ -544,7 +545,7 @@ class VisualMixin:
         c.create_text(W / 2, H / 2 - 10,
                       text=f"WAVE {self.wave}   ·   SCORE {self.score:,}",
                       fill=C_TEXT, font=F_MID, tags="ovl")
-        c.create_text(W / 2, H / 2 + 40, text="P  ·  계속하기",
+        c.create_text(W / 2, H / 2 + 40, text=f"{self.settings.bindings['pause'].upper()}  ·  계속하기",
                       fill=C_DIM, font=F_UI, tags="ovl")
         c.create_text(W / 2, H / 2 + 66, text="R  ·  재시작",
                       fill=C_DIM, font=F_UI, tags="ovl")
@@ -560,42 +561,67 @@ class VisualMixin:
         c.delete("cfg")
         c.create_rectangle(0, 0, W, H, fill="#030912", outline="",
                            stipple="gray75", tags="cfg")
-        c.create_rectangle(260, 107, W - 260, 640, fill="#071320",
+        c.create_rectangle(260, 90, W - 260, 673, fill="#071320",
                            outline="#2a5166", width=2, tags="cfg")
-        c.create_text(W / 2, 154, text="SETTINGS", fill=C_PLAYER,
-                      font=F_HUGE, tags="cfg")
-        c.create_text(W / 2, 200, text="방향키 / WASD로 선택 · 좌우로 변경",
+        is_controls = self.settings_page == "controls"
+        c.create_text(W / 2, 139,
+                      text="KEY BINDINGS" if is_controls else "SETTINGS",
+                      fill=C_PLAYER, font=F_HUGE, tags="cfg")
+        c.create_text(W / 2, 185,
+                      text="방향키 / WASD로 선택 · Enter로 키 변경"
+                      if is_controls else
+                      "방향키 / WASD로 선택 · 좌우로 변경",
                       fill=C_DIM, font=F_UI, tags="cfg")
 
-        settings = self.settings
-        items = [
-            ("전체 볼륨", f"{round(settings.volume * 100)}%"),
-            ("음소거", "켜짐" if settings.muted else "꺼짐"),
-            ("연출 줄이기", "켜짐" if settings.reduced_effects else "꺼짐"),
-            ("FPS 표시", "켜짐" if self.show_fps else "꺼짐"),
-        ]
+        if is_controls:
+            items = [
+                (ACTION_LABELS[action], self.settings.bindings[action].upper())
+                for action in ACTION_ORDER
+            ]
+            first_y, row_step, row_height = 206, 56, 46
+        else:
+            prefs = self.settings
+            items = [
+                ("전체 볼륨", f"{round(prefs.volume * 100)}%"),
+                ("음소거", "켜짐" if prefs.muted else "꺼짐"),
+                ("연출 줄이기", "켜짐" if prefs.reduced_effects else "꺼짐"),
+                ("FPS 표시", "켜짐" if self.show_fps else "꺼짐"),
+            ]
+            first_y, row_step, row_height = 225, 74, 59
+
         self.settings_hits = []
         for index, (title, value) in enumerate(items):
             x0, x1 = 320, W - 320
-            y0 = 232 + 74 * index
-            y1 = y0 + 59
+            y0 = first_y + row_step * index
+            y1 = y0 + row_height
             self.settings_hits.append((x0, y0, x1, y1))
             selected = index == self.settings_selected
-            border = C_PLAYER if selected else "#1b3247"
+            rebinding = (is_controls and self.rebinding_action == ACTION_ORDER[index])
+            border = C_GOLD if rebinding else (C_PLAYER if selected else "#1b3247")
             c.create_rectangle(x0, y0, x1, y1,
                                outline=border, fill="#0b2030" if selected
                                else "#081826", width=2 if selected else 1,
                                tags="cfg")
             c.create_text(x0 + 25, (y0 + y1) / 2, text=title, fill=C_TEXT,
                           font=F_MID, anchor="w", tags="cfg")
-            c.create_text(x1 - 24, (y0 + y1) / 2, text=f"◀  {value}  ▶",
+            c.create_text(x1 - 24, (y0 + y1) / 2,
+                          text="입력 대기…" if rebinding else
+                          (f"[ {value} ]" if is_controls else f"◀  {value}  ▶"),
                           fill=C_GOLD if selected else C_DIM,
                           font=F_UI, anchor="e", tags="cfg")
-        c.create_text(W / 2, 579, text="ESC / O  ·  돌아가기",
+
+        next_page = "일반 설정" if is_controls else "키 설정"
+        c.create_text(W / 2, 569, text=f"TAB  ·  {next_page}",
+                      fill=C_GOLD, font=F_UI, tags="cfg")
+        c.create_text(W / 2, 611, text="ESC / O  ·  돌아가기",
                       fill=C_PLAYER, font=F_MID, tags="cfg")
-        c.create_text(W / 2, 613,
-                      text="설정은 자동 저장됩니다. 음량은 Windows 믹서에서 적용됩니다.",
-                      fill=C_DIM, font=F_MONO, tags="cfg")
+        hint = ("Enter / 클릭: 키 등록   ·   Delete: 기본값 복원   ·   Shift/방향키 보조 조작 유지"
+                if is_controls else
+                "설정 변경 즉시 저장   ·   볼륨은 Windows 믹서에서 적용")
+        c.create_text(W / 2, 638, text=hint, fill=C_DIM, font=F_MONO, tags="cfg")
+        if self.settings_notice:
+            c.create_text(W / 2, 658, text=self.settings_notice,
+                          fill=C_GOLD, font=F_MONO, tags="cfg")
         c.tag_raise("cfg")
         c.tag_raise("cursor")
 

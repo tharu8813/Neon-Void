@@ -13,7 +13,8 @@ from .content.enemies import E_PARAMS, SPAWN_COST
 from .content.stages import DEFAULT_STAGE_ID, get_stage, plan_wave
 from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
-from .controls import movement_vector, dash_vector
+from .controls import (ACTION_ORDER, DEFAULT_BINDINGS, rebind_action,
+                       movement_vector, dash_vector)
 from .events import EventBus
 from .profile import PlayerProfile, ProfileTracker, load_profile, save_profile
 from .render_pool import OvalPool, PolyPool, TextPool, LinePool
@@ -31,7 +32,10 @@ class Game(VisualMixin):
         self.selftest_left = int(opts.selftest or 0)
         self.settings = Settings() if self.auto else load_settings()
         self.settings_open = False
+        self.settings_page = "general"
         self.settings_selected = 0
+        self.rebinding_action = None
+        self.settings_notice = ""
         self.settings_hits = []
         self.show_fps = bool(opts.fps or self.settings.show_fps)
         cli_volume = getattr(opts, "volume", None)
@@ -200,13 +204,18 @@ class Game(VisualMixin):
         if self.state != "title" and not (self.state == "play" and self.paused):
             return
         self.settings_open = True
+        self.settings_page = "general"
         self.settings_selected = 0
+        self.rebinding_action = None
+        self.settings_notice = ""
         self.keys.clear()
         self._draw_settings()
 
     def close_settings(self):
         if self.settings_open:
             self.settings_open = False
+            self.rebinding_action = None
+            self.settings_notice = ""
             self.settings_hits = []
             self.c.delete("cfg")
             self.keys.clear()
@@ -237,68 +246,115 @@ class Game(VisualMixin):
             return
         self.apply_settings()
 
+    def _handle_settings_key(self, key):
+        if self.rebinding_action is not None:
+            if key == "escape":
+                self.rebinding_action = None
+                self.settings_notice = "키 변경을 취소했습니다."
+            else:
+                try:
+                    self.settings.bindings = rebind_action(
+                        self.settings.bindings, self.rebinding_action, key
+                    )
+                except ValueError:
+                    self.settings_notice = "사용할 수 없거나 이미 지정된 키입니다."
+                else:
+                    self.settings_notice = "변경한 키를 저장했습니다."
+                    self.rebinding_action = None
+                    self.apply_settings()
+            self._draw_settings()
+            return
+
+        if key in ("escape", "o"):
+            self.close_settings()
+            return
+        if key == "tab":
+            self.settings_page = ("controls" if self.settings_page == "general"
+                                  else "general")
+            self.settings_selected = 0
+            self.settings_notice = ""
+            self._draw_settings()
+            return
+
+        count = len(ACTION_ORDER) if self.settings_page == "controls" else 4
+        if key in ("up", "w"):
+            self.settings_selected = (self.settings_selected - 1) % count
+            self._draw_settings()
+        elif key in ("down", "s"):
+            self.settings_selected = (self.settings_selected + 1) % count
+            self._draw_settings()
+        elif self.settings_page == "controls":
+            if key in ("return", "kp_enter", "space"):
+                self.rebinding_action = ACTION_ORDER[self.settings_selected]
+                self.settings_notice = "새로 사용할 키를 누르세요. Esc는 취소."
+                self._draw_settings()
+            elif key in ("delete", "backspace"):
+                self.settings.bindings = DEFAULT_BINDINGS.copy()
+                self.settings_notice = "기본 키 설정을 복원했습니다."
+                self.keys.clear()
+                self.apply_settings()
+        elif key in ("left", "a"):
+            self.change_setting(self.settings_selected, -1)
+        elif key in ("right", "d", "return", "kp_enter", "space"):
+            self.change_setting(self.settings_selected, 1)
+
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
-        k = ev.keysym.lower()
+        key = ev.keysym.lower()
         if self.settings_open:
-            if k in ("escape", "o"):
-                self.close_settings()
-            elif k in ("up", "w"):
-                self.settings_selected = (self.settings_selected - 1) % 4
-                self._draw_settings()
-            elif k in ("down", "s", "tab"):
-                self.settings_selected = (self.settings_selected + 1) % 4
-                self._draw_settings()
-            elif k in ("left", "a"):
-                self.change_setting(self.settings_selected, -1)
-            elif k in ("right", "d", "return", "kp_enter", "space"):
-                self.change_setting(self.settings_selected, 1)
+            self._handle_settings_key(key)
             return
 
-        if k == "o" and (self.state == "title" or
-                         (self.state == "play" and self.paused)):
+        if key == "o" and (self.state == "title" or
+                           (self.state == "play" and self.paused)):
             self.open_settings()
             return
-        self.keys.add(k)
 
-        if k == "m":
-            self.settings.muted = not self.settings.muted
-            self.apply_settings()
+        was_held = key in self.keys
+        self.keys.add(key)
+
+        # System commands remain fixed, so configuration can never hide them.
+        if key == "m":
+            if not was_held:
+                self.settings.muted = not self.settings.muted
+                self.apply_settings()
             return
 
         if self.state == "title":
-            if k in ("return", "kp_enter", "space"):
+            if key in ("return", "kp_enter", "space"):
                 self.new_game()
-            elif k == "escape":
+            elif key == "escape":
                 self.close_game()
             return
 
-        if k in ("p",) or (k == "escape" and self.state == "play"):
-            if self.state == "play":
+        if key == self.settings.bindings["pause"] or (
+            key == "escape" and self.state == "play"):
+            if self.state == "play" and not was_held:
                 self.paused = not self.paused
                 self.pause_t = 0.0
                 self._draw_pause()
             return
 
         if self.state == "dead":
-            if k in ("r", "return", "space"):
+            if key in ("r", "return", "space"):
                 self.new_game()
-            elif k == "escape":
+            elif key == "escape":
                 self._build_title()
                 self.state = "title"
             return
 
         if self.state == "upgrade":
-            if k in ("1", "2", "3"):
-                idx = int(k) - 1
-                if idx < len(self.card_opts):
-                    self.pick_upgrade(idx)
+            if key in ("1", "2", "3"):
+                index = int(key) - 1
+                if index < len(self.card_opts):
+                    self.pick_upgrade(index)
             return
 
-        if self.state == "play":
-            if k in ("space", "shift_l", "shift_r"):
-                self.try_dash()
-            elif k == "r":
+        if self.state == "play" and not self.paused:
+            if key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
+                if not was_held:
+                    self.try_dash()
+            elif key == "r" and not was_held:
                 self.new_game()
 
     def on_key_up(self, ev):
@@ -332,14 +388,26 @@ class Game(VisualMixin):
     def on_mouse_down(self, ev):
         self.mouse_down = True
         if self.settings_open:
-            if 560 <= ev.y <= 640 and W / 2 - 130 <= ev.x <= W / 2 + 130:
+            if 556 <= ev.y <= 590 and W / 2 - 180 <= ev.x <= W / 2 + 180:
+                self.settings_page = ("controls" if self.settings_page == "general"
+                                      else "general")
+                self.settings_selected = 0
+                self.settings_notice = ""
+                self._draw_settings()
+                return
+            if 593 <= ev.y <= 640 and W / 2 - 180 <= ev.x <= W / 2 + 180:
                 self.close_settings()
                 return
             for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
                 if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
                     self.settings_selected = idx
-                    direction = -1 if idx == 0 and ev.x < W / 2 else 1
-                    self.change_setting(idx, direction)
+                    if self.settings_page == "controls":
+                        self.rebinding_action = ACTION_ORDER[idx]
+                        self.settings_notice = "새로 사용할 키를 누르세요. Esc는 취소."
+                        self._draw_settings()
+                    else:
+                        direction = -1 if idx == 0 and ev.x < W / 2 else 1
+                        self.change_setting(idx, direction)
                     break
             return
         if self.state == "title":
@@ -523,7 +591,8 @@ class Game(VisualMixin):
         p = self.p
         if p.dash_t > 0 or p.charges <= 0:
             return
-        p.dash_dir = dash_vector(self.keys, (p.vx, p.vy), p.last_move_dir)
+        p.dash_dir = dash_vector(self.keys, (p.vx, p.vy), p.last_move_dir,
+                                 self.settings.bindings)
         p.dash_t = 0.145
         p.inv = max(p.inv, 0.32)
         p.charges -= 1
@@ -808,7 +877,7 @@ class Game(VisualMixin):
 
         p.aim = math.atan2(self.my - p.y, self.mx - p.x)
 
-        ax, ay = movement_vector(self.keys)
+        ax, ay = movement_vector(self.keys, self.settings.bindings)
         if ax or ay:
             p.last_move_dir = (ax, ay)
 
