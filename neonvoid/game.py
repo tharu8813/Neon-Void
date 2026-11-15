@@ -14,6 +14,7 @@ from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
 from .controls import movement_vector, dash_vector
 from .events import EventBus
+from .profile import PlayerProfile, ProfileTracker, load_profile, save_profile
 from .render_pool import OvalPool, PolyPool, TextPool, LinePool
 from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
@@ -54,12 +55,18 @@ class Game(VisualMixin):
             root.withdraw()
 
         self.save = load_save()
+        self.profile = PlayerProfile() if self.auto else load_profile()
+        self.profile_tracker = ProfileTracker(
+            self.events, self.profile, persist=None if self.auto else save_profile
+        )
+        self.run_start_frame = 0
         self.rng = random.Random(opts.seed)
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
         self.mouse_down = False
 
+        root.protocol("WM_DELETE_WINDOW", self.close_game)
         root.bind("<KeyPress>", self.on_key)
         root.bind("<KeyRelease>", self.on_key_up)
         root.bind("<FocusOut>", self._on_focus_out)
@@ -172,6 +179,17 @@ class Game(VisualMixin):
         if not self.auto:
             self.loop()
 
+    # ---------------------------------------------------------- 실행 기록
+    def _abandon_active_run(self):
+        if self.profile_tracker.active:
+            self.events.emit("run_abandoned", score=self.score, wave=self.wave,
+                             duration_frames=self.frames - self.run_start_frame)
+
+    def close_game(self):
+        """Record a quit from an active run, then destroy the window."""
+        self._abandon_active_run()
+        self.root.destroy()
+
     # --------------------------------------------------------------- 설정
     def open_settings(self):
         """Show the overlay only from the title or a paused run."""
@@ -250,7 +268,7 @@ class Game(VisualMixin):
             if k in ("return", "kp_enter", "space"):
                 self.new_game()
             elif k == "escape":
-                self.root.destroy()
+                self.close_game()
             return
 
         if k in ("p",) or (k == "escape" and self.state == "play"):
@@ -344,6 +362,8 @@ class Game(VisualMixin):
 
     # ------------------------------------------------------------------ 상태
     def new_game(self):
+        self._abandon_active_run()
+        self.run_start_frame = self.frames
         c = self.c
         c.delete("scr")
         c.delete("ovl")
@@ -685,7 +705,7 @@ class Game(VisualMixin):
         if e in self.enemies:
             self.enemies.remove(e)
         self.events.emit("enemy_killed", kind=e.kind, score=self.score,
-                         kills=self.kills)
+                         kills=self.kills, combo=self.combo)
 
     def _enemy_color(self, e):
         if e.flash > 0.4:
@@ -1248,7 +1268,8 @@ class Game(VisualMixin):
         self.save["best_wave"] = max(self.save["best_wave"], self.wave)
         write_save(self.save)
         self.events.emit("run_ended", score=self.score, wave=self.wave,
-                         record=is_record)
+                         record=is_record,
+                         duration_frames=self.frames - self.run_start_frame)
 
         c = self.c
         c.delete("scr")

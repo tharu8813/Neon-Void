@@ -64,6 +64,8 @@ class VisualMixin:
                 c.coords(it, ox, pos + oy, W + ox, pos + oy)
         sy = (u * 34.0) % H
         c.coords(self.scanline, ox, sy + oy, W + ox, sy + oy)
+        c.itemconfigure(self.scanline, state="hidden" if self.settings.reduced_effects
+                        else "normal")
 
     # --------------------------------------------------------------- 커서
     def _build_cursor(self):
@@ -389,9 +391,16 @@ class VisualMixin:
         c.create_text(W / 2, 512,
                       text=f"최고 기록  {best:,}  ·  최고 웨이브  {self.save['best_wave']}",
                       fill=C_GOLD, font=F_HUD, tags="scr")
+        c.create_text(W / 2, 555,
+                      text=f"누적 처치 {self.profile.total_kills:,}   ·   보스 {self.profile.boss_kills:,}   ·   완료 {self.profile.completed_runs:,}회",
+                      fill=C_DIM, font=F_UI, tags="scr")
         self.title_press = c.create_text(W / 2, 600, text="PRESS  ENTER",
                                          fill=C_PLAYER, font=F_BIG, tags="scr")
-        c.create_text(W / 2, 660, text="단일 파일 · 표준 라이브러리만 사용",
+        c.create_rectangle(W / 2 - 125, 624, W / 2 + 125, 666,
+                           outline="#27576c", fill="#081827", width=1, tags="scr")
+        c.create_text(W / 2, 645, text="O  ·  게임 설정",
+                      fill=C_TEXT, font=F_UI, tags="scr")
+        c.create_text(W / 2, 692, text="PYTHON  ·  NEON VOID",
                       fill="#22374d", font=F_MONO, tags="scr")
         # 커서가 항상 위에 오도록
         c.tag_raise("cursor")
@@ -539,12 +548,62 @@ class VisualMixin:
                       fill=C_DIM, font=F_UI, tags="ovl")
         c.create_text(W / 2, H / 2 + 66, text="R  ·  재시작",
                       fill=C_DIM, font=F_UI, tags="ovl")
+        c.create_text(W / 2, H / 2 + 108, text="O  ·  게임 설정",
+                      fill=C_PLAYER, font=F_UI, tags="ovl")
+
+
+    # --------------------------------------------------------------- 환경 설정
+    def _draw_settings(self):
+        if not self.settings_open:
+            return
+        c = self.c
+        c.delete("cfg")
+        c.create_rectangle(0, 0, W, H, fill="#030912", outline="",
+                           stipple="gray75", tags="cfg")
+        c.create_rectangle(260, 107, W - 260, 640, fill="#071320",
+                           outline="#2a5166", width=2, tags="cfg")
+        c.create_text(W / 2, 154, text="SETTINGS", fill=C_PLAYER,
+                      font=F_HUGE, tags="cfg")
+        c.create_text(W / 2, 200, text="방향키 / WASD로 선택 · 좌우로 변경",
+                      fill=C_DIM, font=F_UI, tags="cfg")
+
+        settings = self.settings
+        items = [
+            ("전체 볼륨", f"{round(settings.volume * 100)}%"),
+            ("음소거", "켜짐" if settings.muted else "꺼짐"),
+            ("연출 줄이기", "켜짐" if settings.reduced_effects else "꺼짐"),
+            ("FPS 표시", "켜짐" if self.show_fps else "꺼짐"),
+        ]
+        self.settings_hits = []
+        for index, (title, value) in enumerate(items):
+            x0, x1 = 320, W - 320
+            y0 = 232 + 74 * index
+            y1 = y0 + 59
+            self.settings_hits.append((x0, y0, x1, y1))
+            selected = index == self.settings_selected
+            border = C_PLAYER if selected else "#1b3247"
+            c.create_rectangle(x0, y0, x1, y1,
+                               outline=border, fill="#0b2030" if selected
+                               else "#081826", width=2 if selected else 1,
+                               tags="cfg")
+            c.create_text(x0 + 25, (y0 + y1) / 2, text=title, fill=C_TEXT,
+                          font=F_MID, anchor="w", tags="cfg")
+            c.create_text(x1 - 24, (y0 + y1) / 2, text=f"◀  {value}  ▶",
+                          fill=C_GOLD if selected else C_DIM,
+                          font=F_UI, anchor="e", tags="cfg")
+        c.create_text(W / 2, 579, text="ESC / O  ·  돌아가기",
+                      fill=C_PLAYER, font=F_MID, tags="cfg")
+        c.create_text(W / 2, 613,
+                      text="설정은 자동 저장됩니다. 음량은 Windows 믹서에서 적용됩니다.",
+                      fill=C_DIM, font=F_MONO, tags="cfg")
+        c.tag_raise("cfg")
+        c.tag_raise("cursor")
 
     # ------------------------------------------------------------------ 렌더
     def render(self):
         c = self.c
         ox = oy = 0.0
-        if self.shake > 0.2:
+        if self.shake > 0.2 and not self.settings.reduced_effects:
             ox = rnd(-1, 1) * self.shake
             oy = rnd(-1, 1) * self.shake
         self._move_background(ox, oy)
@@ -611,6 +670,10 @@ class VisualMixin:
                 item = self._fps_item
             c.itemconfigure(item, text=f"{self.fps:5.1f} fps  "
                                        f"obj {len(self.bullets)}+{len(self.enemies)}")
+                                       f"obj {len(self.bullets)}+{len(self.enemies)}",
+                            state="normal")
+        elif getattr(self, "_fps_item", None):
+            c.itemconfigure(self._fps_item, state="hidden")
         self._render_screen_fx()
         self.draw_cursor()
         c.tag_raise("cursor")

@@ -110,6 +110,7 @@ python neon_void.py
 | `neonvoid/content/` | 적/업그레이드 데이터 |
 | `neonvoid/storage.py` | 기존 저장 파일과 호환되는 안전한 저장 |
 | `neonvoid/events.py` | 향후 기능 확장을 위한 게임 이벤트 |
+| `neonvoid/profile.py` | 누적 처치·보스·콤보 및 최근 플레이 기록 |
 | `tests/` | 테스트 코드 |
 
 새 실행 방식: `python -m neonvoid` (기존 `python neon_void.py` / `run.bat`도 그대로 사용).

@@ -473,11 +473,23 @@ class Audio:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def toggle_mute(self):
-        self.muted = not self.muted
+    def set_volume(self, volume):
+        """Change the active software mixer level (including ongoing music)."""
+        self.volume = clamp(float(volume), 0.0, 1.0)
         if self.mixer is not None:
-            self.mixer.muted = self.muted
-            if self.muted:
-                with self.mixer.lock:
+            with self.mixer.lock:
+                self.mixer.music_target = 0.30 * self.volume
+        return self.volume
+
+    def set_muted(self, muted):
+        """Synchronize the mixer and logical mute states."""
+        self.muted = bool(muted)
+        if self.mixer is not None:
+            with self.mixer.lock:
+                self.mixer.muted = self.muted
+                if self.muted:
                     self.mixer.voices.clear()
         return self.muted
+
+    def toggle_mute(self):
+        return self.set_muted(not self.muted)
