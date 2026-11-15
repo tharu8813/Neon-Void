@@ -669,7 +669,6 @@ class VisualMixin:
                     12, H - 10, text="", fill="#2c4a66", font=F_MONO, anchor="sw")
                 item = self._fps_item
             c.itemconfigure(item, text=f"{self.fps:5.1f} fps  "
-                                       f"obj {len(self.bullets)}+{len(self.enemies)}")
                                        f"obj {len(self.bullets)}+{len(self.enemies)}",
                             state="normal")
         elif getattr(self, "_fps_item", None):
