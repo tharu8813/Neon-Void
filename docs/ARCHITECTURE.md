@@ -16,6 +16,7 @@ The first extraction is **behavior-preserving**, not an engine rewrite. Python 3
 | `neonvoid/view.py` | VisualMixin: HUD, screens and drawing |
 | `neonvoid/game.py` | Simulation coordinator, input and fixed-step loop |
 | `neonvoid/events.py` | GameEvent/EventBus, optional hooks |
+| `neonvoid/profile.py` | Versioned lifetime records and event-driven run summaries |
 
 ## Dependencies
 
