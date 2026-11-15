@@ -6,13 +6,16 @@ import math
 import os
 import random
 
+from .runtime_paths import data_directory
+
 # ----------------------------------------------------------------------------
 # 상수
 # ----------------------------------------------------------------------------
 W, H = 1280, 720
 DT = 1.0 / 60.0
 TAU = math.pi * 2.0
-SAVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "save.json")
+DATA_DIRECTORY = data_directory()
+SAVE_FILE = os.path.join(DATA_DIRECTORY, "save.json")
 SETTINGS_FILE = os.path.join(os.path.dirname(SAVE_FILE), "settings.json")
 PROFILE_FILE = os.path.join(os.path.dirname(SAVE_FILE), "profile.json")
 

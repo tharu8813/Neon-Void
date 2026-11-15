@@ -28,7 +28,7 @@
 
 - [ ] Resolution independence and input/controller abstraction.
 - [ ] Assess a future graphical backend based on profiling, not fashion.
-- [ ] Windows installer, error logs, signed release pipeline.
+- [x] Tested standalone Windows EXE build workflow and Python traceback log routing (upon CI success); installer, signing and release pipeline remain.
 - [ ] Localization and accessibility reviews.
 
 Do not implement all future phases in one PR. This phase establishes guardrails for safe incremental development.

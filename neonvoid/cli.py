@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tkinter as tk
 from . import __version__
-from .constants import clamp
+from .constants import DATA_DIRECTORY, clamp
 from .content.stages import DEFAULT_STAGE_ID, STAGES
 from .game import Game
 
 # ----------------------------------------------------------------------------
+def configure_frozen_streams():
+    """PyInstaller windowed applications may have no stdout or stderr."""
+    if not getattr(sys, "frozen", False):
+        return
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        try:
+            sys.stderr = open(os.path.join(DATA_DIRECTORY, "errors.log"), "a",
+                              encoding="utf-8", buffering=1)
+        except OSError:
+            sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
 def main(argv=None):
+    configure_frozen_streams()
     ap = argparse.ArgumentParser(description="NEON VOID")
     ap.add_argument("--no-sound", action="store_true", help="소리 끄기")
     ap.add_argument("--fps", action="store_true", help="FPS 오버레이")

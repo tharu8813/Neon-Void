@@ -7,6 +7,16 @@
 
 ---
 
+## Windows 단독 실행 파일
+
+GitHub Actions의 **Windows standalone build** 워크플로에서 Python 설치 없이 실행 가능한 `NeonVoid.exe`를 만들고, 실행 테스트 후 ZIP 아티팩트로 저장합니다. 아직 정식 릴리즈나 설치 프로그램을 자동 발행하지는 않습니다.
+
+- 소스 실행: 프로젝트 폴더의 `save.json`, `settings.json`, `profile.json` 사용
+- EXE 실행: `%LOCALAPPDATA%\\NeonVoid`에 저장 (EXE의 임시 압축 해제 폴더에는 저장하지 않음)
+- EXE 실행 중 Python 오류: 같은 폴더의 `errors.log`에 기록
+
+[빌드 및 배포 안내](docs/DISTRIBUTION.md)
+
 ## 실행
 
 ```powershell
