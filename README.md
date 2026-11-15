@@ -26,6 +26,7 @@ python neon_void.py
 | `--volume 0.0~1.0` | 전체 볼륨 (기본 0.9) |
 | `--no-sound` | 사운드 끄기 (사운드 문제 시) |
 | `--fps` | FPS / 오브젝트 수 오버레이 |
+| `--stage void` | 콘텐츠 스테이지 선택 (현재 기본 스테이지만 지원) |
 | `--seed N` | 난수 고정 (리플레이/테스트) |
 | `--selftest N` | N프레임 자동 플레이 후 결과 출력하고 종료 (창 없이 실행) |
 | `--god` | 검증용 무적 (자동 플레이와 함께 사용) |
@@ -111,6 +112,7 @@ python neon_void.py
 | `neonvoid/storage.py` | 기존 저장 파일과 호환되는 안전한 저장 |
 | `neonvoid/events.py` | 향후 기능 확장을 위한 게임 이벤트 |
 | `neonvoid/profile.py` | 누적 처치·보스·콤보 및 최근 플레이 기록 |
+| `neonvoid/content/stages.py` | 스테이지 정의, 웨이브 일정·적 출현 구성 |
 | `tests/` | 테스트 코드 |
 
 새 실행 방식: `python -m neonvoid` (기존 `python neon_void.py` / `run.bat`도 그대로 사용).
