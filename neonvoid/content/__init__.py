@@ -1,0 +1,1 @@
+"""Enemy and upgrade catalogs."""

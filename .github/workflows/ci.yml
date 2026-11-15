@@ -1,0 +1,40 @@
+name: Python validation
+
+env:
+  PYTHONIOENCODING: utf-8
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source
+        run: python -m compileall -q neon_void.py neonvoid tests
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Check both entrypoints
+        run: |
+          python neon_void.py --help
+          python -m neonvoid --help
+      - name: Windows gameplay smoke test
+        if: runner.os == 'Windows'
+        run: python neon_void.py --selftest 3600 --no-sound --seed 42 --god
+      - name: Install Linux framebuffer
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth
+      - name: Linux gameplay smoke test
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m neonvoid --selftest 3600 --no-sound --seed 42 --god
