@@ -10,6 +10,7 @@ import tkinter as tk
 from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
 from .audio import Audio
 from .content.enemies import E_PARAMS, SPAWN_COST
+from .content.stages import DEFAULT_STAGE_ID, get_stage, plan_wave
 from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
 from .events import EventBus
@@ -24,6 +25,7 @@ class Game(VisualMixin):
         self.root = root
         self.events = EventBus()
         self.opts = opts
+        self.stage = get_stage(getattr(opts, "stage", DEFAULT_STAGE_ID))
         self.auto = bool(opts.selftest)
         self.selftest_left = int(opts.selftest or 0)
         self.settings = Settings() if self.auto else load_settings()
@@ -413,45 +415,17 @@ class Game(VisualMixin):
         self.start_wave(1)
 
     def start_wave(self, n):
+        """Apply the stage director's deterministic, data-driven wave plan."""
+        plan = plan_wave(n, self.rng, self.stage)
         self.wave = n
-        self.spawn_queue = []
+        self.spawn_queue = list(plan.spawns)
         self.wave_done_t = 0.0
-        boss_wave = (n % 5 == 0)
-        if boss_wave:
-            self.banner = f"WAVE {n}  ·  BOSS"
-            self.banner_t = 2.4
-            self.spawn_queue.append((0.7, "boss"))
-            extra = 2 + n // 5
-            for i in range(extra):
-                self.spawn_queue.append((2.2 + i * 1.4,
-                                         self.rng.choice(["drifter", "shooter"])))
-            self.audio.play("boss", 0.5)
-        else:
-            self.banner = f"WAVE {n}"
-            self.banner_t = 1.6
-            self.audio.play("wave", 0.9)
-            budget = 8.0 + n * 4.0
-            pool = ["drifter"]
-            if n >= 2:
-                pool += ["shooter"]
-            if n >= 3:
-                pool += ["splitter"]
-            if n >= 4:
-                pool += ["rusher"]
-            t = 0.4
-            guard = 0
-            while budget > 0 and guard < 200:
-                guard += 1
-                kind = self.rng.choice(pool)
-                cost = SPAWN_COST[kind]
-                if cost > budget and kind != "drifter":
-                    kind = "drifter"
-                    cost = 1.0
-                budget -= cost
-                self.spawn_queue.append((t, kind))
-                t += max(0.22, 0.62 - n * 0.015)
+        self.banner = plan.banner
+        self.banner_t = plan.banner_seconds
+        self.audio.play(plan.audio_cue, plan.audio_gap)
         self.state = "play"
-        self.events.emit("wave_started", wave=n, boss=boss_wave)
+        self.events.emit("wave_started", wave=n, boss=plan.boss,
+                         stage_id=plan.stage_id)
 
     def combo_mult(self):
         return 1.0 + min(self.combo, 40) * 0.1

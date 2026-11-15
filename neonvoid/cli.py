@@ -7,6 +7,7 @@ import sys
 import tkinter as tk
 from . import __version__
 from .constants import clamp
+from .content.stages import DEFAULT_STAGE_ID, STAGES
 from .game import Game
 
 # ----------------------------------------------------------------------------
@@ -15,6 +16,8 @@ def main(argv=None):
     ap.add_argument("--no-sound", action="store_true", help="소리 끄기")
     ap.add_argument("--fps", action="store_true", help="FPS 오버레이")
     ap.add_argument("--seed", type=int, default=None, help="난수 시드")
+    ap.add_argument("--stage", choices=tuple(STAGES), default=DEFAULT_STAGE_ID,
+                    help="스테이지 콘텐츠 ID (현재는 void만 제공)")
     ap.add_argument("--selftest", type=int, default=0,
                     help="N프레임 자동 플레이 후 종료")
     ap.add_argument("--god", action="store_true",

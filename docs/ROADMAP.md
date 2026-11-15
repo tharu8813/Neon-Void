@@ -11,15 +11,15 @@
 
 ## P1 | Product-ready settings and data
 
-- [ ] Settings menu: sound, key binding, DPI/scaling, accessibility.
-- [ ] Versioned profile, migrations, better save error handling.
-- [ ] Content validation/data-driven definitions and balancing presets.
-- [ ] Run history, achievements and permanent unlock structures.
+- [x] First settings menu (sound, reduced effects, FPS); key binding, DPI/scaling and accessibility remain.
+- [x] Versioned profile and validated atomic files; version-to-version migrations remain.
+- [x] Stage catalog, validation and deterministic wave director; balancing presets remain.
+- [x] Recent run history and lifetime stats; achievements/permanent unlocks remain.
 - [ ] Baseline performance and screenshot/regression tests.
 
 ## P2 | Expanded gameplay
 
-- [ ] Multiple stages/arenas, hazards and encounter progression.
+- [ ] Multiple playable stages/arenas, hazards and encounter progression (catalog is ready).
 - [ ] More enemy archetypes, bosses and attack-pattern catalogs.
 - [ ] Weapon/build variety, meta-progression and difficulty modes.
 - [ ] UI/HUD refinements and polished sound with quality presets.
