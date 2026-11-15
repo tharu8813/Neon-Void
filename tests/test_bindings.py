@@ -46,8 +46,9 @@ class InputBindingTests(unittest.TestCase):
         self.assertEqual(movement_vector({"q"}, changed), (0.0, -1.0))
         self.assertEqual(movement_vector({"w"}, changed), (0.0, 0.0))
         self.assertEqual(movement_vector({"up"}, changed), (0.0, -1.0))
-        self.assertEqual(movement_vector({"left", "q"}, changed),
-                         (-math.sqrt(0.5), -math.sqrt(0.5)))
+        diagonal = movement_vector({"left", "q"}, changed)
+        self.assertAlmostEqual(diagonal[0], -math.sqrt(0.5))
+        self.assertAlmostEqual(diagonal[1], -math.sqrt(0.5))
         self.assertEqual(movement_vector({"w"}), (0.0, -1.0))
 
     def test_dash_uses_custom_direction_then_momentum(self):
