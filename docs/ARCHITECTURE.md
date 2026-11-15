@@ -10,6 +10,7 @@ The first extraction is **behavior-preserving**, not an engine rewrite. Python 3
 | `neonvoid/constants.py` | Timing, palette, viewport, legacy save path |
 | `neonvoid/audio.py` | Procedural PCM, winmm/winsound fallback |
 | `neonvoid/storage.py` | Legacy JSON reader, atomic writer |
+| `neonvoid/runtime_paths.py` | Persistent source/frozen data directory resolution |
 | `neonvoid/entities.py` | Mutable Player/Enemy/Bullet/etc state |
 | `neonvoid/controls.py` | Normalized movement and validated key-action mapping |
 | `neonvoid/content/` | Enemy and upgrade definitions |

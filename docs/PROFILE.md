@@ -45,3 +45,7 @@ Profile format is explicitly versioned. Version 1 is the only supported schema; 
 - Progress is saved on death, manual restart or closing normally. A system crash during an active run can still lose the current run's lifetime statistics.
 - This is a statistics record, not checkpoint/resume or permanent unlock progression.
 - `save.json` is still the source of truth for the original high score, best wave and started-run count.
+
+## Standalone Windows executable
+
+The PyInstaller onefile application stores its profile at `%LOCALAPPDATA%\\NeonVoid\\profile.json`, not inside the temporary extraction directory. Source Python execution continues to use `profile.json` beside `neon_void.py`. These are separate profiles, and no automatic migration is performed; manually copy an existing profile if you want to continue with it in the packaged app.
