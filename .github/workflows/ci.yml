@@ -1,5 +1,8 @@
 name: Python validation
 
+env:
+  PYTHONIOENCODING: utf-8
+
 on:
   push:
     branches: [main]

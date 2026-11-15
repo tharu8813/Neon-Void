@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import tkinter as tk
+from .content.enemies import E_PARAMS
+from .content.upgrades import UP_BY_ID
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
 class VisualMixin:
