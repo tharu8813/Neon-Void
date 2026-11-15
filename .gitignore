@@ -14,3 +14,6 @@ htmlcov/
 /.neon-save-*.tmp
 .idea/
 .vscode/
+
+/settings.json
+/.neon-settings-*.tmp
