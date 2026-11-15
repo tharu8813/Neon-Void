@@ -89,15 +89,36 @@ python neon_void.py
 
 ## 구조
 
-단일 파일 `neon_void.py` (약 2,200줄).
+기존 단일 파일 프로토타입을 유지보수 가능한 Python 패키지로 분리했습니다. 외부 런타임 패키지는 여전히 필요하지 않습니다.
 
-| 구역 | 내용 |
+| 위치 | 역할 |
 |---|---|
-| 사운드 | 코드 합성 PCM + `winmm waveOut` 다중 채널 믹서, 실패 시 `winsound`로 폴백 |
-| 렌더링 | tkinter Canvas **오브젝트 풀링** — 아이템 생성/삭제 없이 `coords`/`itemconfigure`만 사용 |
-| 충돌 | 96px 균등 그리드 버킷 (탄환당 3×3 이웃만 검사) |
-| 루프 | 고정 스텝 1/60 + 누산기, 최대 3스텝 보정 |
-| 연출 | 히트스톱 · 스크린 셰이크 · 슬로우모션 · 파티클 · 데미지 숫자 |
+| `neon_void.py` | 기존 실행 명령 유지 (호환성 런처) |
+| `neonvoid/cli.py` | 명령행 옵션과 앱 시작 |
+| `neonvoid/game.py` | 게임 진행, 입력, 적 AI, 충돌, 고정 스텝 |
+| `neonvoid/view.py` | tkinter 렌더링, HUD, 화면 전환 |
+| `neonvoid/render_pool.py` | Canvas 오브젝트 풀 |
+| `neonvoid/audio.py` | 음향 생성 및 시스템 오디오 |
+| `neonvoid/entities.py` | 플레이어, 적, 총알 등 상태 |
+| `neonvoid/content/` | 적/업그레이드 데이터 |
+| `neonvoid/storage.py` | 기존 저장 파일과 호환되는 안전한 저장 |
+| `neonvoid/events.py` | 향후 기능 확장을 위한 게임 이벤트 |
+| `tests/` | 테스트 코드 |
+
+새 실행 방식: `python -m neonvoid` (기존 `python neon_void.py` / `run.bat`도 그대로 사용).
+
+개발자 검증:
+
+```powershell
+python -m compileall -q neon_void.py neonvoid tests
+python -m unittest discover -s tests -v
+python neon_void.py --selftest 180 --no-sound --seed 42 --god
+```
+
+자동 플레이 테스트는 Tk 디스플레이가 필요하며, 실패 시 종료 코드가 0이 아닌 값으로 반환됩니다. 또한 `--version` 플래그를 지원합니다.
+
+- [구조 설명](docs/ARCHITECTURE.md)
+- [단계별 확장 계획](docs/ROADMAP.md)
 
 ## 문제 해결
 
