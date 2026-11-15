@@ -14,6 +14,7 @@ from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
 from .events import EventBus
 from .render_pool import OvalPool, PolyPool, TextPool, LinePool
+from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
 
@@ -24,11 +25,18 @@ class Game(VisualMixin):
         self.opts = opts
         self.auto = bool(opts.selftest)
         self.selftest_left = int(opts.selftest or 0)
-        self.show_fps = bool(opts.fps)
+        self.settings = Settings() if self.auto else load_settings()
+        self.settings_open = False
+        self.settings_selected = 0
+        self.settings_hits = []
+        self.show_fps = bool(opts.fps or self.settings.show_fps)
+        cli_volume = getattr(opts, "volume", None)
         self.audio = Audio(enabled=not opts.no_sound and not self.auto,
-                           volume=getattr(opts, "volume", 0.9))
+                           volume=self.settings.volume if cli_volume is None else cli_volume)
+        self.settings.volume = self.audio.volume
+        self.audio.set_muted(self.settings.muted)
         self.music_started = False
-        self.muted = False
+        self.muted = self.settings.muted
         self.mute_t = 0.0
         self.lowhp_t = 0.0
         self.combo_mark = 0
@@ -161,14 +169,78 @@ class Game(VisualMixin):
         if not self.auto:
             self.loop()
 
+    # --------------------------------------------------------------- 설정
+    def open_settings(self):
+        """Show the overlay only from the title or a paused run."""
+        if self.settings_open:
+            return
+        if self.state != "title" and not (self.state == "play" and self.paused):
+            return
+        self.settings_open = True
+        self.settings_selected = 0
+        self.keys.clear()
+        self._draw_settings()
+
+    def close_settings(self):
+        if self.settings_open:
+            self.settings_open = False
+            self.settings_hits = []
+            self.c.delete("cfg")
+            self.keys.clear()
+
+    def apply_settings(self):
+        """Apply visual/audio preferences immediately and persist changes."""
+        self.audio.set_volume(self.settings.volume)
+        self.muted = self.audio.set_muted(self.settings.muted)
+        self.show_fps = bool(self.opts.fps or self.settings.show_fps)
+        self.mute_t = 1.8
+        if not self.auto:
+            save_settings(self.settings)
+        if self.settings_open:
+            self._draw_settings()
+
+    def change_setting(self, index, direction=1):
+        if index == 0:
+            old_step = round(self.settings.volume * 10)
+            new_step = max(0, min(10, old_step + direction))
+            self.settings.volume = new_step / 10.0
+        elif index == 1:
+            self.settings.muted = not self.settings.muted
+        elif index == 2:
+            self.settings.reduced_effects = not self.settings.reduced_effects
+        elif index == 3:
+            self.settings.show_fps = not self.settings.show_fps
+        else:
+            return
+        self.apply_settings()
+
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
         k = ev.keysym.lower()
+        if self.settings_open:
+            if k in ("escape", "o"):
+                self.close_settings()
+            elif k in ("up", "w"):
+                self.settings_selected = (self.settings_selected - 1) % 4
+                self._draw_settings()
+            elif k in ("down", "s", "tab"):
+                self.settings_selected = (self.settings_selected + 1) % 4
+                self._draw_settings()
+            elif k in ("left", "a"):
+                self.change_setting(self.settings_selected, -1)
+            elif k in ("right", "d", "return", "kp_enter", "space"):
+                self.change_setting(self.settings_selected, 1)
+            return
+
+        if k == "o" and (self.state == "title" or
+                         (self.state == "play" and self.paused)):
+            self.open_settings()
+            return
         self.keys.add(k)
 
         if k == "m":
-            self.muted = self.audio.toggle_mute()
-            self.mute_t = 1.8
+            self.settings.muted = not self.settings.muted
+            self.apply_settings()
             return
 
         if self.state == "title":
@@ -211,6 +283,14 @@ class Game(VisualMixin):
     def on_motion(self, ev):
         self.mx, self.my = ev.x, ev.y
         self.cursor_on = True
+        if self.settings_open:
+            for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
+                if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
+                    if self.settings_selected != idx:
+                        self.settings_selected = idx
+                        self._draw_settings()
+                    break
+            return
         if self.state == "upgrade":
             self.hover_card = -1
             for idx, (x0, y0, x1, y1) in enumerate(self.cards):
@@ -223,10 +303,27 @@ class Game(VisualMixin):
 
     def on_mouse_down(self, ev):
         self.mouse_down = True
+        if self.settings_open:
+            if 560 <= ev.y <= 640 and W / 2 - 130 <= ev.x <= W / 2 + 130:
+                self.close_settings()
+                return
+            for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
+                if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
+                    self.settings_selected = idx
+                    direction = -1 if idx == 0 and ev.x < W / 2 else 1
+                    self.change_setting(idx, direction)
+                    break
+            return
         if self.state == "title":
-            self.new_game()
+            if W / 2 - 150 <= ev.x <= W / 2 + 150 and 623 <= ev.y <= 668:
+                self.open_settings()
+            else:
+                self.new_game()
         elif self.state == "dead":
             self.new_game()
+        elif self.state == "play" and self.paused:
+            if W / 2 - 160 <= ev.x <= W / 2 + 160 and H / 2 + 85 <= ev.y <= H / 2 + 128:
+                self.open_settings()
         elif self.state == "upgrade":
             for idx, (x0, y0, x1, y1) in enumerate(self.cards):
                 off = self.card_yoff[idx] if idx < len(self.card_yoff) else 0.0

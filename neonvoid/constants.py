@@ -13,6 +13,7 @@ W, H = 1280, 720
 DT = 1.0 / 60.0
 TAU = math.pi * 2.0
 SAVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "save.json")
+SETTINGS_FILE = os.path.join(os.path.dirname(SAVE_FILE), "settings.json")
 
 C_BG = "#04060e"
 C_GRID = "#0a1220"

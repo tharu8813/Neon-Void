@@ -19,11 +19,12 @@ def main(argv=None):
                     help="N프레임 자동 플레이 후 종료")
     ap.add_argument("--god", action="store_true",
                     help="검증용 무적 (자동 플레이와 함께 사용)")
-    ap.add_argument("--volume", type=float, default=0.9,
+    ap.add_argument("--volume", type=float, default=None,
                     help="전체 볼륨 0.0 ~ 1.0 (기본 0.9)")
     ap.add_argument("--version", action="version", version=f"NEON VOID {__version__}")
     opts = ap.parse_args(argv)
-    opts.volume = clamp(opts.volume, 0.0, 1.0)
+    if opts.volume is not None:
+        opts.volume = clamp(opts.volume, 0.0, 1.0)
 
     root = tk.Tk()
     game = Game(root, opts)
