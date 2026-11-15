@@ -31,10 +31,10 @@ jobs:
           python -m neonvoid --help
       - name: Windows gameplay smoke test
         if: runner.os == 'Windows'
-        run: python neon_void.py --selftest 180 --no-sound --seed 42 --god
+        run: python neon_void.py --selftest 3600 --no-sound --seed 42 --god
       - name: Install Linux framebuffer
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb xauth
       - name: Linux gameplay smoke test
         if: runner.os == 'Linux'
-        run: xvfb-run -a python -m neonvoid --selftest 180 --no-sound --seed 42 --god
+        run: xvfb-run -a python -m neonvoid --selftest 3600 --no-sound --seed 42 --god
