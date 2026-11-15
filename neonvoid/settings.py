@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import logging
 import math
@@ -10,8 +10,9 @@ import os
 import tempfile
 
 from .constants import SETTINGS_FILE
+from .controls import DEFAULT_BINDINGS, validate_bindings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LOG = logging.getLogger(__name__)
 
 
@@ -21,13 +22,14 @@ class Settings:
     muted: bool = False
     show_fps: bool = False
     reduced_effects: bool = False
+    bindings: dict[str, str] = field(default_factory=lambda: DEFAULT_BINDINGS.copy())
 
 
 def _validated(data: object) -> Settings:
     if not isinstance(data, dict):
         raise ValueError("Settings must be a JSON object")
     version = data.get("schema_version", 1)
-    if type(version) is not int or version != SCHEMA_VERSION:
+    if type(version) is not int or version not in (1, SCHEMA_VERSION):
         raise ValueError(f"Unsupported settings schema: {version!r}")
     value = data.get("volume", 0.9)
     if type(value) not in (int, float) or not math.isfinite(value):
@@ -38,7 +40,11 @@ def _validated(data: object) -> Settings:
         if type(flag) is not bool:
             raise ValueError(f"Invalid settings boolean: {name}")
         flags[name] = flag
-    return Settings(volume=max(0.0, min(1.0, float(value))), **flags)
+    # Version 1 had no keybindings. Load it with the original controls.
+    bindings = DEFAULT_BINDINGS.copy() if version == 1 else validate_bindings(
+        data.get("bindings"))
+    return Settings(volume=max(0.0, min(1.0, float(value))),
+                    bindings=bindings, **flags)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:

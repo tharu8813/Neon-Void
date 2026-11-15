@@ -29,6 +29,9 @@ jobs:
         run: |
           python neon_void.py --help
           python -m neonvoid --help
+      - name: Windows keybinding GUI smoke test
+        if: runner.os == 'Windows'
+        run: python -m tests.gui_bindings_smoke
       - name: Windows settings GUI smoke test
         if: runner.os == 'Windows'
         run: python -m tests.gui_settings_smoke
@@ -41,6 +44,9 @@ jobs:
       - name: Install Linux framebuffer
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb xauth
+      - name: Linux keybinding GUI smoke test
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m tests.gui_bindings_smoke
       - name: Linux settings GUI smoke test
         if: runner.os == 'Linux'
         run: xvfb-run -a python -m tests.gui_settings_smoke

@@ -11,6 +11,7 @@ The first extraction is **behavior-preserving**, not an engine rewrite. Python 3
 | `neonvoid/audio.py` | Procedural PCM, winmm/winsound fallback |
 | `neonvoid/storage.py` | Legacy JSON reader, atomic writer |
 | `neonvoid/entities.py` | Mutable Player/Enemy/Bullet/etc state |
+| `neonvoid/controls.py` | Normalized movement and validated key-action mapping |
 | `neonvoid/content/` | Enemy and upgrade definitions |
 | `neonvoid/render_pool.py` | Pooled Canvas primitives |
 | `neonvoid/view.py` | VisualMixin: HUD, screens and drawing |
