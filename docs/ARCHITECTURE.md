@@ -17,6 +17,7 @@ The first extraction is **behavior-preserving**, not an engine rewrite. Python 3
 | `neonvoid/game.py` | Simulation coordinator, input and fixed-step loop |
 | `neonvoid/events.py` | GameEvent/EventBus, optional hooks |
 | `neonvoid/profile.py` | Versioned lifetime records and event-driven run summaries |
+| `neonvoid/content/stages.py` | Stage catalog and deterministic wave-plan generation |
 
 ## Dependencies
 
@@ -29,7 +30,7 @@ launcher -> cli -> Game(VisualMixin)
 
 ## Extension strategy
 
-1. New enemies go in `content/enemies.py`; AI behavior is still in `game.py` until a separate system extraction.
+1. New enemies go in `content/enemies.py`; stage-specific spawn unlocks and waves live in `content/stages.py`, while enemy AI behavior is still in `game.py` until a separate extraction.
 2. New upgrades belong in `content/upgrades.py` and require tests for identifiers/caps/effects.
 3. Subscribe to `game.events` for optional achievements, run stats and telemetry. Emitted event names are `run_started`, `wave_started`, `enemy_killed`, `upgrade_picked`, `run_ended`. All callbacks execute synchronously in the game thread. Exceptions are logged/isolated.
 4. Keep backward compatibility for `save.json` (currently stored alongside the launcher, fields: `best_score`, `best_wave`, `runs`). Do not silently change the location.
