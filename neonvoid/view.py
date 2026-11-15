@@ -70,6 +70,13 @@ class VisualMixin:
     # --------------------------------------------------------------- 커서
     def _build_cursor(self):
         c = self.c
+        self.cursor_halo = c.create_oval(0, 0, 0, 0, outline="#245665",
+                                         width=2, state="hidden", tags=("cursor",))
+        self.cursor_trail_items = [
+            c.create_oval(0, 0, 0, 0, fill=C_PLAYER, outline="",
+                          state="hidden", tags=("cursor",))
+            for _ in range(8)
+        ]
         self.cursor_arcs = [
             c.create_arc(0, 0, 0, 0, start=0, extent=62, style="arc",
                          outline=C_PLAYER, width=2, state="hidden", tags=("cursor",))
@@ -99,6 +106,7 @@ class VisualMixin:
 
     def _on_pointer_leave(self, ev=None):
         self.cursor_on = False
+        self.cursor_trail.clear()
         try:
             self.c.configure(cursor="")
         except tk.TclError:
@@ -107,6 +115,7 @@ class VisualMixin:
     def _on_focus_out(self, ev=None):
         self.keys.clear()
         self.cursor_on = False
+        self.cursor_trail.clear()
         try:
             self.c.configure(cursor="")
         except tk.TclError:
@@ -114,7 +123,8 @@ class VisualMixin:
 
     def draw_cursor(self):
         c = self.c
-        items = (self.cursor_arcs + self.cursor_ticks + self.cursor_cross
+        items = ([self.cursor_halo] + self.cursor_trail_items + self.cursor_arcs
+                 + self.cursor_ticks + self.cursor_cross
                  + [self.cursor_dot] + self.cursor_hit_marks)
         if not self.cursor_on:
             for it in items:
@@ -141,9 +151,23 @@ class VisualMixin:
         heat = clamp(p.recoil, 0, 1) if self.state == "play" else 0.0
         self.cursor_spin = getattr(self, "cursor_spin", 0.0) + \
             (0.9 + heat * 7.5 + dash * 13.0) * (1.0 / 60.0)
-        rad = 17.0 + 1.7 * math.sin(u * 3.8) + heat * 2.4 + dash * 11.0
+        rad = 26.0 + 2.2 * math.sin(u * 3.8) + heat * 3.5 + dash * 12.0
         if hot:
             rad += 1.0 + 0.8 * math.sin(u * 12.0)
+        # 큰 외곽 링과 커서 잔상은 재사용 Canvas 아이템으로 그린다.
+        halo_r = rad + 13.0 + 1.8 * math.sin(u * 2.9)
+        c.coords(self.cursor_halo, x - halo_r, y - halo_r,
+                 x + halo_r, y + halo_r)
+        c.itemconfigure(self.cursor_halo,
+                        outline="#874b2b" if hot else "#245665", state="normal")
+        for i, it in enumerate(self.cursor_trail_items):
+            if i >= len(self.cursor_trail):
+                c.itemconfigure(it, state="hidden")
+                continue
+            tx, ty, life = self.cursor_trail[-1 - i]
+            size = 2.0 + life * 12.0
+            c.coords(it, tx - size, ty - size, tx + size, ty + size)
+            c.itemconfigure(it, fill=col if i < 3 else "#245665", state="normal")
         # 회전하는 3개의 호
         for i, it in enumerate(self.cursor_arcs):
             a0 = math.degrees(self.cursor_spin) + i * 120.0
@@ -153,13 +177,13 @@ class VisualMixin:
         # 바깥 4방향 틱
         for i, it in enumerate(self.cursor_ticks):
             a = self.cursor_spin * 0.55 + TAU * i / 4.0
-            r0, r1 = rad + 3.0, rad + 9.0
+            r0, r1 = rad + 3.0, rad + 12.0
             c.coords(it, x + math.cos(a) * r0, y + math.sin(a) * r0,
                      x + math.cos(a) * r1, y + math.sin(a) * r1)
             c.itemconfigure(it, fill=col, state="normal")
         # 중앙 십자선 (작은 간격)
-        gap = 4.5 + heat * 2.5 + dash * 5.0
-        r2 = 12.0 + dash * 7.0
+        gap = 5.8 + heat * 3.0 + dash * 5.0
+        r2 = 18.0 + dash * 8.0
         c.coords(self.cursor_cross[0], x - r2, y, x - gap, y)
         c.coords(self.cursor_cross[1], x + gap, y, x + r2, y)
         for it in self.cursor_cross:
@@ -173,8 +197,8 @@ class VisualMixin:
             k = clamp(self.cursor_hit / 0.15, 0, 1)
             for i, it in enumerate(self.cursor_hit_marks):
                 a = math.pi / 4.0 + math.pi / 2.0 * i
-                r0 = 9.0 + (1.0 - k) * 7.0
-                r1 = 16.0 + (1.0 - k) * 9.0
+                r0 = 13.0 + (1.0 - k) * 7.0
+                r1 = 23.0 + (1.0 - k) * 10.0
                 c.coords(it, x + math.cos(a) * r0, y + math.sin(a) * r0,
                          x + math.cos(a) * r1, y + math.sin(a) * r1)
                 c.itemconfigure(it, fill="#ffffff" if hot else C_GOLD,
@@ -427,6 +451,9 @@ class VisualMixin:
                       fill=C_DIM, font=F_UI, tags="scr")
 
         self.cards = []
+        self.card_anim = []
+        self.card_yoff = []
+        self.card_borders = []
         n = len(self.card_opts)
         cw, ch, gap = 300, 300, 36
         total = n * cw + (n - 1) * gap
@@ -437,8 +464,10 @@ class VisualMixin:
             x = x0 + i * (cw + gap)
             col = RARITY_COL[rarity]
             lv = self.levels.get(uid, 0)
-            c.create_rectangle(x, y0, x + cw, y0 + ch, fill="#080e1a",
-                               outline=col, width=2, tags="scr")
+            before = set(c.find_all())
+            border = c.create_rectangle(x, y0, x + cw, y0 + ch,
+                                        fill="#080e1a", outline=col,
+                                        width=2, tags="scr")
             c.create_rectangle(x + 6, y0 + 6, x + cw - 6, y0 + ch - 6,
                                fill="", outline="#16233a", tags="scr")
             c.create_text(x + 24, y0 + 34, text=f"[{i + 1}]", fill=col,
@@ -458,9 +487,34 @@ class VisualMixin:
                 c.create_text(x + cw / 2, y0 + 256, text="즉시 적용",
                               fill="#3f5a75", font=F_NUM, tags="scr")
             self.cards.append((x, y0, x + cw, y0 + ch))
+            self.card_borders.append(border)
+            self.card_anim.append(0.0)
+            off = 58.0 + i * 24.0
+            self.card_yoff.append(off)
+            tag = f"upgrade-card-{i}"
+            for item in set(c.find_all()) - before:
+                c.addtag_withtag(tag, item)
+            c.move(tag, 0, off)
         c.create_text(W / 2, H - 46,
                       text=f"SCORE {self.score:,}   ·   처치 {self.kills}",
                       fill=C_DIM, font=F_UI, tags="scr")
+
+    def _animate_upgrade_cards(self):
+        c = self.c
+        for i, border in enumerate(self.card_borders):
+            progress = clamp((self.card_t - i * 0.09) / 0.42, 0.0, 1.0)
+            eased = 1.0 - (1.0 - progress) ** 3
+            self.card_anim[i] = eased
+            hover = i == self.hover_card and progress > 0.5
+            bob = math.sin(self.ui_t * 2.3 + i) * 1.6 if progress >= 1 else 0.0
+            offset = (58.0 + i * 24.0) * (1.0 - eased) + bob
+            if hover:
+                offset -= 11.0
+            c.move(f"upgrade-card-{i}", 0, offset - self.card_yoff[i])
+            self.card_yoff[i] = offset
+            c.itemconfigure(border, width=3 if hover else 2,
+                            outline="#ffffff" if hover else
+                            RARITY_COL[self.card_opts[i][3]])
 
     def _card_glyph(self, x, y, r, rarity, col):
         c = self.c
@@ -485,8 +539,8 @@ class VisualMixin:
             return
         c.create_rectangle(0, 0, W, H, fill="#04060e", stipple="gray50",
                            outline="", tags="ovl")
-        c.create_text(W / 2, H / 2 - 60, text="PAUSED", fill=C_PLAYER,
-                      font=F_HUGE, tags="ovl")
+        self.pause_title = c.create_text(W / 2, H / 2 - 60, text="PAUSED",
+                                         fill=C_PLAYER, font=F_HUGE, tags="ovl")
         c.create_text(W / 2, H / 2 - 10,
                       text=f"WAVE {self.wave}   ·   SCORE {self.score:,}",
                       fill=C_TEXT, font=F_MID, tags="ovl")
@@ -582,17 +636,31 @@ class VisualMixin:
         if self.state == "play":
             self._update_hud()
         if self.banner_t > 0 and self.state == "play":
-            a = clamp(self.banner_t, 0, 1)
+            remaining = clamp(self.banner_t / max(self.banner_total, 0.01), 0, 1)
+            appeared = clamp((1.0 - remaining) / 0.22, 0, 1)
+            eased = 1.0 - (1.0 - appeared) ** 3
+            y = H / 2 - 150 - (1.0 - eased) * 35.0
+            c.coords(self.banner_item, W / 2, y)
+            c.coords(self.banner_item2, W / 2, y + 38)
+            c.coords(self.banner_rule, W / 2 - 140 * eased, y + 23,
+                     W / 2 + 140 * eased, y + 23)
             c.itemconfigure(self.banner_item, text=self.banner,
-                            state="normal", fill="#9fe8ff" if a > 0.5 else C_DIM)
-            c.itemconfigure(self.banner_item2,
-                            text="적을 모두 제거하세요", state="normal")
+                            state="normal", fill="#9fe8ff" if remaining > 0.2 else C_DIM)
+            c.itemconfigure(self.banner_item2, text="적을 모두 제거하세요",
+                            state="normal")
+            c.itemconfigure(self.banner_rule, state="normal")
         else:
-            c.itemconfigure(self.banner_item, state="hidden")
-            c.itemconfigure(self.banner_item2, state="hidden")
+            for it in (self.banner_item, self.banner_item2, self.banner_rule):
+                c.itemconfigure(it, state="hidden")
 
         if self.state == "title":
             self._render_title()
+        elif self.state == "upgrade":
+            self._animate_upgrade_cards()
+        elif self.state == "dead":
+            self._animate_game_over()
+        if self.paused and self.state == "play":
+            self._animate_pause()
         self._update_audio_hud()
         if self.show_fps:
             item = getattr(self, "_fps_item", None)
@@ -605,7 +673,45 @@ class VisualMixin:
                             state="normal")
         elif getattr(self, "_fps_item", None):
             c.itemconfigure(self._fps_item, state="hidden")
+        self._render_screen_fx()
         self.draw_cursor()
+        c.tag_raise("cursor")
+
+    def _animate_pause(self):
+        appear = clamp(self.pause_t / 0.24, 0, 1)
+        ease = 1.0 - (1.0 - appear) ** 3
+        self.c.coords(self.pause_title, W / 2, H / 2 - 60 - (1 - ease) * 24)
+        self.c.itemconfigure(self.pause_title,
+                             fill="#ffffff" if appear < 0.45 else C_PLAYER)
+
+    def _animate_game_over(self):
+        appear = clamp(self.go_t / 0.48, 0, 1)
+        ease = 1.0 - (1.0 - appear) ** 3
+        self.c.coords(self.dead_title, W / 2, 200 + (1.0 - ease) * 45)
+        self.c.coords(self.dead_restart, W / 2,
+                      420 + math.sin(self.ui_t * 3.2) * 4.0)
+        self.c.itemconfigure(self.dead_restart,
+                             fill=C_PLAYER if int(self.ui_t * 2) % 2 else "#b5faff")
+
+    def _render_screen_fx(self):
+        c = self.c
+        if self.flash_t > 0:
+            c.itemconfigure(self.flash_rect, fill=self.flash_col,
+                            stipple="gray12" if self.flash_t < self.flash_dur * 0.5
+                            else "gray25", state="normal")
+        else:
+            c.itemconfigure(self.flash_rect, state="hidden")
+        if self.sweep_t > 0:
+            progress = 1.0 - self.sweep_t / max(self.sweep_dur, 0.01)
+            y = -40 + progress * (H + 80)
+            c.coords(self.sweep_band, 0, y - 20, W, y + 20)
+            c.coords(self.sweep_line, 0, y, W, y)
+            for it in (self.sweep_band, self.sweep_line):
+                c.itemconfigure(it, fill=self.sweep_col, state="normal")
+        else:
+            c.itemconfigure(self.sweep_band, state="hidden")
+            c.itemconfigure(self.sweep_line, state="hidden")
+        c.tag_raise("fx")
 
     def _update_audio_hud(self):
         it = self.audio_txt
@@ -747,6 +853,10 @@ class VisualMixin:
         ]
         c.coords(self.ship, *pts)
         c.itemconfigure(self.ship, fill=body, outline="#e8ffff", width=1)
+        if p.dash_t > 0:
+            dash_k = clamp(p.dash_t / 0.145, 0, 1)
+            self.pool_ring.draw(x, y, 27.0 + (1 - dash_k) * 21.0,
+                                "", outline=C_PLAYER)
         self.pool_ring.draw(x, y, 25.0, "", outline=glow)
         self.pool_ring.draw(x + ca * 7.0, y + sa * 7.0, 3.0, "#eaffff")
 

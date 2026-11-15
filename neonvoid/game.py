@@ -13,6 +13,7 @@ from .content.enemies import E_PARAMS, SPAWN_COST
 from .content.stages import DEFAULT_STAGE_ID, get_stage, plan_wave
 from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
+from .controls import movement_vector, dash_vector
 from .events import EventBus
 from .profile import PlayerProfile, ProfileTracker, load_profile, save_profile
 from .render_pool import OvalPool, PolyPool, TextPool, LinePool
@@ -84,6 +85,7 @@ class Game(VisualMixin):
         self.cursor_on = True
         self.cursor_hit = 0.0
         self.cursor_hot = False
+        self.cursor_trail = []
         self.hover_card = -1
         self.flash_t = 0.0
         self.flash_dur = 0.3
@@ -101,6 +103,7 @@ class Game(VisualMixin):
         self.card_t = 0.0
         self.card_anim = []
         self.card_yoff = []
+        self.card_borders = []
         self.title_age = 0.0
         self.pause_t = 0.0
         self.go_t = 0.0
@@ -273,6 +276,7 @@ class Game(VisualMixin):
         if k in ("p",) or (k == "escape" and self.state == "play"):
             if self.state == "play":
                 self.paused = not self.paused
+                self.pause_t = 0.0
                 self._draw_pause()
             return
 
@@ -301,8 +305,12 @@ class Game(VisualMixin):
         self.keys.discard(ev.keysym.lower())
 
     def on_motion(self, ev):
+        if (ev.x - self.mx) ** 2 + (ev.y - self.my) ** 2 > 49:
+            self.cursor_trail.append((self.mx, self.my, 0.26))
+            self.cursor_trail = self.cursor_trail[-8:]
         self.mx, self.my = ev.x, ev.y
         self.cursor_on = True
+        self.c.configure(cursor="none")
         if self.settings_open:
             for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
                 if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
@@ -398,12 +406,15 @@ class Game(VisualMixin):
         self.hover_card = -1
         self.card_anim = []
         self.card_yoff = []
+        self.card_borders = []
+        self.cursor_trail = []
         self.pause_t = 0.0
         self.go_t = 0.0
         self.go_score = 0
         self.go_kills = 0
         self.go_record = False
         self.cursor_hit = 0.0
+        self.card_t = 0.0
         self.screen_flash(0.32, C_PLAYER)
         self.screen_sweep(0.5, C_PLAYER)
         self.save["runs"] += 1
@@ -424,6 +435,9 @@ class Game(VisualMixin):
         self.banner_t = plan.banner_seconds
         self.audio.play(plan.audio_cue, plan.audio_gap)
         self.state = "play"
+        self.banner_total = self.banner_t
+        self.wave_pop = 1.0
+        self.screen_sweep(0.32, C_BOSS if plan.boss else C_PLAYER)
         self.events.emit("wave_started", wave=n, boss=plan.boss,
                          stage_id=plan.stage_id)
 
@@ -509,15 +523,14 @@ class Game(VisualMixin):
         p = self.p
         if p.dash_t > 0 or p.charges <= 0:
             return
-        dx = self.mx - p.x
-        dy = self.my - p.y
-        d = math.hypot(dx, dy) or 1.0
-        p.dash_dir = (dx / d, dy / d)
+        p.dash_dir = dash_vector(self.keys, (p.vx, p.vy), p.last_move_dir)
         p.dash_t = 0.145
         p.inv = max(p.inv, 0.32)
         p.charges -= 1
         self.audio.play("dash", 0.1)
-        self.burst(p.x, p.y, 10, C_PLAYER, 130, 0.3, 2.0)
+        self.burst(p.x, p.y, 14, C_PLAYER, 180, 0.32, 2.2)
+        self.ring(p.x, p.y, 18, C_PLAYER, 210, 0.24)
+        self.shake = max(self.shake, 2.2)
         if p.st["dash_blast"] > 0:
             self.dash_blast(p)
 
@@ -638,6 +651,7 @@ class Game(VisualMixin):
             self.audio.play("kill", 0.06)
 
         self.combo += 1
+        self.combo_pop = 1.0
         self.combo_t = 2.6
         self.score += int(e.score * self.combo_mult())
         self.kills += 1
@@ -677,6 +691,7 @@ class Game(VisualMixin):
         self.t += dt
         self.frames += 1
         self.title_pulse += dt
+        self._tick_ui(dt)
 
         if self.banner_t > 0:
             self.banner_t -= dt
@@ -742,6 +757,23 @@ class Game(VisualMixin):
         if self.auto:
             self.auto_play(dt)
 
+    def _tick_ui(self, dt):
+        """Animate UI even while gameplay is paused."""
+        self.ui_t += dt
+        self.title_age += dt if self.state == "title" else 0.0
+        self.pause_t += dt if self.paused else 0.0
+        self.go_t += dt if self.state == "dead" else 0.0
+        self.card_t += dt if self.state == "upgrade" else 0.0
+        for name in ("flash_t", "sweep_t", "cursor_hit", "wave_pop",
+                     "combo_pop", "dash_ready_t"):
+            setattr(self, name, max(0.0, getattr(self, name) - dt))
+        if self.cursor_trail:
+            self.cursor_trail = [(x, y, life - dt)
+                                 for x, y, life in self.cursor_trail if life > dt]
+        if self.p.charges > self.prev_charges:
+            self.dash_ready_t = 0.5
+        self.prev_charges = self.p.charges
+
     def _step_fx(self, dt):
         for q in self.particles:
             q.life -= dt
@@ -776,19 +808,9 @@ class Game(VisualMixin):
 
         p.aim = math.atan2(self.my - p.y, self.mx - p.x)
 
-        ax = ay = 0.0
-        if "a" in self.keys or "left" in self.keys:
-            ax -= 1.0
-        if "d" in self.keys or "right" in self.keys:
-            ax += 1.0
-        if "w" in self.keys or "up" in self.keys:
-            ay -= 1.0
-        if "s" in self.keys or "down" in self.keys:
-            ay += 1.0
+        ax, ay = movement_vector(self.keys)
         if ax or ay:
-            m = math.hypot(ax, ay)
-            ax /= m
-            ay /= m
+            p.last_move_dir = (ax, ay)
 
         if p.dash_t > 0:
             p.dash_t -= dts
@@ -1138,6 +1160,7 @@ class Game(VisualMixin):
         self.damage_enemy(e, dmg, b.color, knock=(b.vx * 0.02, b.vy * 0.02),
                           crit=crit)
         self.audio.play("hit", 0.045)
+        self.cursor_hit = 0.17
         self.shake = max(self.shake, 1.6)
 
         if not crit:
@@ -1201,6 +1224,8 @@ class Game(VisualMixin):
 
     def game_over(self):
         self.state = "dead"
+        self.go_t = 0.0
+        self.screen_flash(0.38, C_BAD)
         self.dead_t = 0.0
         self._show_hud(False)
         self.audio.play("dead", 1.0)
@@ -1223,8 +1248,8 @@ class Game(VisualMixin):
         c = self.c
         c.delete("scr")
         c.create_rectangle(0, 0, W, H, fill="#04060e", outline="", tags="scr")
-        c.create_text(W / 2, 200, text="SYSTEM FAILURE", fill=C_BAD,
-                      font=F_HUGE, tags="scr")
+        self.dead_title = c.create_text(W / 2, 200, text="SYSTEM FAILURE",
+                                        fill=C_BAD, font=F_HUGE, tags="scr")
         c.create_text(W / 2, 262,
                       text=f"WAVE {self.wave}  ·  SCORE {self.score:,}",
                       fill=C_TEXT, font=F_MID, tags="scr")
@@ -1234,8 +1259,9 @@ class Game(VisualMixin):
         if is_record:
             c.create_text(W / 2, 356, text="★ NEW RECORD ★", fill=C_GOLD,
                           font=F_MID, tags="scr")
-        c.create_text(W / 2, 420, text="R 또는 클릭  ·  재시작",
-                      fill=C_PLAYER, font=F_BIG, tags="scr")
+        self.dead_restart = c.create_text(W / 2, 420,
+                                          text="R 또는 클릭  ·  재시작",
+                                          fill=C_PLAYER, font=F_BIG, tags="scr")
         c.create_text(W / 2, 460, text="ESC  ·  타이틀", fill=C_DIM,
                       font=F_UI, tags="scr")
 
@@ -1252,6 +1278,8 @@ class Game(VisualMixin):
 
     def open_upgrade(self):
         self.state = "upgrade"
+        self.card_t = 0.0
+        self.screen_flash(0.16, C_GOLD)
         self.auto_pick_t = 0.0
         self._show_hud(False)
         self.audio.play("wave", 0.2)
@@ -1290,6 +1318,7 @@ class Game(VisualMixin):
         else:
             apply_upgrade(self, u[0])
         self.audio.play("pick", 0.1)
+        self.screen_flash(0.17, C_PLAYER)
         self.events.emit("upgrade_picked", upgrade=u[0], wave=self.wave)
         self.c.delete("scr")
         self.cards = []

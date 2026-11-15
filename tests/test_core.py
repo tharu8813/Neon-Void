@@ -5,6 +5,7 @@ from neonvoid.constants import W, H, clamp
 from neonvoid.content.enemies import E_PARAMS, SPAWN_COST
 from neonvoid.content.upgrades import UPGRADES, apply_upgrade
 from neonvoid.entities import Player
+from neonvoid.controls import movement_vector, dash_vector
 from neonvoid.events import EventBus
 from neonvoid.game import Game
 from neonvoid.view import VisualMixin
@@ -24,6 +25,24 @@ class CoreTests(unittest.TestCase):
         self.assertEqual((player.x, player.y), (W / 2, H / 2))
         self.assertEqual(player.hp, player.maxhp)
         self.assertGreater(player.st["rate"], 0)
+
+    def test_keyboard_dash_ignores_aim(self):
+        self.assertEqual(dash_vector({"d"}, (-100, 0), (0, -1)), (1, 0))
+        self.assertEqual(dash_vector({"w"}, (0, 100), (0, 1)), (0, -1))
+        self.assertEqual(dash_vector({"a", "d"}, (0, 0), (0, 1)), (0, 1))
+
+    def test_diagonal_dash_is_normalized(self):
+        import math
+        x, y = dash_vector({"w", "d"}, (0, 0), (0, -1))
+        self.assertAlmostEqual(math.hypot(x, y), 1.0)
+        self.assertGreater(x, 0)
+        self.assertLess(y, 0)
+
+    def test_dash_fallbacks(self):
+        self.assertEqual(movement_vector({"a", "d"}), (0.0, 0.0))
+        self.assertEqual(dash_vector(set(), (0, 80), (-1, 0)), (0, 1))
+        self.assertEqual(dash_vector(set(), (0, 0), (-1, 0)), (-1, 0))
+        self.assertEqual(dash_vector(set(), (0, 0), (0, 0)), (0, -1))
 
     def test_upgrade_catalog(self):
         ids = [u[0] for u in UPGRADES]

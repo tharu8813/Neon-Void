@@ -11,7 +11,7 @@ from .constants import (W, H, rnd, C_BULLET)
 class Player:
     __slots__ = ("x", "y", "vx", "vy", "hp", "maxhp", "r", "aim",
                  "fire_cd", "dash_t", "dash_cd", "charges", "charge_t",
-                 "inv", "dash_dir", "drone_ang", "st", "recoil")
+                 "inv", "dash_dir", "last_move_dir", "drone_ang", "st", "recoil")
 
     def __init__(self):
         self.x, self.y = W / 2, H / 2
@@ -27,6 +27,7 @@ class Player:
         self.charge_t = 0.0
         self.inv = 0.0
         self.dash_dir = (0.0, 0.0)
+        self.last_move_dir = (0.0, -1.0)
         self.drone_ang = 0.0
         self.recoil = 0.0
         self.st = {
