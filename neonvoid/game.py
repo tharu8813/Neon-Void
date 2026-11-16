@@ -1351,6 +1351,16 @@ class Game(VisualMixin):
                 index = int(key) - 1
                 if index < len(self.card_opts):
                     self.pick_upgrade(index)
+            elif key in ("left", "right") and self.card_opts:
+                direction = -1 if key == "left" else 1
+                current = self.hover_card
+                self.hover_card = (
+                    (current + direction) % len(self.card_opts) if current >= 0
+                    else (0 if direction > 0 else len(self.card_opts) - 1)
+                )
+            elif key in ("return", "kp_enter", "space"):
+                if 0 <= self.hover_card < len(self.card_opts):
+                    self.pick_upgrade(self.hover_card)
             return
 
         if self.state == "play" and not self.paused:
