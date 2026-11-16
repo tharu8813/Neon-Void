@@ -29,6 +29,21 @@ def main():
         assert game.world.room == "base"
         game.render()
         assert game.c.find_withtag("hub-world")
+        # Culling a far-away terminal must not permanently hide its label,
+        # light or caption when the camera returns. A grid slot that was
+        # off-screen must also become visible again.
+        node = game.hub_nodes["database"]
+        visible_state = lambda item: game.c.itemcget(item, "state")
+        assert visible_state(node["label"]) == "normal"
+        original = game.p.x, game.p.y
+        game.p.x, game.p.y = 2380, 1500
+        game.render()
+        assert visible_state(node["label"]) == "hidden"
+        game.p.x, game.p.y = original
+        game.render()
+        for part in ("light", "label", "caption"):
+            assert visible_state(node[part]) == "normal"
+        assert visible_state(game.hub_grid_v[-1]) == "normal"
         x, y = game.p.x, game.p.y
         press(game, "d")
         for _ in range(35):

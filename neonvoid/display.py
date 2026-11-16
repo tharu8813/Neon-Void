@@ -166,9 +166,15 @@ class ScaledCanvas(tk.Canvas):
         if isinstance(cnf, dict):
             kw = {**cnf, **kw}
             cnf = None
-        if kw:
-            for item in tk.Canvas.find_withtag(self, tagOrId):
-                self._style(item, kw)
+        # Canvas.find_withtag() is a Tcl round-trip. Most per-frame drawing
+        # updates only change colour, text or visibility and need no font/width
+        # bookkeeping. Numeric item IDs can be styled without a tag lookup.
+        if "font" in kw or "width" in kw:
+            if isinstance(tagOrId, int):
+                self._style(tagOrId, kw)
+            else:
+                for item in tk.Canvas.find_withtag(self, tagOrId):
+                    self._style(item, kw)
             kw = self._draw_opts(kw)
         return tk.Canvas.itemconfigure(self, tagOrId, cnf, **kw)
 

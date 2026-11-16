@@ -1450,9 +1450,13 @@ class VisualMixin:
 
         if self._hub_room != world.room:
             self._hub_room = world.room
-        for item in self._hub_items:
-            c.itemconfigure(item, state="normal")
-        self._hub_visible = True
+        # Re-enable the pooled hub only on scene entry. Re-enabling every
+        # item on each frame causes hundreds of redundant Tcl calls and
+        # briefly unhides objects that this frame will immediately hide.
+        if not self._hub_visible:
+            for item in self._hub_items:
+                c.itemconfigure(item, state="normal")
+            self._hub_visible = True
 
         # --- 배경 / 그리드 -------------------------------------------------
         c.itemconfigure(self.hub_bg,
@@ -1467,7 +1471,7 @@ class VisualMixin:
             item = self.hub_grid_v[index]
             x = wx - cx
             c.coords(item, x, 0, x, H)
-            c.itemconfigure(item, fill=grid_col)
+            c.itemconfigure(item, fill=grid_col, state="normal")
             index += 1
         for item in self.hub_grid_v[index:]:
             c.itemconfigure(item, state="hidden")
@@ -1479,7 +1483,7 @@ class VisualMixin:
             item = self.hub_grid_h[index]
             y = wy - cy
             c.coords(item, 0, y, W, y)
-            c.itemconfigure(item, fill=grid_col)
+            c.itemconfigure(item, fill=grid_col, state="normal")
             index += 1
         for item in self.hub_grid_h[index:]:
             c.itemconfigure(item, state="hidden")
@@ -1605,9 +1609,10 @@ class VisualMixin:
             c.itemconfigure(slot["pulse"], state="hidden")
             glow = 5.0 + (2.2 if highlight else 0.0) + (0.0 if reduced else wave * 1.2)
             c.coords(slot["light"], sx - glow, sy - glow, sx + glow, sy + glow)
-            c.itemconfigure(slot["light"], fill=color)
+            c.itemconfigure(slot["light"], fill=color, state="normal")
             c.coords(slot["label"], sx, sy - 64)
-            c.itemconfigure(slot["label"], text=node.label, fill=color)
+            c.itemconfigure(slot["label"], text=node.label, fill=color,
+                            state="normal")
             if cleaned:
                 caption = "CLEAN"
             elif is_sector:
@@ -1618,7 +1623,8 @@ class VisualMixin:
                            else "ACTIVE TERMINAL")
             c.coords(slot["caption"], sx, sy + 64)
             c.itemconfigure(slot["caption"], text=caption,
-                            fill="#779ab3" if available else "#6b6b85")
+                            fill="#779ab3" if available else "#6b6b85",
+                            state="normal")
 
         # --- 구조물 --------------------------------------------------------
         for index, (x0, y0, x1, y1) in enumerate(PILLARS):

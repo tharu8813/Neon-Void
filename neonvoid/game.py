@@ -26,7 +26,7 @@ from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
 from .display import ScaledCanvas
-from .performance import resident_memory_mib
+from .performance import resident_memory_mib, RenderedFrameRate
 from .settings import DISPLAY_MODES, MIN_WIDTH, MIN_HEIGHT
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
@@ -253,6 +253,7 @@ class Game(VisualMixin):
         self.acc = 0.0
         self.last = time.perf_counter()
         self.fps = 60.0
+        self._frame_rate = RenderedFrameRate()
         self.frames = 0
 
         self.p = Player()
@@ -3108,11 +3109,14 @@ class Game(VisualMixin):
                 steps += 1
             if steps >= 3:
                 self.acc = 0.0
-            self.fps = self.fps * 0.92 + (1.0 / max(raw, 1e-4)) * 0.08
             if steps:
                 begin_render = time.perf_counter()
                 self.render()
-                elapsed_ms = (time.perf_counter() - begin_render) * 1000
+                end_render = time.perf_counter()
+                elapsed_ms = (end_render - begin_render) * 1000
+                submitted_fps = self._frame_rate.submitted(end_render)
+                if submitted_fps is not None:
+                    self.fps = submitted_fps
                 self.render_samples.append(elapsed_ms)
                 self.render_ms = sum(self.render_samples) / len(self.render_samples)
                 ordered = sorted(self.render_samples)
