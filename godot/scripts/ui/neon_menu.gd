@@ -150,6 +150,8 @@ func _render() -> void:
 			_button("운영체제 배포", "page:deployment")
 			_button("설정", "page:settings")
 			_button("백신 데이터베이스", "page:database")
+			if not bool(state.get("checkpoint_valid", false)):
+				_button("기존 Python 저장 데이터 가져오기 (원본 보존)", "import_legacy")
 			_button("프로필", "page:profile")
 		"pause":
 			_heading("일시정지")
@@ -269,10 +271,15 @@ func _render_database() -> void:
 	_info("정화 완료 OS: %d" % int(db.get("clean_runs", 0)))
 	var archive: Dictionary = db.get("software_archive", {})
 	_info("영구 소프트웨어: %d종" % archive.size())
+	if not archive.is_empty():
+		_info("다음 OS에 가져갈 영구 소프트웨어를 선택하세요.", ThemeD.MUTED)
+		_button("장착하지 않음", "select_archived", {"id": ""})
 	for uid in archive:
 		var record: Dictionary = Catalog.find(str(uid))
 		if not record.is_empty():
-			_info("%s Lv.%d" % [record["name"], int(archive[uid])], ThemeD.GOLD)
+			var choice: String = "  [선택됨]" if str(state.get("selected_archived_software", "")) == str(uid) else ""
+			_button("%s Lv.%d%s" % [record["name"], int(archive[uid]), choice],
+				"select_archived", {"id": str(uid)})
 
 func _render_profile() -> void:
 	_heading("프로필")
