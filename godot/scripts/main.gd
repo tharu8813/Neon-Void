@@ -217,7 +217,13 @@ func start_next_wave() -> bool:
     return true
 
 func retreat_to_hub() -> void:
-    if mode == "title" or mode == "hub":
+    if mode in ["title", "hub", "dead", "reward"] or _pending_wave or _pending_boss_receipts:
+        return
+    # The wave in progress is intentionally abandoned. Confirmed waves,
+    # infection and resources must be on disk before changing the world.
+    if not _save_hub_checkpoint():
+        _pause_gameplay()
+        ui.call("show_error", "허브 복귀 체크포인트를 저장하지 못했습니다. R로 재시도하세요.")
         return
     sim.abort_wave()
     campaign.retreat()
@@ -247,8 +253,7 @@ func _physics_process(delta: float) -> void:
         if float(actor.get("hp")) <= 0.0:
             _game_over()
         elif campaign.failed:
-            ui.call("show_error", "OS 무결성이 0이 되었습니다. 안전한 철수 처리가 필요합니다.")
-            _pause_gameplay()
+            _close_failed_run("abandoned")
     run_frames += 1
     _update_visuals()
     hud_frames += 1
@@ -416,9 +421,19 @@ func _on_interact() -> void:
 func purify() -> bool:
     if mode != "hub" or purify_uses <= 0:
         return false
+    var old_infection: float = float(campaign.infection)
+    var old_integrity: float = float(campaign.integrity)
     campaign.purify(32.0)
     campaign.repair_integrity(9.0)
     purify_uses -= 1
+    if not _save_hub_checkpoint():
+        # Never consume a purification charge if E could not commit it.
+        campaign.infection = old_infection
+        campaign.integrity = old_integrity
+        purify_uses += 1
+        _pause_gameplay()
+        ui.call("show_error", "정화 기록 저장 실패. 정화 횟수와 감염도를 되돌렸습니다.")
+        return false
     _update_hud()
     return true
 
@@ -506,10 +521,26 @@ func _resume_gameplay() -> void:
     controls.call("set_enabled", true)
 
 func _game_over() -> void:
+    _close_failed_run("dead")
+
+func _close_failed_run(status: String) -> bool:
+    if status not in ["dead", "abandoned"]:
+        return false
+    _pause_gameplay()
+    if persistence_enabled:
+        var closed: Dictionary = Progression.persist_close_run(save_slot, str(campaign.run_id), status)
+        if not closed.get("applied", false) or not _reload_save():
+            ui.call("show_error", "실패한 OS 종료 기록을 저장하지 못했습니다. 사용자 데이터를 유지하고 진행을 중단했습니다.")
+            return false
+        var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
+        if not cleared.get("applied", false) or not _reload_save():
+            ui.call("show_error", "OS 종료는 기록됐지만 체크포인트를 정리하지 못했습니다. 새 OS 배포 전에 정리가 필요합니다.")
+            return false
     sim.abort_wave()
     mode = "dead"
-    _pause_gameplay()
     ui.call("open_menu", "death")
+    _update_hud()
+    return true
 
 func _hud_snapshot() -> Dictionary:
     var state: Dictionary = sim.get_player_snapshot()
@@ -897,3 +928,19 @@ func _legacy_folder_selected(folder: String) -> void:
     _apply_runtime_settings(saved_state["settings.json"])
     _update_hud()
     ui.call("open_menu", "title")
+
+func _save_hub_checkpoint() -> bool:
+    # A side-effect-free new snapshot is validated and committed as a single
+    # E transaction before this caller mutates C's active-sector state.
+    if not persistence_enabled:
+        return true
+    if save_slot.is_empty() or not _reload_save():
+        return false
+    var existing: Variant = saved_state.get("os_checkpoint.json")
+    if existing == null or str(existing.campaign.run_id) != str(campaign.run_id):
+        return false
+    var next: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim, software,
+        "hub", hub_position, [], purify_uses, score, run_kills,
+        run_boss_kills, deployed_level, run_frames)
+    var result: Dictionary = SaveBridge.persist_checkpoint(save_slot, next, checkpoint_revision)
+    return result.get("applied", false) and _reload_save()
