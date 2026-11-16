@@ -57,17 +57,30 @@ jobs:
           $editor = Get-ChildItem -Path $target -Filter '*win64.exe' -File | Select-Object -First 1
           if (-not $editor) { throw 'Pinned Godot Windows executable not found' }
           "NEON_GODOT=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Editor import, static parse, script smoke, scene boot
+      - name: Linux editor import, script smoke and scene boot
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$NEON_GODOT" --version
+          "$NEON_GODOT" --headless --path godot --editor --import --quit
+          "$NEON_GODOT" --headless --path godot --script res://tests/port_smoke.gd
+          "$NEON_GODOT" --headless --path godot --quit-after 3
+      - name: Windows editor import, script smoke and scene boot (real exit codes)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & $env:NEON_GODOT --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --editor --import --quit
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --script res://tests/port_smoke.gd
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --quit-after 3
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = 'Stop'
+          # GUI-subsystem Godot processes do not reliably set LASTEXITCODE
+          # when invoked with '&' from PowerShell; await the process.
+          function Invoke-CheckedGodot([string]$arguments) {
+            $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $arguments -PassThru -Wait -NoNewWindow
+            if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $arguments" }
+          }
+          Invoke-CheckedGodot '--version'
+          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/port_smoke.gd'
+          Invoke-CheckedGodot '--headless --path godot --quit-after 3'
 
   windows-export:
     # Automated Windows export is required for Godot PRs.
