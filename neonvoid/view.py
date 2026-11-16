@@ -1766,7 +1766,7 @@ class VisualMixin:
         if near:
             c.coords(self.gate_prompt, 84, y + 14)
             c.itemconfigure(self.gate_prompt, state="normal",
-                            text=(f"[{self.settings.bindings['interact'].upper()}] 복귀 · "
+                            text=(f"[{self.settings.bindings['interact'].upper()}] 복귀 · " +
                                   ("정화 완료" if self.world.active_sector in self.world.sector_clean
                                    else "현재 웨이브 재시작 / 확정 보상 유지")))
         else:
