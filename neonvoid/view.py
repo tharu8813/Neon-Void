@@ -813,6 +813,7 @@ class VisualMixin:
         c.tag_raise("cfg")
         c.tag_raise("dbui")
         c.tag_raise("extractui")
+        c.tag_raise("salvageui")
         self.draw_cursor()
         c.tag_raise("cursor")
 
@@ -1064,6 +1065,60 @@ class VisualMixin:
         c.create_text(W/2, 635, text="ESC · 아직 철수하지 않기",
                       fill="#89aead", font=F_UI, tags="extractui")
         c.tag_raise("extractui")
+
+    def _draw_salvage_terminal(self):
+        c = self.c
+        c.delete("salvageui")
+        if not self.salvage_open:
+            return
+        c.create_rectangle(0, 0, W, H, fill="#010711", stipple="gray75",
+                           outline="", tags="salvageui")
+        c.create_rectangle(235, 67, W-235, H-67, fill="#10202b",
+                           outline="#e2b36f", width=2, tags="salvageui")
+        c.create_text(W/2, 112, text="OS CLEAN  ·  SOFTWARE RECOVERY",
+                      fill="#ffd89a", font=F_BIG, tags="salvageui")
+        if self.salvage_options:
+            c.create_text(W/2, 154,
+                          text="철수 가능한 소프트웨어가 없습니다. 정화 보상으로 1종 회수 가능",
+                          fill="#c5dfdf", font=F_UI, tags="salvageui")
+            c.create_text(W/2, 185,
+                          text="1회만 선택 가능 · 실제 런 장비에 추가 후 철수 대상으로 검증",
+                          fill="#9cbbc6", font=F_UI, tags="salvageui")
+            first = max(0, min(self.salvage_selected-3, len(self.salvage_options)-7))
+            end = min(len(self.salvage_options), first+7)
+            for i in range(first, end):
+                uid = self.salvage_options[i]
+                y = 235 + (i-first)*46
+                selected = i == self.salvage_selected
+                c.create_rectangle(310, y-14, W-310, y+22,
+                                   fill="#59422a" if selected else "#242b35",
+                                   outline="#edc182" if selected else "#565764",
+                                   width=2 if selected else 1, tags="salvageui")
+                c.create_text(W/2, y+3, text=UP_BY_ID[uid][1],
+                              fill="#fff4d6" if selected else "#c2cbce",
+                              font=F_UI, tags="salvageui")
+            c.create_text(W/2, 591,
+                          text=f"{self.salvage_selected+1}/{len(self.salvage_options)} · "
+                               "↑↓ 선택 · Enter 회수 및 철수 단말기 이동",
+                          fill="#ffd89a", font=F_UI, tags="salvageui")
+        else:
+            c.create_text(W/2, 285,
+                          text=("이미 이 OS에서 소프트웨어 회수 기회를 사용했습니다."
+                                if self.salvage_claimed else
+                                "영구 소프트웨어 보관 한도에 모두 도달했습니다."),
+                          fill="#ffd89a", font=F_MID, tags="salvageui")
+            c.create_text(W/2, 340,
+                          text="보관 한도 우회나 가짜 철수 보상 없이 종료할 수 있습니다.",
+                          fill="#c3d7dc", font=F_UI, tags="salvageui")
+            c.create_text(W/2, 390, text="Enter · 추가 보상 없이 OS 떠나기 (확정 XP 유지)",
+                          fill="#fff4d6", font=F_UI, tags="salvageui")
+        c.create_text(W/2, 634, text="ESC · 돌아가기",
+                      fill="#94b6c0", font=F_UI, tags="salvageui")
+        if self.database_close_error:
+            c.create_text(W/2, 667,
+                          text="종료 기록 저장 실패 · Enter로 재시도",
+                          fill="#ff8793", font=F_UI, tags="salvageui")
+        c.tag_raise("salvageui")
 
     def _animate_pause(self):
         appear = clamp(self.pause_t / 0.24, 0, 1)
