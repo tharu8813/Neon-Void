@@ -57,14 +57,35 @@ jobs:
           $editor = Get-ChildItem -Path $target -Filter '*win64.exe' -File | Select-Object -First 1
           if (-not $editor) { throw 'Pinned Godot editor missing' }
           "NEON_GODOT=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Import and run software and UI tests
+      - name: Import and execute parity smoke (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/software_smoke.gd
+          if [ -f 'godot/tests/ui_smoke.gd' ]; then
+            timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/ui_smoke.gd
+          fi
+      - name: Import and execute parity smoke (Windows, checked exit codes)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & $env:NEON_GODOT --headless --path godot --editor --import --quit
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --script res://tests/software_smoke.gd
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = 'Stop'
+          # Windows GUI-subsystem Godot can return before PowerShell '&' waits for it.
+          # Always await the real process, enforce timeout, and inspect exit code.
+          function Invoke-CheckedGodot([string]$argsText) {
+            $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $argsText -NoNewWindow -PassThru
+            try {
+              if (-not $p.WaitForExit(90000)) {
+                $p.Kill($true)
+                throw "Godot timed out: $argsText"
+              }
+              if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
+            } finally { $p.Dispose() }
+          }
+          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/software_smoke.gd'
           if (Test-Path 'godot/tests/ui_smoke.gd') {
-            & $env:NEON_GODOT --headless --path godot --script res://tests/ui_smoke.gd
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Invoke-CheckedGodot '--headless --path godot --script res://tests/ui_smoke.gd'
           }
