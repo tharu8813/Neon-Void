@@ -148,3 +148,67 @@ static func replay_campaign(state: Dictionary) -> RefCounted:
     restored.failed = restored.integrity <= 0.0
     restored.os_clean_emitted = restored.is_os_clean()
     return restored
+
+static func finalize_run(slot: String, run_id: String, status: String,
+        software_levels: Dictionary, selected_id: String,
+        score: int, kills: int, boss_kills: int, best_combo: int,
+        duration_frames: int, highest_wave: int) -> Dictionary:
+    ## Commit DB close/extraction + checkpoint removal + score + profile in
+    ## exactly ONE E Store transaction. No externally visible partial results.
+    return Store.transact(slot, func(state): return _finalize_state(
+        state, run_id, status, software_levels, selected_id, score, kills,
+        boss_kills, best_combo, duration_frames, highest_wave))
+
+static func _finalize_state(state: Dictionary, run_id: String, status: String,
+        software_levels: Dictionary, selected_id: String,
+        score: int, kills: int, boss_kills: int, best_combo: int,
+        duration_frames: int, highest_wave: int) -> Dictionary:
+    if status not in ["dead", "abandoned", "extracted"] or not Validator._id(run_id, 128):
+        return {"ok": false, "reason": "invalid_run"}
+    for value in [score, kills, boss_kills, best_combo, duration_frames, highest_wave]:
+        if value < 0 or value > 1000000000000:
+            return {"ok": false, "reason": "invalid_counters"}
+    if boss_kills > kills or highest_wave > 5:
+        return {"ok": false, "reason": "invalid_run_metrics"}
+    var cp: Variant = state.get("os_checkpoint.json")
+    if cp == null or not Validator.validate("os_checkpoint.json", cp).ok or str(cp.campaign.run_id) != run_id:
+        return {"ok": false, "reason": "missing_matching_checkpoint"}
+    var changed: Dictionary = {}
+    if status == "extracted":
+        var clean_sectors: Array = []
+        for sid in SECTOR_TO_SAVE:
+            clean_sectors.append(SECTOR_TO_SAVE[sid])
+        changed = Progression.extract_once(state, run_id, clean_sectors,
+            software_levels, selected_id)
+    else:
+        changed = Progression.close_run(state, run_id, status)
+    if not changed.get("ok", false) or not changed.get("changed", false):
+        return {"ok": false, "reason": str(changed.get("reason", "run_finalization_rejected"))}
+    var updated: Dictionary = changed.state
+    updated["os_checkpoint.json"] = null
+    var previous_score: Dictionary = updated["save.json"]
+    previous_score["best_score"] = maxi(int(previous_score["best_score"]), score)
+    previous_score["best_wave"] = maxi(int(previous_score["best_wave"]), highest_wave)
+    previous_score["runs"] = int(previous_score["runs"]) + 1
+    var profile: Dictionary = updated["profile.json"]
+    profile["total_kills"] = int(profile["total_kills"]) + kills
+    profile["boss_kills"] = int(profile["boss_kills"]) + boss_kills
+    profile["total_score"] = int(profile["total_score"]) + score
+    profile["best_combo"] = maxi(int(profile["best_combo"]), best_combo)
+    var count_key: String = "completed_runs" if status == "dead" else (
+        "abandoned_runs" if status == "abandoned" else "extracted_runs")
+    profile[count_key] = int(profile[count_key]) + 1
+    var recent: Array = profile["recent_runs"]
+    recent.insert(0, {
+        "status": status, "score": score, "wave": highest_wave,
+        "kills": kills, "boss_kills": boss_kills,
+        "best_combo": best_combo,
+        "duration_seconds": roundf(float(duration_frames) / 60.0 * 1000.0) / 1000.0,
+    })
+    while recent.size() > 20:
+        recent.pop_back()
+    if not Store.validate_state(updated):
+        return {"ok": false, "reason": "invalid_final_profile_or_score"}
+    return {"ok": true, "changed": true, "reason": "run_finalized",
+        "state": updated, "details": {"run_id": run_id,
+            "status": status, "archived_id": selected_id if status == "extracted" else ""}}
