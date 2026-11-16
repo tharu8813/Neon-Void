@@ -55,7 +55,8 @@ class VisualMixin:
         if (infection.stage >= InfectionStage.CRITICAL
                 or infection.os_integrity <= 25):
             return "위험", "#ff5872", "#ff7082", "#1d0c16"
-        if infection.needs_purification or infection.os_integrity <= 50:
+        if (infection.stage >= InfectionStage.DETECTED
+                or infection.os_integrity <= 50):
             return "주의", "#e5a34e", "#b8824f", "#1b1718"
         return "안정", "#55cba8", "#384457", "#0b1526"
 
