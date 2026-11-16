@@ -427,10 +427,12 @@ func _on_menu_action(action: String, payload: Dictionary) -> void:
                 ui.call("close_menu")
                 _resume_gameplay()
         "extract_software":
-            ui.call("show_error", "저장 이관과 영구 보상 트랜잭션 검증 전에는 철수를 잠갔습니다.")
-            _pause_gameplay()
+            extract_software(str(payload.get("id", "")))
         "resume_checkpoint":
-            ui.call("show_error", "체크포인트 복구는 저장 통합 검증 후 활성화됩니다.")
+            if not resume_checkpoint():
+                ui.call("show_error", "저장된 OS를 안전하게 복구할 수 없었습니다.")
+        "discard_checkpoint":
+            abandon_checkpoint()
         _:
             ui.call("show_error", "현재 연결되지 않은 명령: " + action)
 
@@ -474,6 +476,14 @@ func _hud_snapshot() -> Dictionary:
             boss_maxhp = float(enemy["max_hp"])
             boss_name = str(enemy["kind"])
             break
+    var database: Dictionary = saved_state.get("antivirus_db.json", {})
+    var db_xp: Dictionary = Progression.xp_progress(database) if not database.is_empty() else {}
+    var profile: Dictionary = saved_state.get("profile.json", {})
+    var settings: Dictionary = saved_state.get("settings.json", {})
+    var checkpoint: Variant = saved_state.get("os_checkpoint.json")
+    var cp_name: String = ""
+    if checkpoint != null:
+        cp_name = str(checkpoint.campaign.run_id)
     return {
         "hp": actor.get("hp"), "maxhp": actor.get("max_hp"),
         "mana": actor.get("mana"), "maxmana": actor.get("max_mana"),
@@ -489,10 +499,19 @@ func _hud_snapshot() -> Dictionary:
         "purify_uses": purify_uses,
         "os_clean": campaign.is_os_clean(),
         "sector_progress": campaign.progress.duplicate(true),
-        "settings": {"reduced_effects": false, "show_fps": true},
-        "fps": Engine.get_frames_per_second(), "show_fps": true,
+        "settings": settings if not settings.is_empty() else {"reduced_effects": false, "show_fps": true},
+        "fps": Engine.get_frames_per_second(), "show_fps": bool(settings.get("show_fps", true)),
         "score": score, "run_kills": run_kills,
-        "checkpoint_valid": false, "database": {"antivirus_level": 1, "xp": 0, "xp_to_next": 100},
+        "checkpoint_valid": checkpoint != null,
+        "checkpoint_summary": cp_name,
+        "database": {
+            "antivirus_level": int(database.get("antivirus_level", 1)),
+            "xp": int(db_xp.get("current", 0)),
+            "xp_to_next": int(db_xp.get("required", 100)),
+            "software_archive": database.get("software_archive", {}),
+            "clean_runs": database.get("processed_extractions", {}).size(),
+        },
+        "profile": profile,
         "extraction_options": software.levels.keys(),
     }
 
@@ -593,3 +612,144 @@ func _input(event: InputEvent) -> void:
             elif _pending_boss_receipts:
                 get_viewport().set_input_as_handled()
                 _present_wave_reward()
+
+func resume_checkpoint() -> bool:
+    if not persistence_enabled or save_slot.is_empty() or not _reload_save():
+        return false
+    var cp: Variant = saved_state.get("os_checkpoint.json")
+    if cp == null:
+        return false
+    if saved_state["antivirus_db.json"]["closed_runs"].has(str(cp.campaign.run_id)):
+        return false
+    var recovered: RefCounted = SaveBridge.replay_campaign(saved_state)
+    if recovered == null:
+        return false
+    var base: Dictionary = Progression.base_stats_for_level(int(cp.deployed_level))
+    if base.is_empty():
+        return false
+    var next_software: RefCounted = Software.new()
+    if not next_software.restore_levels(cp.software_levels, {
+        "maxhp": float(base["maxhp"]), "maxmana": float(base["maxmana"]),
+        "stats": {"dmg": float(base["dmg"]), "armor": float(base["armor"])}}):
+        return false
+    var finished: Array[String] = []
+    for sid in recovered.progress:
+        if int(recovered.progress[sid]) == 5:
+            finished.append(str(sid))
+    next_software.restore_boss_claims(finished)
+    var cards: Array[String] = []
+    if str(cp.scene) == "upgrade":
+        for uid in cp.pending_cards:
+            cards.append(str(uid))
+        if not next_software.set_pending_offers(cards):
+            return false
+    software = next_software
+    deployed_level = int(cp.deployed_level)
+    campaign = recovered
+    sim = Combat.new(int(campaign.seed_value))
+    sim.connect("player_hit", _on_player_hit)
+    sim.connect("enemy_died", _on_enemy_died)
+    sim.connect("wave_ready", _on_wave_ready)
+    run_kills = int(cp.run_kills)
+    run_boss_kills = int(cp.run_boss_kills)
+    run_frames = int(cp.elapsed_frames)
+    score = int(cp.score)
+    purify_uses = int(cp.purify_uses)
+    hub_position = Vector2(float(cp.hub_position[0]), float(cp.hub_position[1]))
+    actor.set("simulation_enabled", true)
+    actor.set("hp", float(cp.player.hp))
+    actor.set("mana", float(cp.player.mana))
+    _apply_stats()
+    actor.set("charges", int(cp.player.charges))
+    sim.set_player_snapshot({
+        "fire_cd": float(cp.player.fire_cd),
+        "pulse_cd": float(cp.player.pulse_cd),
+        "guard_cd": float(cp.player.guard_cd),
+        "guard": float(cp.player.guard_t),
+    })
+    _pending_wave = false
+    _pending_boss_receipts = false
+    _pending_offers.clear()
+    if str(cp.scene) == "hub":
+        mode = "hub"
+        actor.call("set_logical_position", Vector2(float(cp.player_position[0]), float(cp.player_position[1])))
+        _set_world(false)
+        _resume_gameplay()
+    elif str(cp.scene) in ["play", "upgrade"]:
+        var sector_id: String = str(cp.sector).to_upper()
+        if not campaign.enter_sector(sector_id):
+            return false
+        actor.call("set_logical_position", Vector2(float(cp.player_position[0]), float(cp.player_position[1])))
+        _set_world(true)
+        if str(cp.scene) == "upgrade":
+            _pending_offers = cards.duplicate()
+            _pending_boss_receipts = campaign.is_sector_clean(sector_id)
+            if _pending_boss_receipts:
+                var receipt_result: Dictionary = SaveBridge.persist_boss_and_sector_rewards(
+                    save_slot, str(campaign.run_id), sector_id, campaign.is_os_clean())
+                if not receipt_result.get("ok", false) or not _reload_save():
+                    _pause_gameplay()
+                    ui.call("show_error", "보스/구역 영구 보상 복구 실패. R로 재시도하세요.")
+                    return false
+                _pending_boss_receipts = false
+            mode = "reward"
+            _pause_gameplay()
+            ui.call("show_reward_cards", cards, software.levels)
+        else:
+            mode = "between"
+            _resume_gameplay()
+    else:
+        mode = "dead"
+        _pause_gameplay()
+        ui.call("open_menu", "death")
+    _update_visuals()
+    _update_hud()
+    return true
+
+func abandon_checkpoint() -> bool:
+    # Called only from the explicit 'new OS' action on the checkpoint menu.
+    if not persistence_enabled or not _reload_save():
+        return false
+    var cp: Variant = saved_state.get("os_checkpoint.json")
+    if cp == null:
+        return false
+    var run_id: String = str(cp.campaign.run_id)
+    if not saved_state["antivirus_db.json"]["closed_runs"].has(run_id):
+        var closed: Dictionary = Progression.persist_close_run(save_slot, run_id, "abandoned")
+        if not closed.get("applied", false) or not _reload_save():
+            ui.call("show_error", "기존 OS를 안전하게 종료하지 못했습니다.")
+            return false
+    var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
+    if not cleared.get("applied", false) or not _reload_save():
+        ui.call("show_error", "체크포인트 정리 실패. 저장 파일은 유지됩니다.")
+        return false
+    sim.abort_wave()
+    mode = "title"
+    actor.set("simulation_enabled", false)
+    _pause_gameplay()
+    ui.call("open_menu", "title")
+    _update_hud()
+    return true
+
+func extract_software(uid: String) -> bool:
+    if not persistence_enabled or mode != "hub" or not campaign.is_os_clean():
+        ui.call("show_error", "OS CLEAN 완료 및 안전한 영구 저장이 필요합니다.")
+        return false
+    var cleaned: Array = []
+    for sid in SaveBridge.SECTOR_TO_SAVE:
+        cleaned.append(SaveBridge.sector_to_save(str(sid)))
+    var stored: Dictionary = Progression.persist_extraction(
+        save_slot, str(campaign.run_id), cleaned, software.levels, uid)
+    if not stored.get("applied", false) or not _reload_save():
+        ui.call("show_error", "영구 소프트웨어 보존에 실패했습니다: " + str(stored.get("reason", "unknown")))
+        return false
+    var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
+    if not cleared.get("applied", false) or not _reload_save():
+        ui.call("show_error", "보존은 완료됐으나 기존 체크포인트 정리가 필요합니다. 새 배포를 중단했습니다.")
+        return false
+    mode = "title"
+    actor.set("simulation_enabled", false)
+    _pause_gameplay()
+    ui.call("open_menu", "title")
+    _update_hud()
+    return true
