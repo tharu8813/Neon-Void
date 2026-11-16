@@ -322,12 +322,12 @@ class VisualMixin:
         c.itemconfigure(self.mana_txt,
                         text=f"MANA  {p.mana:4.0f} / {p.maxmana:.0f}")
         current_armor = effective_armor(st["armor"], p.guard_t)
-        left = ("공격력   {:6.1f}\\n연사 속도 {:5.1f}/s\\n치명타   {:5.0f}%\\n"
-                "방어력   {:6.1f}\\n방어 관통 {:6.1f}\\n이동 속도 {:6.0f}").format(
+        left = ("공격력   {:6.1f}\n연사 속도 {:5.1f}/s\n치명타   {:5.0f}%\n"
+                "방어력   {:6.1f}\n방어 관통 {:6.1f}\n이동 속도 {:6.0f}").format(
                     st["dmg"], st["rate"], st["crit"] * 100,
                     current_armor, st["armor_pen"], st["speed"])
-        right = ("마나 회복 {:5.1f}/s\\n체력 재생 {:5.1f}/s\\n적중 회복 {:5.1f}\\n"
-                 "화상 확률 {:5.0f}%\\n중독 확률 {:5.0f}%\\n스킬 위력 {:5.0f}%").format(
+        right = ("마나 회복 {:5.1f}/s\n체력 재생 {:5.1f}/s\n적중 회복 {:5.1f}\n"
+                 "화상 확률 {:5.0f}%\n중독 확률 {:5.0f}%\n스킬 위력 {:5.0f}%").format(
                     st["mana_regen"], st["hp_regen"] + (1.8 if p.guard_t > 0 else 0),
                     st["life_on_hit"], st["burn_chance"] * 100,
                     st["toxin_chance"] * 100, st["skill_power"] * 100)
@@ -445,7 +445,8 @@ class VisualMixin:
                                         fill="#1d4a55", width=2, tags="scr")
         lines = [
             "설정한 이동 키 / 방향키  ·  이동",
-            "마우스  ·  조준 (자동 사격)  |  Q 충격파 / E 보호막",
+            f"마우스 · 조준  |  {self.settings.bindings['skill_pulse'].upper()} 충격파 / "
+            f"{self.settings.bindings['skill_guard'].upper()} 보호막",
             f"{self.settings.bindings['dash'].upper()} / Shift  ·  이동 방향 대시 (무적)",
             f"{self.settings.bindings['pause'].upper()}  ·  일시정지      R  ·  재시작      M  ·  음소거",
         ]
