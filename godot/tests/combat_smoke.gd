@@ -26,6 +26,13 @@ func _test() -> void:
     var doses: Array = Rules.advance_dots(dots, 1.0 / 60.0)
     check(doses.size() == 1 and is_equal_approx(float(doses[0]), 0.2), "DoT 60Hz")
 
+    var lab_scene: PackedScene = load("res://scenes/combat/combat_lab.tscn") as PackedScene
+    check(lab_scene != null, "standalone 3D combat scene imports")
+    if lab_scene != null:
+        var lab: Node = lab_scene.instantiate()
+        check(lab is Node3D, "3D combat lab root")
+        lab.free()
+
     var first = Combat.new(42)
     var repeat = Combat.new(42)
     var schedule: Array = [{"at": 0.4, "kind": "drifter"}, {"at": 0.9, "kind": "shooter"}]
