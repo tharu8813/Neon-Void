@@ -940,6 +940,19 @@ class VisualMixin:
         if self.world_notice_t > 0:
             c.create_text(W/2, H-23, text=self.world_notice,
                           fill="#ffd37c", font=F_UI, tags="hub-world")
+        if base and self.extraction_fx_t > 0:
+            growth = 1.0 - min(1.0, self.extraction_fx_t / 2.5)
+            radius = 30 + 210 * growth
+            sx, sy = px, py
+            c.create_oval(sx-radius, sy-radius, sx+radius, sy+radius,
+                          outline="#56e7bd", width=3,
+                          tags=("hub-world", "extraction-vfx"))
+            c.create_text(W/2, H/2-142, text="EXTRACTION COMPLETE",
+                          fill="#caffea", font=F_BIG,
+                          tags=("hub-world", "extraction-vfx"))
+            c.create_text(W/2, H/2-112, text="OS STATUS: CLEAN  ·  SOFTWARE ARCHIVED",
+                          fill="#79ceaf", font=F_UI,
+                          tags=("hub-world", "extraction-vfx"))
 
     def _render_sector_gate(self):
         """Sector exits require deliberate movement and interaction."""
