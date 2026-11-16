@@ -628,7 +628,13 @@ func resume_checkpoint() -> bool:
     if base.is_empty():
         return false
     var next_software: RefCounted = Software.new()
-    if not next_software.restore_levels(cp.software_levels, {
+    # JSON.parse represents integer levels as numeric floating-point variants.
+    # The E validator has already checked exact integrality and bounds;
+    # convert to concrete TYPE_INT before passing them to D's strict API.
+    var restored_levels: Dictionary = {}
+    for uid in cp.software_levels:
+        restored_levels[uid] = int(cp.software_levels[uid])
+    if not next_software.restore_levels(restored_levels, {
         "maxhp": float(base["maxhp"]), "maxmana": float(base["maxmana"]),
         "stats": {"dmg": float(base["dmg"]), "armor": float(base["armor"])}}):
         return false
