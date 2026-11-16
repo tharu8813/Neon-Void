@@ -1,9 +1,17 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/input/legacy_input.gd" id="2_input"]
+[ext_resource type="Script" path="res://scripts/camera/legacy_camera.gd" id="3_camera"]
+[ext_resource type="PackedScene" path="res://scenes/player/legacy_player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ui_shell.tscn" id="5_ui"]
+[ext_resource type="Script" path="res://visuals/projectile_batch.gd" id="6_projectiles"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
 size = Vector2(12.8, 7.2)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_hub"]
+size = Vector2(24, 15.6)
 
 [sub_resource type="StandardMaterial3D" id="Material_floor"]
 albedo_color = Color(0.035, 0.065, 0.125, 1)
@@ -23,14 +31,24 @@ roughness = 0.3
 script = ExtResource("1_main")
 
 [node name="ArenaFloor" type="MeshInstance3D" parent="."]
-position = Vector3(6.4, 0, 3.6)
+position = Vector3(6.4, -0.04, 3.6)
 mesh = SubResource("PlaneMesh_floor")
+material_override = SubResource("Material_floor")
+
+[node name="HubFloor" type="MeshInstance3D" parent="."]
+position = Vector3(12, -0.04, 7.8)
+mesh = SubResource("PlaneMesh_hub")
 material_override = SubResource("Material_floor")
 
 [node name="PlayerVisual" type="MeshInstance3D" parent="."]
 position = Vector3(6.4, 0.13, 3.6)
 mesh = SubResource("SphereMesh_player")
 material_override = SubResource("Material_player")
+
+[node name="InputController" type="Node" parent="."]
+script = ExtResource("2_input")
+
+[node name="LegacyPlayer" parent="." instance=ExtResource("4_player")]
 
 [node name="Camera3D" type="Camera3D" parent="."]
 position = Vector3(6.4, 14, 3.6)
@@ -40,6 +58,16 @@ current = true
 size = 7.2
 near = 0.05
 far = 200.0
+script = ExtResource("3_camera")
+
+[node name="GateVisuals" type="Node3D" parent="."]
+
+[node name="EnemyVisuals" type="Node3D" parent="."]
+
+[node name="ProjectileBatch" type="MultiMeshInstance3D" parent="."]
+script = ExtResource("6_projectiles")
+
+[node name="UIShell" parent="." instance=ExtResource("5_ui")]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-65, 20, -15)
