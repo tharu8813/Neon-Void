@@ -293,6 +293,7 @@ class Game(VisualMixin):
             return
         self.checkpoint_revision = payload["revision"]
         if self.database_error is not None:
+            self.checkpoint_pending = payload
             self.checkpoint_error = "백신 DB 오류 · 영구 보상 복구 전 재개 불가"
             return
         run_id = payload["campaign"]["run_id"]
@@ -305,15 +306,15 @@ class Game(VisualMixin):
         if run_id in current.closed_runs:
             # Crash between extraction/death receipt and checkpoint unlink.
             # Never resurrect a run that C already marked terminal.
-            self._clear_checkpoint()
-            self.announce_world("종료된 OS 기록 정리 완료 · 새 운영체제 배포 가능", 5)
+            if self._clear_checkpoint():
+                self.announce_world("종료된 OS 기록 정리 완료 · 새 운영체제 배포 가능", 5)
             return
         self.checkpoint_pending = payload
         self.announce_world("중단된 운영체제 발견 · 배포 단말기에서 이어하기 선택", 8)
 
     def _checkpoint_payload(self):
         if (self.campaign is None or self.world.room != "os" or
-                self.state not in ("hub", "play", "upgrade")):
+                self.state not in ("hub", "play", "upgrade", "dead")):
             return None
         p = self.p
         hub = self.state == "hub"
@@ -402,6 +403,9 @@ class Game(VisualMixin):
         self._draw_checkpoint_prompt()
 
     def _abandon_pending_checkpoint(self):
+        if self.database_error is not None:
+            self.show_message("백신 DB 손상 · 기존 OS 기록 보호를 위해 배포 취소")
+            return False
         data = self.checkpoint_pending
         if data is None:
             if self.checkpoint_error is not None:
@@ -417,13 +421,14 @@ class Game(VisualMixin):
                     self.announce_world("손상된 OS 파일을 .corrupt로 보관했습니다", 5)
             return True
         run_id = data["campaign"]["run_id"]
+        status = "dead" if data["scene"] == "dead" else "abandoned"
         try:
             if self.database_store is None:
                 updated, result = close_run_once(
-                    self.database, run_id=run_id, status="abandoned")
+                    self.database, run_id=run_id, status=status)
             else:
                 updated, result = self.database_store.close_run_once(
-                    run_id=run_id, status="abandoned")
+                    run_id=run_id, status=status)
         except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
             self.show_message(f"이전 OS 중단 기록 저장 실패: {exc}")
             return False
@@ -446,6 +451,9 @@ class Game(VisualMixin):
             self._draw_checkpoint_prompt()
         elif key in ("return", "kp_enter", "space"):
             if self.checkpoint_choice == 0 and self.checkpoint_pending is not None:
+                if self.checkpoint_pending["scene"] == "dead":
+                    self.show_message("전투에서 사망한 OS는 이어할 수 없습니다 · 새 OS 선택")
+                    return
                 if self._resume_checkpoint(self.checkpoint_pending):
                     self.checkpoint_prompt_open = False
                     self.c.delete("resumeui")
@@ -461,6 +469,9 @@ class Game(VisualMixin):
         """Rehydrate the same OS id; only unfinished enemies/waves are replayed."""
         try:
             validate_checkpoint(data)
+            if data["scene"] == "dead":
+                self.show_message("종료된 OS는 복원할 수 없습니다")
+                return False
             fresh = self.database_store.load() if self.database_store else self.database
             if data["campaign"]["run_id"] in fresh.closed_runs:
                 self.show_message("이미 종료된 OS입니다 · 새 운영체제를 배포하세요")
@@ -1447,6 +1458,9 @@ class Game(VisualMixin):
         """Start a fresh OS only after old checkpoint was explicitly discarded."""
         if self.checkpoint_pending is not None or self.checkpoint_revision is not None:
             self.show_message("진행 중인 OS가 있습니다 · 이어하기 또는 새 도전 선택")
+            return False
+        if self.database_error is not None:
+            self.show_message("백신 DB 저장 상태를 먼저 복구해야 새 OS를 배포할 수 있습니다")
             return False
         if self.database_store is not None and self.database_error is None:
             try:
@@ -2728,6 +2742,7 @@ class Game(VisualMixin):
         self.events.emit("run_ended", score=self.score, wave=self.wave,
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
+        self._persist_checkpoint()  # Durable death marker before C closes it.
         closed = self._close_database_run("dead")
         if closed:
             self._clear_checkpoint()
