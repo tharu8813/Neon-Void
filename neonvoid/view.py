@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import tkinter as tk
 from .content.enemies import E_PARAMS
-from .content.sectors import SECTORS
+from .content.sectors import SECTORS, BOSS_SIGNATURE_SOFTWARE
 from .content.virus_catalog import ENCRYPTION_PULSE_RADIUS, boss_phase
 from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID, preview_upgrade
@@ -1077,6 +1077,8 @@ class VisualMixin:
                 detail = f"왼쪽 출구에서 [{key}]로 OS 허브 복귀"
                 if self.sector_clear_heal > 0:
                     detail += f"  ·  체력 +{self.sector_clear_heal:.1f}"
+                if self.sector_clear_reward:
+                    detail += f"  ·  보스: {self.sector_clear_reward}"
             elif getattr(self, "wave_combat_help", False):
                 dash = self.settings.bindings["dash"].upper()
                 detail = f"마우스로 조준하면 자동 사격  ·  [{dash}] / Shift로 회피"
@@ -1605,8 +1607,9 @@ class VisualMixin:
                 if near.id in world.sector_clean:
                     prompt = f"[{action_key}] {near.label} · 정화 완료"
                 else:
+                    module = UP_BY_ID[BOSS_SIGNATURE_SOFTWARE[near.id.upper()][0]][1]
                     prompt = (f"[{action_key}] {near.label} · 위험 {spec.danger}/5"
-                              f"\n{spec.tactics_hint} · {spec.reward_hint} 카드 확률 ↑")
+                              f"\n{spec.tactics_hint} · 카드 {spec.reward_hint}↑ · 보스 {module}")
             elif near.id == "status":
                 if world.os_clean:
                     prompt = f"[{action_key}]  OS 철수 및 소프트웨어 보관"
