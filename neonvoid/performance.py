@@ -32,8 +32,15 @@ def resident_memory_mib() -> float | None:
 
             counters = MemoryCounters()
             counters.cb = ctypes.sizeof(MemoryCounters)
-            process = ctypes.windll.kernel32.GetCurrentProcess()
-            if ctypes.windll.psapi.GetProcessMemoryInfo(
+            kernel = ctypes.windll.kernel32
+            kernel.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi = ctypes.windll.psapi
+            psapi.GetProcessMemoryInfo.argtypes = (
+                wintypes.HANDLE, ctypes.POINTER(MemoryCounters), wintypes.DWORD
+            )
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+            process = kernel.GetCurrentProcess()
+            if psapi.GetProcessMemoryInfo(
                     process, ctypes.byref(counters), counters.cb):
                 return counters.WorkingSetSize / (1024 * 1024)
         elif sys.platform.startswith("linux"):
