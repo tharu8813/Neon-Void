@@ -64,7 +64,8 @@ func get_player_snapshot() -> Dictionary:
 func begin_wave(wave_index: int, schedule: Array, expected_boss: String = "") -> void:
     assert(wave_index >= 1)
     wave = wave_index
-    boss_kind = expected_boss
+    # Wave 5 must never auto-clear if the caller omits its boss metadata.
+    boss_kind = expected_boss if not expected_boss.is_empty() else ("__missing_boss__" if wave_index == 5 else "")
     enemies.clear()
     bullets.clear()
     enemy_bullets.clear()
