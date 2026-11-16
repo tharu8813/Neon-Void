@@ -19,6 +19,12 @@
 
 ## P2 | Expanded gameplay
 
+- [x] A1: 인월드 백신 허브, 이동형 OS 배포 및 CPU 출입 게이트, 독립 웨이브 체크포인트, 월드 카메라·충돌 (PR 최종 검증 후 확인)
+- [ ] A2: B #11의 네 구역 콘텐츠 및 감염·정화 API 연결
+- [ ] A3: C #12의 백신 DB/XP/영구 소프트웨어, OS CLEAN → 철수 → 새 OS 배포 통합
+- [ ] 백신 시스템 세계관 Epic #10, 통합 담당 #13의 전체 완료 조건 검증
+
+
 - [ ] Multiple playable stages/arenas, hazards and encounter progression (catalog is ready).
 - [ ] More enemy archetypes, bosses and attack-pattern catalogs.
 - [ ] Weapon/build variety, meta-progression and difficulty modes.

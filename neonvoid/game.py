@@ -23,6 +23,8 @@ from .render_pool import OvalPool, PolyPool, TextPool, LinePool
 from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
+from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
+                            move_on_world, camera_for)
 
 class Game(VisualMixin):
     def __init__(self, root, opts):
@@ -69,6 +71,9 @@ class Game(VisualMixin):
         )
         self.run_start_frame = 0
         self.rng = random.Random(opts.seed)
+        self.world = WorldSession()
+        self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
+        self.world_notice_t = 4.0
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
@@ -143,7 +148,7 @@ class Game(VisualMixin):
         # HUD
         self._build_hud()
 
-        self.state = "title"
+        self.state = "title" if self.auto else "hub"
         self.t = 0.0
         self.acc = 0.0
         self.last = time.perf_counter()
@@ -151,6 +156,7 @@ class Game(VisualMixin):
         self.frames = 0
 
         self.p = Player()
+        self.p.x, self.p.y = START
         self.enemies = []
         self.bullets = []
         self.ebullets = []
@@ -182,7 +188,8 @@ class Game(VisualMixin):
         self.dead_t = 0.0
         self._drone_cd = 0.0
 
-        self._build_title()
+        if self.auto:
+            self._build_title()
         self._build_cursor()
         if not self.auto:
             self.loop()
@@ -203,7 +210,7 @@ class Game(VisualMixin):
         """Show the overlay only from the title or a paused run."""
         if self.settings_open:
             return
-        if self.state != "title" and not (self.state == "play" and self.paused):
+        if self.state not in ("title", "hub") and not (self.state == "play" and self.paused):
             return
         self.settings_open = True
         self.settings_page = "general"
@@ -307,7 +314,7 @@ class Game(VisualMixin):
             self._handle_settings_key(key)
             return
 
-        if key == "o" and (self.state == "title" or
+        if key == "o" and (self.state in ("title", "hub") or
                            (self.state == "play" and self.paused)):
             self.open_settings()
             return
@@ -330,19 +337,29 @@ class Game(VisualMixin):
             return
 
         if key == self.settings.bindings["pause"] or (
-            key == "escape" and self.state == "play"):
-            if self.state == "play" and not was_held:
+            key == "escape" and self.state in ("play", "hub")):
+            if self.state in ("play", "hub") and not was_held:
                 self.paused = not self.paused
                 self.pause_t = 0.0
                 self._draw_pause()
             return
 
         if self.state == "dead":
-            if key in ("r", "return", "space"):
-                self.new_game()
-            elif key == "escape":
-                self._build_title()
-                self.state = "title"
+            if key in ("r", "return", "space", "escape"):
+                if self.auto:
+                    self.new_game()
+                else:
+                    self.return_to_base()
+            return
+
+        if self.state == "hub":
+            if self.paused:
+                return
+            if key == self.settings.bindings["interact"] and not was_held:
+                self.interact_hub()
+            elif key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
+                if not was_held:
+                    self.try_dash()
             return
 
         if self.state == "upgrade":
@@ -353,6 +370,12 @@ class Game(VisualMixin):
             return
 
         if self.state == "play" and not self.paused:
+            if key == self.settings.bindings["interact"] and not was_held:
+                if self.world.active_sector == "cpu" and (
+                    math.hypot(self.p.x - CPU_EXIT[0],
+                               self.p.y - CPU_EXIT[1]) < 112.0):
+                    self.leave_sector()
+                return
             if key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
                 if not was_held:
                     self.try_dash()
@@ -361,7 +384,10 @@ class Game(VisualMixin):
             elif key == self.settings.bindings["skill_guard"] and not was_held:
                 self.try_cast_skill("guard")
             elif key == "r" and not was_held:
-                self.new_game()
+                if self.auto:
+                    self.new_game()
+                else:
+                    self.return_to_base(abandon=True)
 
     def on_key_up(self, ev):
         self.keys.discard(ev.keysym.lower())
@@ -422,7 +448,10 @@ class Game(VisualMixin):
             else:
                 self.new_game()
         elif self.state == "dead":
-            self.new_game()
+            if self.auto:
+                self.new_game()
+            else:
+                self.return_to_base()
         elif self.state == "play" and self.paused:
             if W / 2 - 160 <= ev.x <= W / 2 + 160 and H / 2 + 85 <= ev.y <= H / 2 + 128:
                 self.open_settings()
@@ -437,7 +466,7 @@ class Game(VisualMixin):
         self.mouse_down = False
 
     # ------------------------------------------------------------------ 상태
-    def new_game(self):
+    def new_game(self, *, start_combat=True):
         self._abandon_active_run()
         self.run_start_frame = self.frames
         c = self.c
@@ -497,7 +526,136 @@ class Game(VisualMixin):
         if not self.music_started:
             self.music_started = True
             self.audio.start_music()
-        self.start_wave(1)
+        if start_combat:
+            self.start_wave(1)
+        else:
+            self.state = "hub"
+            self._show_hud(False)
+
+    # ------------------------------------------------------ 플레이 가능한 월드
+    def announce_world(self, message, duration=3.0):
+        self.world_notice = message
+        self.world_notice_t = duration
+
+    def return_to_base(self, abandon=False):
+        if abandon:
+            self._abandon_active_run()
+        self.world.reset_to_base()
+        self.keys.clear()
+        self.paused = False
+        self.p = Player()
+        self.p.x, self.p.y = START
+        self.enemies.clear()
+        self.bullets.clear()
+        self.ebullets.clear()
+        self.spawn_queue.clear()
+        self.particles.clear()
+        self.shards.clear()
+        self.chain_fx.clear()
+        self.levels.clear()
+        self.c.delete("scr")
+        self.c.delete("ovl")
+        self._show_hud(False)
+        self.state = "hub"
+        self.announce_world("백신 복구 완료 · 배포 단말기를 찾아주세요")
+        self.events.emit("returned_to_base")
+
+    def interact_hub(self):
+        node = self.world.nearest(self.p.x, self.p.y)
+        if node is None:
+            self.announce_world("가까운 터미널이나 게이트로 이동해 상호작용하세요", 1.8)
+            return
+        if self.world.room == "base":
+            if node.id == "deploy":
+                self.new_game(start_combat=False)
+                self.world.deploy()
+                self.p.x, self.p.y = START
+                self.keys.clear()
+                self.events.emit("os_deployed")
+                self.announce_world("OS에 배포되었습니다 · CPU CORE 게이트가 활성화됐습니다")
+            elif node.id == "settings":
+                self.open_settings()
+            elif node.id == "database":
+                self.announce_world(
+                    "백신 데이터베이스: 영구 XP/소프트웨어 API는 #12에서 통합 예정")
+            else:
+                self.announce_world("진단 준비 · 실전 전투는 OS 배포 후 시작할 수 있습니다")
+            return
+
+        if node.id == "cpu":
+            self.enter_sector("cpu")
+        elif node.id in SECTOR_NAMES:
+            self.announce_world(f"{SECTOR_NAMES[node.id]}: 구역 콘텐츠 연결 대기 (#11)")
+        elif node.id == "status":
+            done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
+            self.announce_world(f"OS STATUS · 정화된 구역 {done}/4 · "
+                                "모든 지역 정화 후 철수 가능")
+
+    def enter_sector(self, sector_id):
+        self.world.hub_position = (self.p.x, self.p.y)
+        wave = self.world.enter_sector(sector_id)
+        self.state = "play"
+        self.keys.clear()
+        self.p.x, self.p.y = CPU_EXIT[0] + 95, CPU_EXIT[1]
+        self.p.vx = self.p.vy = 0.0
+        self.c.delete("scr")
+        self.c.delete("ovl")
+        self._show_hud(True)
+        self.events.emit("sector_entered", sector_id=sector_id)
+        if wave <= 5 and sector_id not in self.world.sector_clean:
+            self.start_wave(wave)
+        else:
+            self.wave = 5
+            self.spawn_queue = []
+            self.enemies = []
+            self.banner = f"{SECTOR_NAMES[sector_id]} · CLEAN"
+            self.banner_t = 2.0
+            self.banner_total = self.banner_t
+
+    def leave_sector(self):
+        sector_id = self.world.leave_sector()
+        self.state = "hub"
+        self.keys.clear()
+        self.p.x, self.p.y = self.world.hub_position
+        self.p.vx = self.p.vy = 0.0
+        # Abort only the unfinished wave. Its clear rewards were never issued.
+        self.spawn_queue.clear()
+        self.enemies.clear()
+        self.bullets.clear()
+        self.ebullets.clear()
+        self.shards.clear()
+        self.chain_fx.clear()
+        self.particles.clear()
+        self.wave_done_t = 0.0
+        self.c.delete("scr")
+        self._show_hud(False)
+        self.announce_world(f"{SECTOR_NAMES[sector_id]}에서 복귀 · "
+                            f"완료한 웨이브 {self.world.sector_waves[sector_id]}/5")
+        self.events.emit("sector_exited", sector_id=sector_id,
+                         cleared_waves=self.world.sector_waves[sector_id])
+
+    def step_hub(self, dt):
+        p = self.p
+        p.dash_t = max(0.0, p.dash_t - dt)
+        p.charge_t += dt if p.charges < p.st["dash_max"] else 0.0
+        if p.charge_t >= p.dash_cd and p.charges < p.st["dash_max"]:
+            p.charge_t = 0.0
+            p.charges += 1
+        direction = movement_vector(self.keys, self.settings.bindings)
+        if direction != (0.0, 0.0):
+            p.last_move_dir = direction
+        if p.dash_t > 0:
+            p.vx, p.vy = (p.dash_dir[0] * 940.0,
+                          p.dash_dir[1] * 940.0)
+        else:
+            factor = min(1.0, 9.0 * dt)
+            p.vx += (direction[0] * p.st["speed"] - p.vx) * factor
+            p.vy += (direction[1] * p.st["speed"] - p.vy) * factor
+        p.x, p.y = move_on_world(p.x, p.y, p.vx * dt, p.vy * dt, p.r)
+        cam_x, cam_y = camera_for(p.x, p.y, W, H)
+        p.aim = math.atan2(self.my - (p.y - cam_y),
+                           self.mx - (p.x - cam_x))
+        p.inv = max(0.0, p.inv - dt)
 
     def start_wave(self, n):
         """Apply the stage director's deterministic, data-driven wave plan."""
@@ -832,6 +990,13 @@ class Game(VisualMixin):
         if self.shake < 0.15:
             self.shake = 0.0
 
+        if self.world_notice_t > 0:
+            self.world_notice_t -= dt
+        if self.state == "hub":
+            if not self.paused and not self.settings_open:
+                self.step_hub(dt)
+            self._step_fx(dts)
+            return
         if self.state == "title":
             self._step_fx(dts)
             if self.auto:
@@ -1414,20 +1579,37 @@ class Game(VisualMixin):
             c.create_text(W / 2, 356, text="★ NEW RECORD ★", fill=C_GOLD,
                           font=F_MID, tags="scr")
         self.dead_restart = c.create_text(W / 2, 420,
-                                          text="R 또는 클릭  ·  재시작",
+                                          text=("R 또는 클릭  ·  재시작" if self.auto
+                                                else "ENTER 또는 클릭 · 백신 허브 복귀"),
                                           fill=C_PLAYER, font=F_BIG, tags="scr")
-        c.create_text(W / 2, 460, text="ESC  ·  타이틀", fill=C_DIM,
+        c.create_text(W / 2, 460,
+                      text="ESC  ·  타이틀" if self.auto else
+                      "ESC  ·  백신 시스템 허브", fill=C_DIM,
                       font=F_UI, tags="scr")
 
     # ------------------------------------------------------------- 웨이브
     def check_wave(self, dt):
         if self.state != "play":
             return
+        if (self.world.active_sector is not None and
+                self.world.active_sector in self.world.sector_clean):
+            return
         if self.spawn_queue or self.enemies:
             self.wave_done_t = 0.0
             return
         self.wave_done_t += dt
         if self.wave_done_t > 0.75:
+            if self.world.active_sector == "cpu":
+                if self.world.wave_cleared("cpu", self.wave):
+                    self.events.emit("wave_cleared", sector_id="cpu",
+                                     wave_index=self.wave)
+                    if self.wave == 5:
+                        self.events.emit("sector_cleared", sector_id="cpu")
+                        self.banner = "CPU CORE · CLEAN  ·  F: RETURN"
+                        self.banner_t = 3.0
+                        self.banner_total = self.banner_t
+                        self.wave_done_t = 0.0
+                        return
             self.open_upgrade()
 
     def open_upgrade(self):

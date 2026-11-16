@@ -7,7 +7,7 @@ import unittest
 
 from neonvoid.controls import (
     ACTION_ORDER, DEFAULT_BINDINGS, movement_vector, dash_vector,
-    migrate_v2_bindings, rebind_action, validate_bindings,
+    migrate_v2_bindings, migrate_v3_bindings, rebind_action, validate_bindings,
 )
 from neonvoid.settings import SCHEMA_VERSION, Settings, load_settings, save_settings
 
@@ -19,13 +19,13 @@ class InputBindingTests(unittest.TestCase):
 
     def test_rebind_is_non_mutating_and_rejects_duplicate(self):
         old = DEFAULT_BINDINGS.copy()
-        updated = rebind_action(old, "up", "F")
+        updated = rebind_action(old, "up", "G")
         self.assertEqual(old, DEFAULT_BINDINGS)
-        self.assertEqual(updated["up"], "f")
+        self.assertEqual(updated["up"], "g")
         with self.assertRaises(ValueError):
             rebind_action(updated, "down", "a")
         with self.assertRaises(ValueError):
-            rebind_action(updated, "dash", "f")
+            rebind_action(updated, "dash", "g")
         self.assertEqual(updated["down"], "s")
 
     def test_reserved_and_unknown_keys_fail(self):
@@ -44,22 +44,23 @@ class InputBindingTests(unittest.TestCase):
         self.assertEqual(new["up"], "q")
         self.assertEqual(new["skill_pulse"], "f")
         self.assertEqual(new["skill_guard"], "e")
+        self.assertEqual(new["interact"], "g")
         with self.assertRaises(ValueError):
             validate_bindings(dict(DEFAULT_BINDINGS, dash=42))
 
     def test_movement_respects_mapping_and_permanent_arrow_alternatives(self):
-        changed = rebind_action(DEFAULT_BINDINGS, "up", "f")
-        self.assertEqual(movement_vector({"f"}, changed), (0.0, -1.0))
+        changed = rebind_action(DEFAULT_BINDINGS, "up", "g")
+        self.assertEqual(movement_vector({"g"}, changed), (0.0, -1.0))
         self.assertEqual(movement_vector({"w"}, changed), (0.0, 0.0))
         self.assertEqual(movement_vector({"up"}, changed), (0.0, -1.0))
-        diagonal = movement_vector({"left", "f"}, changed)
+        diagonal = movement_vector({"left", "g"}, changed)
         self.assertAlmostEqual(diagonal[0], -math.sqrt(0.5))
         self.assertAlmostEqual(diagonal[1], -math.sqrt(0.5))
         self.assertEqual(movement_vector({"w"}), (0.0, -1.0))
 
     def test_dash_uses_custom_direction_then_momentum(self):
-        changed = rebind_action(DEFAULT_BINDINGS, "up", "f")
-        self.assertEqual(dash_vector({"f"}, (100, 0), (1, 0), changed),
+        changed = rebind_action(DEFAULT_BINDINGS, "up", "g")
+        self.assertEqual(dash_vector({"g"}, (100, 0), (1, 0), changed),
                          (0.0, -1.0))
         self.assertEqual(dash_vector(set(), (30, 0), (0, -1), changed),
                          (1.0, 0.0))
@@ -79,12 +80,12 @@ class InputBindingTests(unittest.TestCase):
             self.assertTrue(loaded.show_fps)
             self.assertTrue(loaded.reduced_effects)
             self.assertEqual(loaded.bindings, DEFAULT_BINDINGS)
-            loaded.bindings = rebind_action(loaded.bindings, "up", "f")
+            loaded.bindings = rebind_action(loaded.bindings, "up", "g")
             self.assertTrue(save_settings(loaded, path))
             with open(path, encoding="utf-8") as stream:
                 payload = json.load(stream)
             self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
-            self.assertEqual(load_settings(path).bindings["up"], "f")
+            self.assertEqual(load_settings(path).bindings["up"], "g")
 
     def test_existing_schema_two_is_upgraded_without_losing_keybindings(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -97,8 +98,25 @@ class InputBindingTests(unittest.TestCase):
             loaded = load_settings(path)
             self.assertEqual(loaded.bindings["up"], "q")
             self.assertEqual(loaded.bindings["skill_pulse"], "f")
+            self.assertEqual(loaded.bindings["interact"], "g")
             self.assertEqual(loaded.volume, 0.3)
             self.assertTrue(loaded.muted)
+
+    def test_schema_three_custom_f_migrates_interact_without_overwrite(self):
+        old = {key: DEFAULT_BINDINGS[key] for key in ACTION_ORDER[:-1]}
+        old["up"] = "f"
+        migrated = migrate_v3_bindings(old)
+        self.assertEqual(migrated["up"], "f")
+        self.assertEqual(migrated["interact"], "g")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"schema_version": 3, "bindings": old,
+                           "volume": 0.6}, stream)
+            loaded = load_settings(path)
+            self.assertEqual(loaded.bindings, migrated)
+            self.assertTrue(save_settings(loaded, path))
+            self.assertEqual(load_settings(path).bindings, migrated)
 
     def test_invalid_version_two_controls_do_not_overwrite_old_file(self):
         with tempfile.TemporaryDirectory() as directory:

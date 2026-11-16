@@ -26,13 +26,13 @@ def main():
         assert game.settings_open
         key(game, "Tab")
         assert game.settings_page == "controls"
-        assert len(game.settings_hits) == 8
+        assert len(game.settings_hits) == 9
 
         key(game, "Return")
         assert game.rebinding_action == "up"
-        key(game, "f")
+        key(game, "g")
         assert game.rebinding_action is None
-        assert game.settings.bindings["up"] == "f"
+        assert game.settings.bindings["up"] == "g"
 
         key(game, "Down")
         assert game.settings_selected == 1
@@ -59,7 +59,7 @@ def main():
         key(game, "f")
         game.step_player(DT, DT)
         assert game.p.last_move_dir == (0.0, -1.0)
-        release(game, "q")
+        release(game, "g")
 
         key(game, "p")
         assert not game.paused
