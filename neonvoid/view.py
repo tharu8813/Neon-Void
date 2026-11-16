@@ -627,7 +627,8 @@ class VisualMixin:
         c.create_rectangle(x0, y0, x1, y1, width=2 if primary else 1,
                            outline=C_PLAYER if primary else "#31536b",
                            fill="#10313d" if primary else "#0a1826",
-                           tags=(layer, "menu-button", f"action:{key}"))
+                           tags=(layer, "menu-button", f"action:{key}",
+                                 "menu-primary" if primary else "menu-secondary"))
         c.create_text(x0 + 17, (y0 + y1) / 2, text=label, anchor="w",
                       fill=C_TEXT, font=F_HUD, tags=layer)
         c.create_text(x1 - 16, (y0 + y1) / 2, text=shortcut, anchor="e",
@@ -651,6 +652,25 @@ class VisualMixin:
             if x0 <= x <= x1 and y0 <= y <= y1:
                 return key
         return None
+
+    def _update_menu_hover(self, x, y):
+        """Keep all modal buttons visually responsive without rebuilding screens.
+
+        Only the active layer participates; hidden menus must never appear
+        interactive through an overlay. Disabled during key rebinding.
+        """
+        active = None if (getattr(self, "checkpoint_prompt_open", False)
+                          or getattr(self, "rebinding_action", None)) else self._menu_action_at(x, y)
+        for button, key in self._menu_buttons():
+            primary = "menu-primary" in self.c.gettags(button)
+            hovered = key == active
+            self.c.itemconfigure(
+                button,
+                fill=("#185064" if hovered else
+                      "#10313d" if primary else "#0a1826"),
+                outline=(C_PLAYER if hovered or primary else "#31536b"),
+                width=2 if hovered or primary else 1,
+            )
 
     def _build_title(self):
         c = self.c

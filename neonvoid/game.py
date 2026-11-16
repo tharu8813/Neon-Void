@@ -1371,6 +1371,7 @@ class Game(VisualMixin):
             self.cursor_trail = self.cursor_trail[-8:]
         self.mx, self.my = ev.x, ev.y
         self.cursor_on = True
+        self._update_menu_hover(ev.x, ev.y)
         if self.loadout_open:
             return
         if self.settings_open:
