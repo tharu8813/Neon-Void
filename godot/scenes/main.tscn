@@ -1,0 +1,47 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(12.8, 7.2)
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.035, 0.065, 0.125, 1)
+metallic = 0.15
+roughness = 0.7
+
+[sub_resource type="SphereMesh" id="SphereMesh_player"]
+radius = 0.13
+height = 0.26
+
+[sub_resource type="StandardMaterial3D" id="Material_player"]
+albedo_color = Color(0.435, 0.949, 1, 1)
+metallic = 0.2
+roughness = 0.3
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="ArenaFloor" type="MeshInstance3D" parent="."]
+position = Vector3(6.4, 0, 3.6)
+mesh = SubResource("PlaneMesh_floor")
+material_override = SubResource("Material_floor")
+
+[node name="PlayerVisual" type="MeshInstance3D" parent="."]
+position = Vector3(6.4, 0.13, 3.6)
+mesh = SubResource("SphereMesh_player")
+material_override = SubResource("Material_player")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(6.4, 14, 3.6)
+rotation_degrees = Vector3(-90, 0, 0)
+projection = 1
+current = true
+size = 7.2
+near = 0.05
+far = 200.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-65, 20, -15)
+light_energy = 1.15
+shadow_enabled = true
