@@ -28,6 +28,8 @@ def main():
         click(game, 760, 620)
         assert game.settings_open
         assert len(game.settings_hits) == 6
+        assert any("Home/End" in game.c.itemcget(item, "text")
+                   for item in game.c.find_withtag("cfg"))
         # A secondary menu button must remain a secondary button after a
         # hover and subsequent frame render, even if the cursor vanishes.
         back_button = next(item for item, action in game._menu_buttons()
