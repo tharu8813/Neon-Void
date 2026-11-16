@@ -382,7 +382,7 @@ class Game(VisualMixin):
 
         if self.state == "play" and not self.paused:
             if key == self.settings.bindings["interact"] and not was_held:
-                if self.world.active_sector == "cpu" and (
+                if self.world.active_sector in SECTOR_NAMES and (
                     math.hypot(self.p.x - CPU_EXIT[0],
                                self.p.y - CPU_EXIT[1]) < 112.0):
                     self.leave_sector()
@@ -767,7 +767,8 @@ class Game(VisualMixin):
         e.hp = e.maxhp
         e.t = 0.0
         e.state = 0
-        e.cd = rnd(1.0, 2.4) if kind == "shooter" else 0.0
+        e.cd = rnd(1.0, 2.4) if kind == "shooter" else (
+            1.6 if is_boss else 0.0)
         e.flash = 0.0
         if is_boss:
             e.x, e.y = W / 2, -80.0
