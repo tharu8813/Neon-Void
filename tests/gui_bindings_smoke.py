@@ -27,6 +27,9 @@ def main():
         key(game, "Tab")
         assert game.settings_page == "controls"
         assert len(game.settings_hits) == 9
+        assert any("Home/End" in game.c.itemcget(item, "text")
+                   for item in game.c.find_withtag("cfg")
+                   if game.c.type(item) == "text")
 
         key(game, "Return")
         assert game.rebinding_action == "up"
