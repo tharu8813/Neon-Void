@@ -548,6 +548,7 @@ class Game(VisualMixin):
 
         sector = data["sector"]
         self.state = "hub"
+        self.checkpoint_revision = data["revision"]
         self._show_hud(False)
         if sector is None:
             self.p.x, self.p.y = data["player_position"]
@@ -856,6 +857,7 @@ class Game(VisualMixin):
             # Apply an actual available game upgrade, never edit the C archive.
             apply_upgrade(self, uid)
             self.salvage_claimed = True
+            self._persist_checkpoint()
             self.salvage_open = False
             self.c.delete("salvageui")
             self.keys.clear()
@@ -1409,6 +1411,7 @@ class Game(VisualMixin):
         self.kills = 0
         self.combo = 0
         self.combo_t = 0.0
+        self.checkpoint_timer = 0.0
         self.hitstop = 0.0
         self.slow = 0.0
         self.shake = 0.0
@@ -1420,6 +1423,7 @@ class Game(VisualMixin):
         self.state = "hub"
         self.announce_world("백신 복구 완료 · 배포 단말기를 찾아주세요")
         self.events.emit("returned_to_base")
+        self._clear_checkpoint()
         return True
 
     def _deploy_new_os(self):
@@ -1504,6 +1508,7 @@ class Game(VisualMixin):
                 self.announce_world(
                     f"백신 정화 −{cleaned:.1f}% · OS 무결성 +{healed:.1f}% "
                     f"· 남은 사용 {self.purify_uses}회")
+                self._persist_checkpoint()
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
             if self.world.os_clean:
@@ -1537,6 +1542,7 @@ class Game(VisualMixin):
             self.spawn_queue = []
             self.enemies = []
             self._show_sector_clear(sector_id)
+        self._persist_checkpoint()
 
     def leave_sector(self):
         sector_id = self.world.leave_sector()
@@ -1566,6 +1572,7 @@ class Game(VisualMixin):
                             f"완료한 웨이브 {self.world.sector_waves[sector_id]}/5")
         self.events.emit("sector_exited", sector_id=sector_id,
                          cleared_waves=self.world.sector_waves[sector_id])
+        self._persist_checkpoint()
 
     def step_hub(self, dt):
         p = self.p
@@ -1619,6 +1626,7 @@ class Game(VisualMixin):
         self.screen_sweep(0.32, C_BOSS if plan.boss else C_PLAYER)
         self.events.emit("wave_started", wave=n, boss=plan.boss,
                          stage_id=plan.stage_id)
+        self._persist_checkpoint()
 
     def combo_mult(self):
         return 1.0 + min(self.combo, 40) * 0.1
@@ -1939,6 +1947,13 @@ class Game(VisualMixin):
         self.t += dt
         self.frames += 1
         self._tick_ui(dt)
+        if (self.campaign is not None and self.checkpoint_store is not None
+                and self.state in ("hub", "play", "upgrade")
+                and not self.paused):
+            self.checkpoint_timer += dt
+            if self.checkpoint_timer >= 5.0:
+                self.checkpoint_timer = 0.0
+                self._persist_checkpoint()
 
         if self.banner_t > 0:
             self.banner_t -= dt
@@ -1968,7 +1983,8 @@ class Game(VisualMixin):
             self.os_close_retry_t = max(0.0, self.os_close_retry_t - dt)
         if self.state == "hub":
             if not (self.paused or self.settings_open or self.profile_open or
-                    self.database_open or self.extraction_open or self.salvage_open):
+                    self.database_open or self.extraction_open or self.salvage_open
+                    or self.checkpoint_prompt_open):
                 self.step_hub(dt)
             self._step_fx(dts)
             return
@@ -2696,6 +2712,8 @@ class Game(VisualMixin):
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
         closed = self._close_database_run("dead")
+        if closed:
+            self._clear_checkpoint()
 
         c = self.c
         c.delete("scr")
@@ -2751,6 +2769,7 @@ class Game(VisualMixin):
                     healed = min(self.p.maxhp - self.p.hp, self.p.maxhp * 0.15)
                     self.p.hp += healed
                     self._show_sector_clear(sector, healed)
+                    self._persist_checkpoint()
                     if self.world.os_clean:
                         self.announce_world("OS CLEAN · 중앙 시스템에서 철수를 준비하세요", 4)
                     return
@@ -2765,6 +2784,7 @@ class Game(VisualMixin):
         self.audio.play("wave", 0.2)
         self.card_opts = self.roll_upgrades(3)
         self.build_upgrade_screen()
+        self._persist_checkpoint()
 
     def roll_upgrades(self, n):
         pool = []
