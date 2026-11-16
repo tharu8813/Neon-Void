@@ -70,6 +70,10 @@ def main():
         for wave in range(1, 6):
             game.spawn_queue.clear()
             game.enemies.clear()
+            if wave == 5:
+                boss = game.make_enemy(game.current_encounter.boss_kind)
+                game.damage_enemy(boss, boss.hp * 4 + 1)
+                assert game.boss_defeated
             game.check_wave(0.8)
             assert game.world.sector_waves["cpu"] == wave
             if wave < 5:
@@ -88,11 +92,16 @@ def main():
         assert game.state == "hub" and game.world.room == "os"
         game.p.x, game.p.y = 1960, 780
         game.interact_hub()
-        assert game.state == "hub"
-        assert game.world.active_sector is None
-        assert "연결 대기" in game.world_notice
+        assert game.state == "play" and game.world.active_sector == "memory"
+        assert game.wave == 1
+        assert game.current_encounter is not None
+        assert game.current_encounter.boss_kind is None
         game.render()
-        print("[gui-world] hub, settings, deploy, CPU retreat/5 waves and sealed gates passed")
+        assert game.c.find_withtag("sector-gate")
+        game.p.x, game.p.y = CPU_EXIT
+        game.leave_sector()
+        game.render()
+        print("[gui-world] hub, deploy, CPU retreat/clear, Memory gate passed")
     finally:
         root.destroy()
 

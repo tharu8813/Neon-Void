@@ -14,7 +14,7 @@ class WorldSessionTests(unittest.TestCase):
         self.assertEqual(world.room, "base")
         self.assertEqual(world.sector_waves, dict.fromkeys(SECTOR_IDS, 0))
         self.assertFalse(world.os_clean)
-        self.assertEqual(AVAILABLE_SECTORS, {"cpu"})
+        self.assertEqual(AVAILABLE_SECTORS, set(SECTOR_IDS))
         self.assertEqual(world.nearest(1580, 780).id, "deploy")
         self.assertIsNone(world.nearest(130, 170))
         self.assertEqual(world.nodes(), BASE_NODES)
@@ -42,8 +42,8 @@ class WorldSessionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             world.enter_sector("cpu")
         world.deploy()
-        with self.assertRaises(ValueError):
-            world.enter_sector("memory")
+        self.assertEqual(world.enter_sector("memory"), 1)
+        self.assertEqual(world.leave_sector(), "memory")
         self.assertEqual(world.enter_sector("cpu"), 1)
         self.assertFalse(world.wave_cleared("cpu", 2))
         self.assertFalse(world.wave_cleared("cpu", 0))

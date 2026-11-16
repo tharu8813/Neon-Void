@@ -25,6 +25,10 @@ from .storage import load_save, write_save
 from .view import VisualMixin
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
+from .content.sectors import SectorCampaign, get_sector, SECTOR_IDS as CAMPAIGN_SECTORS
+from .content.virus_catalog import (PATTERNS, VirusRuntime, MAX_LIVE_ENEMIES)
+from .infection import InfectionState
+from uuid import uuid4
 
 class Game(VisualMixin):
     def __init__(self, root, opts):
@@ -72,6 +76,13 @@ class Game(VisualMixin):
         self.run_start_frame = 0
         self.rng = random.Random(opts.seed)
         self.world = WorldSession()
+        self.campaign = None
+        self.current_encounter = None
+        self.virus_runtime = VirusRuntime()
+        self.virus_pending = []
+        self.boss_defeated = False
+        self.infection = InfectionState()
+        self.purify_uses = 3
         self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
         self.world_notice_t = 4.0
 
@@ -371,7 +382,7 @@ class Game(VisualMixin):
 
         if self.state == "play" and not self.paused:
             if key == self.settings.bindings["interact"] and not was_held:
-                if self.world.active_sector == "cpu" and (
+                if self.world.active_sector in SECTOR_NAMES and (
                     math.hypot(self.p.x - CPU_EXIT[0],
                                self.p.y - CPU_EXIT[1]) < 112.0):
                     self.leave_sector()
@@ -541,6 +552,13 @@ class Game(VisualMixin):
         if abandon:
             self._abandon_active_run()
         self.world.reset_to_base()
+        self.campaign = None
+        self.current_encounter = None
+        self.virus_runtime.reset_wave()
+        self.virus_pending.clear()
+        self.boss_defeated = False
+        self.infection.reset_for_new_os()
+        self.purify_uses = 3
         self.keys.clear()
         self.paused = False
         self.p = Player()
@@ -569,10 +587,16 @@ class Game(VisualMixin):
             if node.id == "deploy":
                 self.new_game(start_combat=False)
                 self.world.deploy()
+                run_id = uuid4().hex
+                seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
+                self.campaign = SectorCampaign(run_id, seed=seed,
+                                               events=self.events)
+                self.infection.reset_for_new_os()
+                self.purify_uses = 3
                 self.p.x, self.p.y = START
                 self.keys.clear()
                 self.events.emit("os_deployed")
-                self.announce_world("OS에 배포되었습니다 · CPU CORE 게이트가 활성화됐습니다")
+                self.announce_world("OS 배포 완료 · 네 구역의 게이트가 활성화됐습니다")
             elif node.id == "settings":
                 self.open_settings()
             elif node.id == "database":
@@ -582,18 +606,31 @@ class Game(VisualMixin):
                 self.announce_world("진단 준비 · 실전 전투는 OS 배포 후 시작할 수 있습니다")
             return
 
-        if node.id == "cpu":
-            self.enter_sector("cpu")
-        elif node.id in SECTOR_NAMES:
-            self.announce_world(f"{SECTOR_NAMES[node.id]}: 구역 콘텐츠 연결 대기 (#11)")
+        if node.id in SECTOR_NAMES:
+            self.enter_sector(node.id)
+        elif node.id == "purify":
+            if self.purify_uses <= 0:
+                self.announce_world("정화 노드 사용 횟수를 모두 소모했습니다")
+            else:
+                cleaned = self.infection.purify(32.0)
+                healed = self.infection.repair_integrity(9.0)
+                self.purify_uses -= 1
+                self.announce_world(
+                    f"백신 정화 -{cleaned:.0f}% · OS 무결성 +{healed:.0f}% "
+                    f"· 남은 사용 {self.purify_uses}회")
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
-            self.announce_world(f"OS STATUS · 정화된 구역 {done}/4 · "
-                                "모든 지역 정화 후 철수 가능")
+            self.announce_world(
+                f"OS STATUS · 정화 {done}/4 · "
+                ("CLEAN: 철수 시스템 연결 준비 중" if self.world.os_clean
+                 else "네 구역을 모두 정화하세요"))
 
     def enter_sector(self, sector_id):
         self.world.hub_position = (self.p.x, self.p.y)
         wave = self.world.enter_sector(sector_id)
+        if self.campaign is None:
+            raise ValueError("An OS campaign must be deployed before sector entry")
+        self.campaign.enter_sector(sector_id.upper())
         self.state = "play"
         self.keys.clear()
         self.p.x, self.p.y = CPU_EXIT[0] + 95, CPU_EXIT[1]
@@ -614,6 +651,12 @@ class Game(VisualMixin):
 
     def leave_sector(self):
         sector_id = self.world.leave_sector()
+        if self.campaign is not None:
+            self.campaign.leave_sector()
+        self.current_encounter = None
+        self.virus_runtime.reset_wave()
+        self.virus_pending.clear()
+        self.boss = None
         self.state = "hub"
         self.keys.clear()
         self.p.x, self.p.y = self.world.hub_position
@@ -658,8 +701,18 @@ class Game(VisualMixin):
         p.inv = max(0.0, p.inv - dt)
 
     def start_wave(self, n):
-        """Apply the stage director's deterministic, data-driven wave plan."""
-        plan = plan_wave(n, self.rng, self.stage)
+        """Run a B-defined sector plan, or legacy void in --selftest mode."""
+        if self.world.active_sector is not None and self.campaign is not None:
+            encounter = self.campaign.start_wave()
+            if encounter.wave_index != n:
+                raise ValueError("Sector wave progress diverged")
+            self.current_encounter = encounter
+            self.boss_defeated = False
+            self.virus_runtime.reset_wave()
+            self.virus_pending.clear()
+            plan = encounter.wave
+        else:
+            plan = plan_wave(n, self.rng, self.stage)
         self.wave = n
         self.spawn_queue = list(plan.spawns)
         self.wave_done_t = 0.0
@@ -700,8 +753,13 @@ class Game(VisualMixin):
         e.dmg = prm["dmg"]
         e.armor = prm["armor"] * (1.0 + 0.025 * max(0, self.wave - 1))
         e.score = prm["score"]
+        is_boss = kind == "boss" or kind in {
+            "overseer", "replicator", "encryptor", "zero_day"}
         if kind == "boss":
             e.maxhp = prm["hp"] + 380 * (self.wave // 5 - 1)
+            e.cd = 1.6
+        elif is_boss:
+            e.maxhp = prm["hp"] * (1.0 + 0.06 * (self.wave - 1))
             e.cd = 1.6
         else:
             e.maxhp = prm["hp"] * (1.0 + 0.13 * (self.wave - 1)) * scale
@@ -709,13 +767,14 @@ class Game(VisualMixin):
         e.hp = e.maxhp
         e.t = 0.0
         e.state = 0
-        e.cd = rnd(1.0, 2.4) if kind == "shooter" else 0.0
+        e.cd = rnd(1.0, 2.4) if kind == "shooter" else (
+            1.6 if is_boss else 0.0)
         e.flash = 0.0
-        if kind == "boss":
+        if is_boss:
             e.x, e.y = W / 2, -80.0
             self.boss = e
         self.enemies.append(e)
-        if kind != "boss":
+        if not is_boss:
             self.burst(e.x, e.y, 6, prm["color"], 90, 0.35, 2.2)
         return e
 
@@ -855,7 +914,8 @@ class Game(VisualMixin):
             self.shoot(p.x, p.y, p.aim + math.pi, 0.7)
         self.audio.play("shoot", 0.075)
 
-    def enemy_shoot(self, e, count=1, spread=0.16, spd=330.0, color=None):
+    def enemy_shoot(self, e, count=1, spread=0.16, spd=330.0, color=None,
+                    *, armor_pen=0.0, infection_on_hit=0.0):
         p = self.p
         base = math.atan2(p.y - e.y, p.x - e.x)
         col = color or C_EBULLET
@@ -870,10 +930,14 @@ class Game(VisualMixin):
             b.r = 4.2
             b.life = 6.0
             b.color = col
-            self.ebullets.append(b)
+            b.armor_pen = armor_pen
+            b.infection_on_hit = infection_on_hit
+            if len(self.ebullets) < 260:
+                self.ebullets.append(b)
         self.audio.play("eshoot", 0.14)
 
-    def enemy_radial(self, e, count, spd=250.0, col=None, offset=0.0):
+    def enemy_radial(self, e, count, spd=250.0, col=None, offset=0.0,
+                     *, armor_pen=0.0, infection_on_hit=0.0):
         col = col or C_BOSS
         for i in range(count):
             a = offset + TAU * i / count
@@ -886,7 +950,10 @@ class Game(VisualMixin):
             b.r = 4.6
             b.life = 7.0
             b.color = col
-            self.ebullets.append(b)
+            b.armor_pen = armor_pen
+            b.infection_on_hit = infection_on_hit
+            if len(self.ebullets) < 260:
+                self.ebullets.append(b)
         self.burst(e.x, e.y, 8, col, 140, 0.35, 2.4)
         self.audio.play("hshot", 0.2)
 
@@ -897,7 +964,8 @@ class Game(VisualMixin):
         if e.hp <= 0 or dmg <= 0:
             return 0.0
         pen = self.p.st["armor_pen"] if armor_pen is None else armor_pen
-        actual = dmg if dot else mitigate_damage(dmg, e.armor, pen)
+        armor = e.armor + (12.0 if e.guard_t > 0 else 0.0)
+        actual = dmg if dot else mitigate_damage(dmg, armor, pen)
         e.hp -= actual
         if not dot:
             e.flash = 1.0
@@ -913,7 +981,12 @@ class Game(VisualMixin):
         return actual
 
     def kill_enemy(self, e):
-        if e.kind == "boss":
+        is_boss = e.kind == "boss" or e.kind in {
+            "overseer", "replicator", "encryptor", "zero_day"}
+        if is_boss:
+            if self.current_encounter is not None and (
+                self.current_encounter.boss_kind == e.kind):
+                self.boss_defeated = True
             self.boss = None
             self.shake = 26.0
             self.hitstop = 0.16
@@ -921,7 +994,7 @@ class Game(VisualMixin):
             for i in range(6):
                 self.ring(e.x, e.y, 18, C_BOSS, 260 + i * 60, 0.7)
             self.burst(e.x, e.y, 60, C_BOSS, 420, 0.9, 3.4)
-            self.pop_text(e.x, e.y - 40, "OVERSEER DOWN", C_GOLD)
+            self.pop_text(e.x, e.y - 40, f"{e.kind.upper()} DOWN", C_GOLD)
         else:
             self.shake = max(self.shake, 5.0)
             self.hitstop = max(self.hitstop, 0.028)
@@ -957,8 +1030,10 @@ class Game(VisualMixin):
 
         if e in self.enemies:
             self.enemies.remove(e)
-        self.events.emit("enemy_killed", kind=e.kind, score=self.score,
-                         kills=self.kills, combo=self.combo)
+        if e.kind in PATTERNS:
+            self.virus_runtime.forget(str(id(e)))
+        self.events.emit("enemy_killed", kind=e.kind, boss=is_boss,
+                         score=self.score, kills=self.kills, combo=self.combo)
 
     def _enemy_color(self, e):
         if e.flash > 0.4:
@@ -1021,6 +1096,11 @@ class Game(VisualMixin):
         self.step_player(dt, dts)
         self.step_spawns(dt)
         self.step_enemies(dts)
+        if self.current_encounter is not None:
+            self.step_virus_patterns(dts)
+            self.infection.tick(
+                dts, exposure_per_second=
+                self.current_encounter.definition.exposure_per_second)
         self.step_statuses(dts)
         self.build_grid()
         self.step_bullets(dts)
@@ -1207,7 +1287,8 @@ class Game(VisualMixin):
         rest = []
         for t, kind in self.spawn_queue:
             t -= dt
-            if t <= 0 and alive < 88:
+            if t <= 0 and alive < (
+                    MAX_LIVE_ENEMIES if self.current_encounter else 88):
                 self.make_enemy(kind)
                 alive += 1
             else:
@@ -1220,8 +1301,9 @@ class Game(VisualMixin):
             if e.hp <= 0:
                 continue
             e.flash = max(0.0, e.flash - dt * 5.0)
-            if e.kind in ("shooter", "splitter"):
+            if e.kind in ("shooter", "splitter") or e.kind in PATTERNS:
                 e.t += dt
+            e.guard_t = max(0.0, e.guard_t - dt)
             dx = p.x - e.x
             dy = p.y - e.y
             d = math.hypot(dx, dy) or 1.0
@@ -1287,12 +1369,104 @@ class Game(VisualMixin):
             elif k == "boss":
                 self.update_boss(e, dt, d, ux, uy)
 
+            elif k in PATTERNS:
+                if k in {"overseer", "replicator", "encryptor", "zero_day"}:
+                    tx = W / 2 + math.cos(e.t * 0.45) * 240
+                    ty = H / 2 + math.sin(e.t * 0.7) * 130
+                    e.vx += ((tx-e.x)*0.8-e.vx) * min(1.0, 2.0*dt)
+                    e.vy += ((ty-e.y)*0.8-e.vy) * min(1.0, 2.0*dt)
+                elif k in {"trojan", "rootkit", "packet_swarm"}:
+                    move = 1 if d > 270 else (-1 if d < 180 else 0)
+                    e.vx += (ux*e.spd*move-uy*e.spd*0.4-e.vx) * min(1.0, 3.0*dt)
+                    e.vy += (uy*e.spd*move+ux*e.spd*0.4-e.vy) * min(1.0, 3.0*dt)
+                else:
+                    e.vx += (ux*e.spd-e.vx) * min(1.0, 3.5*dt)
+                    e.vy += (uy*e.spd-e.vy) * min(1.0, 3.5*dt)
+                e.ang = math.atan2(uy, ux)
+
             e.x += e.vx * dt
             e.y += e.vy * dt
 
-            if k != "boss":
+            if k not in {"boss", "overseer", "replicator",
+                         "encryptor", "zero_day"}:
                 e.x = clamp(e.x, -30, W + 30)
                 e.y = clamp(e.y, -30, H + 30)
+
+    def step_virus_patterns(self, dt):
+        """Consume bounded B-owned virus action plans into real projectiles."""
+        if dt <= 0 or self.current_encounter is None:
+            return
+        pending = []
+        for remaining, source, action in self.virus_pending:
+            if source not in self.enemies or source.hp <= 0:
+                continue
+            remaining -= dt
+            if remaining <= 0:
+                self._execute_virus_action(source, action)
+            else:
+                pending.append((remaining, source, action))
+        self.virus_pending = pending
+
+        for enemy in tuple(self.enemies):
+            if enemy.hp <= 0 or enemy.kind not in PATTERNS:
+                continue
+            actions = self.virus_runtime.step(
+                str(id(enemy)), enemy.kind, dt,
+                active_enemy_count=len(self.enemies),
+                hp_fraction=max(0.0, min(1.0, enemy.hp / enemy.maxhp)))
+            for action in actions:
+                if action.telegraph_seconds > 0:
+                    if len(self.virus_pending) >= 96:
+                        continue
+                    self.virus_pending.append((action.telegraph_seconds, enemy, action))
+                    self.ring(enemy.x, enemy.y, 12, self._enemy_color(enemy),
+                              160, max(0.25, action.telegraph_seconds))
+                    self.pop_text(enemy.x, enemy.y-enemy.r-16, "!", C_GOLD)
+                else:
+                    self._execute_virus_action(enemy, action)
+
+    def _execute_virus_action(self, enemy, action):
+        if enemy.hp <= 0:
+            return
+        behavior = action.behavior
+        if behavior == "replicate" and action.spawn_kind:
+            for index in range(action.count):
+                if len(self.enemies) >= MAX_LIVE_ENEMIES:
+                    break
+                offset = self.rng.uniform(-24, 24)
+                clone = self.make_enemy(action.spawn_kind,
+                                        enemy.x + offset,
+                                        enemy.y + self.rng.uniform(-24, 24))
+                clone.hp = clone.maxhp * 0.72
+            return
+        if behavior == "armor_pulse":
+            enemy.guard_t = 2.0
+            self.ring(enemy.x, enemy.y, 14, C_GOLD, 180, 0.4)
+            return
+        if behavior == "telegraphed_charge":
+            angle = math.atan2(self.p.y-enemy.y, self.p.x-enemy.x)
+            enemy.vx = math.cos(angle) * action.power * 2.5
+            enemy.vy = math.sin(angle) * action.power * 2.5
+            enemy.ang = angle
+            self.burst(enemy.x, enemy.y, 9, C_RUSH, 180, 0.32)
+            return
+        if behavior == "encryption_pulse":
+            self.ring(enemy.x, enemy.y, 20, C_BAD, 340, 0.45)
+            if math.hypot(enemy.x-self.p.x, enemy.y-self.p.y) < 185:
+                self.hurt_player(action.power, infection_amount=action.infection_on_hit)
+            return
+        if behavior in ("feint_volley", "armor_piercing_volley", "quick_volley"):
+            self.enemy_shoot(
+                enemy, min(18, max(1, action.projectile_count)), 0.15,
+                action.power, armor_pen=action.armor_pen,
+                infection_on_hit=action.infection_on_hit)
+            return
+        if behavior in ("overload_barrage", "breach_barrage"):
+            self.enemy_radial(
+                enemy, min(22, max(4, action.projectile_count)),
+                action.power, self._enemy_color(enemy), enemy.t * 0.55,
+                armor_pen=action.armor_pen,
+                infection_on_hit=action.infection_on_hit)
 
     def update_boss(self, e, dt, d, ux, uy):
         e.t += dt
@@ -1394,7 +1568,8 @@ class Game(VisualMixin):
             if p.inv <= 0:
                 if (b.x - p.x) ** 2 + (b.y - p.y) ** 2 < (b.r + p.r) ** 2:
                     b.dead = True
-                    self.hurt_player(b.dmg)
+                    self.hurt_player(b.dmg, armor_pen=b.armor_pen,
+                                     infection_amount=b.infection_on_hit)
         if self.ebullets:
             self.ebullets = [b for b in self.ebullets if not b.dead]
 
@@ -1455,7 +1630,10 @@ class Game(VisualMixin):
                     continue
                 rr = e.r + p.r
                 if (e.x - p.x) ** 2 + (e.y - p.y) ** 2 <= rr * rr:
-                    self.hurt_player(e.dmg)
+                    self.hurt_player(
+                        e.dmg, infection_amount=(
+                            PATTERNS[e.kind].infection_on_hit
+                            if e.kind in PATTERNS else 0.0))
                     if p.st["thorns"] > 0:
                         self.damage_enemy(e, p.st["thorns"], C_PLAYER,
                                           knock=(p.x - e.x, p.y - e.y))
@@ -1514,12 +1692,15 @@ class Game(VisualMixin):
                 self.damage_enemy(e, dmg, C_GOLD,
                                   knock=(dx / d * 120, dy / d * 120))
 
-    def hurt_player(self, dmg):
+    def hurt_player(self, dmg, *, armor_pen=0.0, infection_amount=0.0):
         p = self.p
         if p.inv > 0 or self.opts.god:
             return
-        actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t))
+        actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t),
+                                 armor_pen)
         p.hp -= actual
+        if getattr(self, "current_encounter", None) is not None and infection_amount > 0:
+            self.infection.apply_infection(infection_amount)
         p.inv = 0.9
         self.shake = 12.0
         self.hitstop = max(self.hitstop, 0.05)
@@ -1599,17 +1780,24 @@ class Game(VisualMixin):
             return
         self.wave_done_t += dt
         if self.wave_done_t > 0.75:
-            if self.world.active_sector == "cpu":
-                if self.world.wave_cleared("cpu", self.wave):
-                    self.events.emit("wave_cleared", sector_id="cpu",
-                                     wave_index=self.wave)
-                    if self.wave == 5:
-                        self.events.emit("sector_cleared", sector_id="cpu")
-                        self.banner = "CPU CORE · CLEAN  ·  F: RETURN"
-                        self.banner_t = 3.0
-                        self.banner_total = self.banner_t
-                        self.wave_done_t = 0.0
-                        return
+            if self.current_encounter is not None:
+                if not self.campaign.clear_wave(
+                    hostiles_remaining=0,
+                    boss_defeated=self.boss_defeated):
+                    return
+                sector = self.world.active_sector
+                self.world.wave_cleared(sector, self.wave)
+                self.infection.purify(
+                    self.current_encounter.definition.purify_on_clear)
+                self.current_encounter = None
+                if sector in self.world.sector_clean:
+                    self.banner = f"{SECTOR_NAMES[sector]} · CLEAN · F: RETURN"
+                    self.banner_t = 3.0
+                    self.banner_total = self.banner_t
+                    self.wave_done_t = 0.0
+                    if self.world.os_clean:
+                        self.announce_world("OS CLEAN · 중앙 시스템에서 철수를 준비하세요", 4)
+                    return
             self.open_upgrade()
 
     def open_upgrade(self):

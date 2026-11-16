@@ -247,6 +247,13 @@ class VisualMixin:
                                               fill=C_PLAYER, font=F_HUD)
         self.skill_guard_txt = c.create_text(W / 2 + 132, H - 55, text="",
                                               fill=C_HP, font=F_HUD)
+        self.infection_bg = c.create_rectangle(
+            W-320, 107, W-24, 153, fill="#0b1526", outline="#384457")
+        self.infection_fill = c.create_rectangle(
+            W-316, 134, W-316, 144, fill="#e8ae50", outline="")
+        self.infection_text = c.create_text(
+            W-311, 121, anchor="w", text="INFECTION  0% · OS 100%",
+            fill="#e8c997", font=F_MONO)
         self.wave_txt = c.create_text(W - 24, 26, text="WAVE 1",
                                       fill=C_TEXT, font=F_BIG, anchor="e")
         self.score_txt = c.create_text(W - 24, 58, text="0",
@@ -274,7 +281,8 @@ class VisualMixin:
                     self.stats_bg, self.stats_title, self.stats_left,
                     self.stats_right, self.stats_effect, self.skills_bg,
                     self.skill_pulse_txt, self.skill_guard_txt,
-                    self.wave_txt, self.score_txt, self.combo_txt, self.upg_txt]
+                    self.wave_txt, self.score_txt, self.combo_txt, self.upg_txt,
+                    self.infection_bg, self.infection_fill, self.infection_text]
         self.hud += self.dash_pip_bgs
         self.hud += self.dash_pips
         self.hud += [self.boss_bg, self.boss_fg, self.boss_txt]
@@ -411,6 +419,26 @@ class VisualMixin:
         else:
             c.itemconfigure(self.upg_txt, text="")
 
+        if self.world.active_sector is not None:
+            infection = self.infection
+            percentage = max(0.0, min(1.0, infection.infection / 100.0))
+            c.coords(self.infection_fill, W-316, 134,
+                     W-316 + 289*percentage, 144)
+            color = ("#ff5872" if infection.infection >= 75 else
+                     "#e5a34e" if infection.infection >= 50 else
+                     "#55cba8")
+            c.itemconfigure(self.infection_fill, fill=color)
+            c.itemconfigure(self.infection_text,
+                            text=f"INFECTION {infection.infection:.0f}%  ·  "
+                                 f"OS {infection.os_integrity:.0f}%")
+            for obj in (self.infection_bg, self.infection_fill,
+                        self.infection_text):
+                c.itemconfigure(obj, state="normal")
+        else:
+            for obj in (self.infection_bg, self.infection_fill,
+                        self.infection_text):
+                c.itemconfigure(obj, state="hidden")
+
         if self.boss is not None and self.boss.hp > 0:
             r = clamp(self.boss.hp / self.boss.maxhp, 0, 1)
             c.coords(self.boss_bg, W / 2 - 300, 84, W / 2 + 300, 96)
@@ -419,6 +447,7 @@ class VisualMixin:
             pulse = 0.75 + 0.25 * math.sin(self.ui_t * 6.0)
             c.itemconfigure(self.boss_fg,
                             fill=C_BOSS if pulse > 0.85 else "#ff8cf6")
+            c.itemconfigure(self.boss_txt, text=self.boss.kind.upper())
             for it in (self.boss_bg, self.boss_fg, self.boss_txt):
                 c.itemconfigure(it, state="normal")
         else:
@@ -619,7 +648,9 @@ class VisualMixin:
                       fill=C_TEXT, font=F_MID, tags="ovl")
         c.create_text(W / 2, H / 2 + 40, text=f"{self.settings.bindings['pause'].upper()}  ·  계속하기",
                       fill=C_DIM, font=F_UI, tags="ovl")
-        c.create_text(W / 2, H / 2 + 66, text="F  ·  시설 상호작용" if self.state == "hub" else "R  ·  재시작",
+        c.create_text(W / 2, H / 2 + 66,
+                      text="F  ·  시설 상호작용" if self.state == "hub" else
+                      "R  ·  도전 포기 후 허브 복귀",
                       fill=C_DIM, font=F_UI, tags="ovl")
         c.create_text(W / 2, H / 2 + 108, text="O  ·  게임 설정",
                       fill=C_PLAYER, font=F_UI, tags="ovl")
@@ -854,7 +885,8 @@ class VisualMixin:
             caption = ("CLEAN" if cleaned else
                        f"WAVE {world.sector_waves[node.id]}/5" if
                        node.id in AVAILABLE_SECTORS else
-                       "SEALED" if not available else "ACTIVE TERMINAL")
+                       f"CHARGES {self.purify_uses}" if node.id == "purify" else
+                       "ACTIVE TERMINAL")
             c.create_text(sx, sy+64, text=caption,
                           fill="#779ab3" if available else "#6b6b85",
                           font=F_MONO, tags="hub-world")
@@ -873,12 +905,15 @@ class VisualMixin:
         c.create_rectangle(12, 12, 493, 75, fill="#061322",
                            outline="#284c5c", tags="hub-world")
         c.create_text(28, 29, anchor="w",
-                      text="SYSTEM HUB" if base else "OPERATING SYSTEM  /  INFECTED",
+                      text="SYSTEM HUB" if base else
+                      ("OPERATING SYSTEM  /  CLEAN" if world.os_clean else
+                       "OPERATING SYSTEM  /  INFECTED"),
                       fill="#72ecf8", font=F_MID, tags="hub-world")
         c.create_text(28, 56, anchor="w",
                       text=("백신 준비 · 배포 게이트로 이동하세요" if base else
-                            f"CPU {world.sector_waves['cpu']}/5  ·  정화된 구역 "
-                            f"{len(world.sector_clean)}/4"),
+                            f"정화 {len(world.sector_clean)}/4 · "
+                            f"감염 {self.infection.infection:.0f}% · "
+                            f"OS 무결성 {self.infection.os_integrity:.0f}%"),
                       fill="#98b8ca", font=F_UI, tags="hub-world")
 
         c.create_text(W - 17, 27, anchor="e",
@@ -901,10 +936,10 @@ class VisualMixin:
                           fill="#ffd37c", font=F_UI, tags="hub-world")
 
     def _render_sector_gate(self):
-        """The CPU exit is physically approached; it never auto-teleports."""
+        """Sector exits require deliberate movement and interaction."""
         c = self.c
         c.delete("sector-gate")
-        if self.world.active_sector != "cpu":
+        if self.world.active_sector not in SECTOR_NAMES:
             return
         x, y = CPU_EXIT
         near = math.hypot(self.p.x-x, self.p.y-y) < 112.0
@@ -913,7 +948,8 @@ class VisualMixin:
                            outline=tone, width=3, tags="sector-gate")
         c.create_line(48, y-56, 48, y+56, fill=tone, width=3,
                       tags="sector-gate")
-        c.create_text(128, y-115, text="OS HUB EXIT",
+        c.create_text(145, y-115,
+                      text=f"{SECTOR_NAMES[self.world.active_sector]} · EXIT",
                       fill=tone, font=F_HUD, tags="sector-gate")
         if near:
             c.create_text(160, y+112,
@@ -1004,7 +1040,8 @@ class VisualMixin:
                     self.pool_ring.draw(x, y, r + 10, "", outline=C_RUSH)
                 self.pool_enemy.draw(self._arrow(x, y, r * 1.5, e.ang), col)
                 self.pool_ring.draw(x, y, r * 0.35, "#ffe0c0")
-            elif e.kind == "boss":
+            elif e.kind in ("boss", "overseer", "replicator",
+                             "encryptor", "zero_day"):
                 spin = e.t * 0.9
                 self.pool_ring.draw(x, y, r + 14, "", outline=C_BOSS)
                 self.pool_ring.draw(x, y, r + 6, "", outline="#7d2f78")
@@ -1012,6 +1049,15 @@ class VisualMixin:
                 self.pool_enemy.draw(self._poly(6, x, y, r * 0.62, -spin * 1.6),
                                      "#5c1058")
                 self.pool_ring.draw(x, y, r * 0.3, "#ffe6ff")
+            elif e.kind in ("overheater", "worm", "trojan", "ransomware",
+                            "rootkit", "packet_swarm", "guardian"):
+                sides = {"overheater": 3, "worm": 5, "trojan": 4,
+                         "ransomware": 6, "rootkit": 8,
+                         "packet_swarm": 3, "guardian": 7}[e.kind]
+                self.pool_enemy.draw(self._poly(sides, x, y, r, e.t*0.4), col)
+                self.pool_ring.draw(x, y, r*0.43, "", outline="#bad6e4")
+                if e.guard_t > 0:
+                    self.pool_ring.draw(x, y, r + 7, "", outline=C_GOLD)
 
         for q in self.particles:
             t = q.life / q.maxlife

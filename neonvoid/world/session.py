@@ -1,9 +1,8 @@
 """In-world hub geography and per-sector progress, independent of Tk/AI.
 
-The bootstrap slice exposes a playable antivirus base, an OS junction and a
-CPU gate. Remaining sector gates are visible but intentionally sealed until the
-parallel sector-content PR is integrated. No unimplemented zone is represented
-as cleared or playable.
+All four sector gates are ready for integration with the B-owned SectorCampaign.
+WorldSession owns only geometry and a small UI-facing progress mirror; A owns
+battle triggers, XP receipts and extraction.
 """
 from __future__ import annotations
 
@@ -13,7 +12,7 @@ import math
 WORLD_W = 2400.0
 WORLD_H = 1560.0
 SECTOR_IDS = ("cpu", "memory", "storage", "network")
-AVAILABLE_SECTORS = frozenset(("cpu",))
+AVAILABLE_SECTORS = frozenset(SECTOR_IDS)
 SECTOR_NAMES = {"cpu": "CPU CORE", "memory": "MEMORY SECTOR",
                 "storage": "STORAGE VAULT", "network": "NETWORK GRID"}
 START = (1200.0, 780.0)
@@ -42,6 +41,7 @@ OS_NODES = (
     Node("storage", SECTOR_NAMES["storage"], 1200, 1320, 115),
     Node("network", SECTOR_NAMES["network"], 440, 780, 115),
     Node("status", "SYSTEM STATUS", 1200, 780, 105),
+    Node("purify", "PURIFICATION STATION", 1200, 1050, 103),
 )
 
 # Some environmental pillars provide real, simple collision in the hub.
