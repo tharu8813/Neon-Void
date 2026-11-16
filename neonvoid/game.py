@@ -7,7 +7,7 @@ import random
 import time
 import traceback
 import tkinter as tk
-from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
+from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_HP, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
 from .audio import Audio
 from .content.enemies import E_PARAMS, SPAWN_COST
 from .content.stages import DEFAULT_STAGE_ID, get_stage, plan_wave
