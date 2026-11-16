@@ -30,7 +30,7 @@ from .performance import resident_memory_mib
 from .settings import DISPLAY_MODES, MIN_WIDTH, MIN_HEIGHT
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
-from .content.sectors import SectorCampaign
+from .content.sectors import SectorCampaign, sector_software_multiplier
 from .content.virus_catalog import (ENCRYPTION_PULSE_RADIUS, PATTERNS,
                                     VirusRuntime, MAX_LIVE_ENEMIES)
 from .infection import InfectionState
@@ -115,6 +115,8 @@ class Game(VisualMixin):
         self.virus_runtime = VirusRuntime()
         self.virus_pending = []
         self.boss_defeated = False
+        self.first_combat_help_shown = False
+        self.wave_combat_help = False
         self.infection = InfectionState()
         self.purify_uses = 3
         self.database_store = (None if not self.persist_progress else AntivirusDatabaseStore())
@@ -1630,6 +1632,8 @@ class Game(VisualMixin):
         for uid in starting:
             apply_upgrade(self, uid)
         self.world.deploy()
+        self.first_combat_help_shown = False
+        self.wave_combat_help = False
         run_id = uuid4().hex
         seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
         self.campaign = SectorCampaign(run_id, seed=seed, events=self.events)
@@ -1789,8 +1793,11 @@ class Game(VisualMixin):
         self.wave_done_t = 0.0
         self.banner = plan.banner
         self.banner_upgrade = installed
-        self.banner_t = (3.2 if self.world.active_sector == "cpu" and n == 1
-                         else plan.banner_seconds)
+        self.wave_combat_help = (n == 1 and self.world.active_sector in SECTOR_NAMES
+                                 and not self.first_combat_help_shown)
+        if self.wave_combat_help:
+            self.first_combat_help_shown = True
+        self.banner_t = 3.2 if self.wave_combat_help else plan.banner_seconds
         if installed:
             self.banner_t = max(2.4, self.banner_t)
         self.audio.play(plan.audio_cue, plan.audio_gap)
@@ -2966,7 +2973,9 @@ class Game(VisualMixin):
         for u in UPGRADES:
             if self.levels.get(u[0], 0) >= u[4]:
                 continue
-            pool.append((u, UP_WEIGHT[u[3]]))
+            sector = self.world.active_sector
+            pool.append((u, UP_WEIGHT[u[3]] *
+                         sector_software_multiplier(sector, u[0])))
         opts = []
         while pool and len(opts) < n:
             total = sum(w for _, w in pool)

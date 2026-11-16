@@ -39,6 +39,9 @@ class SectorDefinition:
     unlocked: bool = True
     required: bool = True
     clear_condition: str = "five_waves_and_boss"
+    tactics_hint: str = ""
+    reward_hint: str = ""
+    software_focus: tuple[str, ...] = ()
 
     @property
     def boss_kind(self) -> str:
@@ -82,6 +85,9 @@ SECTORS: dict[str, SectorDefinition] = {
         _waves(("Heat leak", "Clock surge", "Thermal throttle",
                 "Overclock cascade", "OVERSEER control core"),
                danger=2, exposure=0.30, purge=7.0),
+        tactics_hint="빠른 근접 돌격을 대시로 회피",
+        reward_hint="연사·대시",
+        software_focus=("rapid", "power", "dash2", "dashb", "cool"),
     ),
     "MEMORY": SectorDefinition(
         "MEMORY", "MEMORY SECTOR", 3, "Limited worm replication",
@@ -94,6 +100,9 @@ SECTORS: dict[str, SectorDefinition] = {
         _waves(("Memory leak", "Parasite threads", "Fork bomb",
                 "Page corruption", "REPLICATOR hive"),
                danger=3, exposure=0.45, purge=9.0),
+        tactics_hint="복제 원점부터 끊거나 광역으로 정리",
+        reward_hint="광역·연쇄",
+        software_focus=("boom", "chain", "split", "focus", "burn"),
     ),
     "STORAGE": SectorDefinition(
         "STORAGE", "STORAGE VAULT", 3, "Encryption and armored defenders",
@@ -106,6 +115,9 @@ SECTORS: dict[str, SectorDefinition] = {
         _waves(("File lock", "Integrity scan", "Vault lockdown",
                 "Encryption storm", "ENCRYPTOR keykeeper"),
                danger=3, exposure=0.40, purge=10.0),
+        tactics_hint="중장갑 적을 우회하거나 관통으로 돌파",
+        reward_hint="관통·방어",
+        software_focus=("breach", "pierce", "armor", "ricochet", "regen"),
     ),
     "NETWORK": SectorDefinition(
         "NETWORK", "NETWORK GRID", 5, "Mixed swarms, projectiles and intrusion",
@@ -119,8 +131,22 @@ SECTORS: dict[str, SectorDefinition] = {
         _waves(("Packet flood", "Man-in-the-middle", "Remote execution",
                 "Botnet convergence", "ZERO-DAY outbreak"),
                danger=4, exposure=0.65, purge=12.0),
+        tactics_hint="탄막 사이 이동하며 무리 분산",
+        reward_hint="유도·드론",
+        software_focus=("homing", "drone", "rear", "sustain", "mana"),
     ),
 }
+
+
+SECTOR_SOFTWARE_FOCUS_MULTIPLIER = 1.8
+
+
+def sector_software_multiplier(sector_id: str | None, software_id: str) -> float:
+    """Optional soft bias toward local software without guaranteeing a card."""
+    if sector_id is None:
+        return 1.0
+    return (SECTOR_SOFTWARE_FOCUS_MULTIPLIER
+            if software_id in get_sector(sector_id).software_focus else 1.0)
 
 
 def get_sector(sector_id: str) -> SectorDefinition:
