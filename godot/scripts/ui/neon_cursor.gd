@@ -6,7 +6,7 @@ var reduced_motion: bool = false
 var enemy_targeted: bool = false
 var _phase: float = 0.0
 var _tick: float = 0.0
-var _old_mouse_mode: Input.MouseMode = Input.MOUSE_MODE_VISIBLE
+var _old_mouse_mode: int = Input.MOUSE_MODE_VISIBLE
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
