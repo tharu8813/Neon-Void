@@ -913,7 +913,8 @@ class Game(VisualMixin):
             self.shoot(p.x, p.y, p.aim + math.pi, 0.7)
         self.audio.play("shoot", 0.075)
 
-    def enemy_shoot(self, e, count=1, spread=0.16, spd=330.0, color=None):
+    def enemy_shoot(self, e, count=1, spread=0.16, spd=330.0, color=None,
+                    *, armor_pen=0.0, infection_on_hit=0.0):
         p = self.p
         base = math.atan2(p.y - e.y, p.x - e.x)
         col = color or C_EBULLET
@@ -928,10 +929,14 @@ class Game(VisualMixin):
             b.r = 4.2
             b.life = 6.0
             b.color = col
-            self.ebullets.append(b)
+            b.armor_pen = armor_pen
+            b.infection_on_hit = infection_on_hit
+            if len(self.ebullets) < 260:
+                self.ebullets.append(b)
         self.audio.play("eshoot", 0.14)
 
-    def enemy_radial(self, e, count, spd=250.0, col=None, offset=0.0):
+    def enemy_radial(self, e, count, spd=250.0, col=None, offset=0.0,
+                     *, armor_pen=0.0, infection_on_hit=0.0):
         col = col or C_BOSS
         for i in range(count):
             a = offset + TAU * i / count
@@ -944,7 +949,10 @@ class Game(VisualMixin):
             b.r = 4.6
             b.life = 7.0
             b.color = col
-            self.ebullets.append(b)
+            b.armor_pen = armor_pen
+            b.infection_on_hit = infection_on_hit
+            if len(self.ebullets) < 260:
+                self.ebullets.append(b)
         self.burst(e.x, e.y, 8, col, 140, 0.35, 2.4)
         self.audio.play("hshot", 0.2)
 
@@ -955,7 +963,8 @@ class Game(VisualMixin):
         if e.hp <= 0 or dmg <= 0:
             return 0.0
         pen = self.p.st["armor_pen"] if armor_pen is None else armor_pen
-        actual = dmg if dot else mitigate_damage(dmg, e.armor, pen)
+        armor = e.armor + (12.0 if e.guard_t > 0 else 0.0)
+        actual = dmg if dot else mitigate_damage(dmg, armor, pen)
         e.hp -= actual
         if not dot:
             e.flash = 1.0
@@ -1382,6 +1391,82 @@ class Game(VisualMixin):
                 e.x = clamp(e.x, -30, W + 30)
                 e.y = clamp(e.y, -30, H + 30)
 
+    def step_virus_patterns(self, dt):
+        """Consume bounded B-owned virus action plans into real projectiles."""
+        if dt <= 0 or self.current_encounter is None:
+            return
+        pending = []
+        for remaining, source, action in self.virus_pending:
+            if source not in self.enemies or source.hp <= 0:
+                continue
+            remaining -= dt
+            if remaining <= 0:
+                self._execute_virus_action(source, action)
+            else:
+                pending.append((remaining, source, action))
+        self.virus_pending = pending
+
+        for enemy in tuple(self.enemies):
+            if enemy.hp <= 0 or enemy.kind not in PATTERNS:
+                continue
+            actions = self.virus_runtime.step(
+                str(id(enemy)), enemy.kind, dt,
+                active_enemy_count=len(self.enemies),
+                hp_fraction=max(0.0, min(1.0, enemy.hp / enemy.maxhp)))
+            for action in actions:
+                if action.telegraph_seconds > 0:
+                    if len(self.virus_pending) >= 96:
+                        continue
+                    self.virus_pending.append((action.telegraph_seconds, enemy, action))
+                    self.ring(enemy.x, enemy.y, 12, self._enemy_color(enemy),
+                              160, max(0.25, action.telegraph_seconds))
+                    self.pop_text(enemy.x, enemy.y-enemy.r-16, "!", C_GOLD)
+                else:
+                    self._execute_virus_action(enemy, action)
+
+    def _execute_virus_action(self, enemy, action):
+        if enemy.hp <= 0:
+            return
+        behavior = action.behavior
+        if behavior == "replicate" and action.spawn_kind:
+            for index in range(action.count):
+                if len(self.enemies) >= MAX_LIVE_ENEMIES:
+                    break
+                offset = self.rng.uniform(-24, 24)
+                clone = self.make_enemy(action.spawn_kind,
+                                        enemy.x + offset,
+                                        enemy.y + self.rng.uniform(-24, 24))
+                clone.hp = clone.maxhp * 0.72
+            return
+        if behavior == "armor_pulse":
+            enemy.guard_t = 2.0
+            self.ring(enemy.x, enemy.y, 14, C_GOLD, 180, 0.4)
+            return
+        if behavior == "telegraphed_charge":
+            angle = math.atan2(self.p.y-enemy.y, self.p.x-enemy.x)
+            enemy.vx = math.cos(angle) * action.power * 2.5
+            enemy.vy = math.sin(angle) * action.power * 2.5
+            enemy.ang = angle
+            self.burst(enemy.x, enemy.y, 9, C_RUSH, 180, 0.32)
+            return
+        if behavior == "encryption_pulse":
+            self.ring(enemy.x, enemy.y, 20, C_BAD, 340, 0.45)
+            if math.hypot(enemy.x-self.p.x, enemy.y-self.p.y) < 185:
+                self.hurt_player(action.power, infection_amount=action.infection_on_hit)
+            return
+        if behavior in ("feint_volley", "armor_piercing_volley", "quick_volley"):
+            self.enemy_shoot(
+                enemy, min(18, max(1, action.projectile_count)), 0.15,
+                action.power, armor_pen=action.armor_pen,
+                infection_on_hit=action.infection_on_hit)
+            return
+        if behavior in ("overload_barrage", "breach_barrage"):
+            self.enemy_radial(
+                enemy, min(22, max(4, action.projectile_count)),
+                action.power, self._enemy_color(enemy), enemy.t * 0.55,
+                armor_pen=action.armor_pen,
+                infection_on_hit=action.infection_on_hit)
+
     def update_boss(self, e, dt, d, ux, uy):
         e.t += dt
         hp_r = e.hp / e.maxhp
@@ -1482,7 +1567,8 @@ class Game(VisualMixin):
             if p.inv <= 0:
                 if (b.x - p.x) ** 2 + (b.y - p.y) ** 2 < (b.r + p.r) ** 2:
                     b.dead = True
-                    self.hurt_player(b.dmg)
+                    self.hurt_player(b.dmg, armor_pen=b.armor_pen,
+                                     infection_amount=b.infection_on_hit)
         if self.ebullets:
             self.ebullets = [b for b in self.ebullets if not b.dead]
 
@@ -1543,7 +1629,10 @@ class Game(VisualMixin):
                     continue
                 rr = e.r + p.r
                 if (e.x - p.x) ** 2 + (e.y - p.y) ** 2 <= rr * rr:
-                    self.hurt_player(e.dmg)
+                    self.hurt_player(
+                        e.dmg, infection_amount=(
+                            PATTERNS[e.kind].infection_on_hit
+                            if e.kind in PATTERNS else 0.0))
                     if p.st["thorns"] > 0:
                         self.damage_enemy(e, p.st["thorns"], C_PLAYER,
                                           knock=(p.x - e.x, p.y - e.y))
@@ -1602,12 +1691,15 @@ class Game(VisualMixin):
                 self.damage_enemy(e, dmg, C_GOLD,
                                   knock=(dx / d * 120, dy / d * 120))
 
-    def hurt_player(self, dmg):
+    def hurt_player(self, dmg, *, armor_pen=0.0, infection_amount=0.0):
         p = self.p
         if p.inv > 0 or self.opts.god:
             return
-        actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t))
+        actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t),
+                                 armor_pen)
         p.hp -= actual
+        if self.current_encounter is not None and infection_amount > 0:
+            self.infection.apply_infection(infection_amount)
         p.inv = 0.9
         self.shake = 12.0
         self.hitstop = max(self.hitstop, 0.05)
