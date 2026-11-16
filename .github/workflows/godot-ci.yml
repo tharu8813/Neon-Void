@@ -113,17 +113,20 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & $env:NEON_GODOT --version
-          if ($LASTEXITCODE -ne 0) { throw "Version failed ($LASTEXITCODE)" }
-          & $env:NEON_GODOT --headless --path godot --editor --import --quit
-          if ($LASTEXITCODE -ne 0) { throw "Import failed ($LASTEXITCODE)" }
+          # Godot's standard Windows executable is GUI-subsystem, so PowerShell
+          # does NOT reliably await it via '&' or populate LASTEXITCODE.
+          # Start-Process -Wait yields a real process exit code.
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "Process failed with exit code $($p.ExitCode): $binary $arguments" }
+          }
+          Invoke-CheckedProcess $env:NEON_GODOT '--version'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --editor --import --quit'
           New-Item -ItemType Directory -Path 'godot/build' -Force | Out-Null
-          & $env:NEON_GODOT --headless --path godot --export-release 'Windows Desktop' 'build/NeonVoid3D.exe'
-          if ($LASTEXITCODE -ne 0) { throw "Export failed ($LASTEXITCODE)" }
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --export-release "Windows Desktop" build/NeonVoid3D.exe'
           $exe = (Resolve-Path 'godot/build/NeonVoid3D.exe').Path
           if ((Get-Item $exe).Length -le 0) { throw 'Empty Windows export' }
-          & $exe --headless --quit-after 3
-          if ($LASTEXITCODE -ne 0) { throw "Exported EXE boot failed ($LASTEXITCODE)" }
+          Invoke-CheckedProcess $exe '--headless --quit-after 3'
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
           "Windows x64 export and headless boot passed. SHA256: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - uses: actions/upload-artifact@v4
