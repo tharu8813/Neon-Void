@@ -156,7 +156,9 @@ class VirusRuntime:
                             MAX_REPLICATIONS_PER_WAVE - self.total_replications,
                             MAX_LIVE_ENEMIES - living)
                 if count <= 0:
-                    continue
+                    # Budget exhausted: drop the remaining backlog in O(1).
+                    state.elapsed %= interval
+                    break
                 state.spawned_total += count
                 self.total_replications += count
                 living += count
