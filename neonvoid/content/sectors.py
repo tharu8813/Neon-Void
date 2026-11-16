@@ -115,7 +115,7 @@ SECTORS: dict[str, SectorDefinition] = {
         _waves(("File lock", "Integrity scan", "Vault lockdown",
                 "Encryption storm", "ENCRYPTOR keykeeper"),
                danger=3, exposure=0.40, purge=10.0),
-        tactics_hint="중장갑 적을 우회하거나 관통으로 돌파",
+        tactics_hint="암호화 폭발을 피하고 노출된 약점 공략",
         reward_hint="관통·방어",
         software_focus=("breach", "pierce", "armor", "ricochet", "regen"),
     ),

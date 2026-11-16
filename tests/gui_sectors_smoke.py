@@ -98,6 +98,7 @@ def main():
                             game.p.x -= 1
                             game._execute_virus_action(boss, action)
                             hurt.assert_called_once()
+                        assert boss.vulnerable_t > 0
                         game.settings.reduced_effects = False
                     game.damage_enemy(boss, boss.hp * 4 + 1)
                     assert game.boss_defeated
