@@ -47,7 +47,7 @@ class CoreTests(unittest.TestCase):
     def test_upgrade_catalog(self):
         ids = [u[0] for u in UPGRADES]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(len(ids), 18)
+        self.assertEqual(len(ids), 30)
         for uid, name, description, rarity, maximum in UPGRADES:
             self.assertTrue(uid and name and description)
             self.assertIn(rarity, (0, 1, 2))

@@ -10,9 +10,9 @@ import os
 import tempfile
 
 from .constants import SETTINGS_FILE
-from .controls import DEFAULT_BINDINGS, validate_bindings
+from .controls import DEFAULT_BINDINGS, migrate_v2_bindings, validate_bindings
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 LOG = logging.getLogger(__name__)
 
 
@@ -29,7 +29,7 @@ def _validated(data: object) -> Settings:
     if not isinstance(data, dict):
         raise ValueError("Settings must be a JSON object")
     version = data.get("schema_version", 1)
-    if type(version) is not int or version not in (1, SCHEMA_VERSION):
+    if type(version) is not int or version not in (1, 2, SCHEMA_VERSION):
         raise ValueError(f"Unsupported settings schema: {version!r}")
     value = data.get("volume", 0.9)
     if type(value) not in (int, float) or not math.isfinite(value):
@@ -40,9 +40,13 @@ def _validated(data: object) -> Settings:
         if type(flag) is not bool:
             raise ValueError(f"Invalid settings boolean: {name}")
         flags[name] = flag
-    # Version 1 had no keybindings. Load it with the original controls.
-    bindings = DEFAULT_BINDINGS.copy() if version == 1 else validate_bindings(
-        data.get("bindings"))
+    # Preserve version-2 custom controls even if they used Q or E.
+    if version == 1:
+        bindings = DEFAULT_BINDINGS.copy()
+    elif version == 2:
+        bindings = migrate_v2_bindings(data.get("bindings"))
+    else:
+        bindings = validate_bindings(data.get("bindings"))
     return Settings(volume=max(0.0, min(1.0, float(value))),
                     bindings=bindings, **flags)
 

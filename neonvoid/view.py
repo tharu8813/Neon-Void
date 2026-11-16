@@ -7,6 +7,7 @@ import tkinter as tk
 from .content.enemies import E_PARAMS
 from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID
+from .combat import effective_armor, skill_cost
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
 class VisualMixin:
@@ -218,6 +219,32 @@ class VisualMixin:
         self.hp_fg = c.create_rectangle(24, 22, 264, 34, fill=C_HP, outline="")
         self.hp_txt = c.create_text(144, 28, text="100", fill="#04121a",
                                     font=("Consolas", 9, "bold"))
+        self.mana_bg = c.create_rectangle(24, 60, 264, 74, fill="#0b1528",
+                                          outline="#274e79")
+        self.mana_fg = c.create_rectangle(26, 62, 262, 72, fill="#528dff",
+                                          outline="")
+        self.mana_txt = c.create_text(144, 67, text="MANA 100 / 100",
+                                      fill="#eff5ff", font=F_MONO)
+        # HUD widgets are allocated once, then updated rather than recreated.
+        self.stats_bg = c.create_rectangle(19, 90, 373, 302, fill="#070f1e",
+                                            outline="#21394e", width=1)
+        self.stats_title = c.create_text(34, 105, text="LIVE STATS  /  실시간 능력치",
+                                          fill=C_PLAYER, anchor="w", font=F_HUD)
+        self.stats_left = c.create_text(34, 129, text="", anchor="nw",
+                                         fill=C_TEXT, font=("Malgun Gothic", 10),
+                                         justify="left")
+        self.stats_right = c.create_text(194, 129, text="", anchor="nw",
+                                          fill="#a4bfd7", font=("Malgun Gothic", 10),
+                                          justify="left")
+        self.stats_effect = c.create_text(34, 284, text="", fill=C_GOLD,
+                                           anchor="w", font=F_MONO)
+        self.skills_bg = c.create_rectangle(W / 2 - 275, H - 86,
+                                             W / 2 + 275, H - 24,
+                                             fill="#07121e", outline="#28455b")
+        self.skill_pulse_txt = c.create_text(W / 2 - 132, H - 55, text="",
+                                              fill=C_PLAYER, font=F_HUD)
+        self.skill_guard_txt = c.create_text(W / 2 + 132, H - 55, text="",
+                                              fill=C_HP, font=F_HUD)
         self.wave_txt = c.create_text(W - 24, 26, text="WAVE 1",
                                       fill=C_TEXT, font=F_BIG, anchor="e")
         self.score_txt = c.create_text(W - 24, 58, text="0",
@@ -241,6 +268,10 @@ class VisualMixin:
         self.boss_txt = c.create_text(W / 2, 62, text="OVERSEER", fill=C_BOSS,
                                       font=F_MID, anchor="center")
         self.hud = [self.hp_bg, self.hp_chip, self.hp_fg, self.hp_txt,
+                    self.mana_bg, self.mana_fg, self.mana_txt,
+                    self.stats_bg, self.stats_title, self.stats_left,
+                    self.stats_right, self.stats_effect, self.skills_bg,
+                    self.skill_pulse_txt, self.skill_guard_txt,
                     self.wave_txt, self.score_txt, self.combo_txt, self.upg_txt]
         self.hud += self.dash_pip_bgs
         self.hud += self.dash_pips
@@ -283,6 +314,42 @@ class VisualMixin:
             col = C_BAD if math.sin(self.ui_t * 9.0) > -0.2 else "#ff9bb0"
         c.itemconfigure(self.hp_fg, fill=col)
         c.itemconfigure(self.hp_txt, text=f"{int(p.hp)} / {int(p.maxhp)}")
+        st = p.st
+        mana_ratio = clamp(p.mana / max(1.0, p.maxmana), 0, 1)
+        c.coords(self.mana_fg, 26, 62, 26 + 236 * mana_ratio, 72)
+        c.itemconfigure(self.mana_fg, fill="#88b0ff" if mana_ratio > 0.25
+                        else "#8c638e")
+        c.itemconfigure(self.mana_txt,
+                        text=f"MANA  {p.mana:4.0f} / {p.maxmana:.0f}")
+        current_armor = effective_armor(st["armor"], p.guard_t)
+        left = ("공격력   {:6.1f}\n연사 속도 {:5.1f}/s\n치명타   {:5.0f}%\n"
+                "방어력   {:6.1f}\n방어 관통 {:6.1f}\n이동 속도 {:6.0f}").format(
+                    st["dmg"], st["rate"], st["crit"] * 100,
+                    current_armor, st["armor_pen"], st["speed"])
+        right = ("마나 회복 {:5.1f}/s\n체력 재생 {:5.1f}/s\n적중 회복 {:5.1f}\n"
+                 "화상 확률 {:5.0f}%\n중독 확률 {:5.0f}%\n스킬 위력 {:5.0f}%").format(
+                    st["mana_regen"], st["hp_regen"] + (1.8 if p.guard_t > 0 else 0),
+                    st["life_on_hit"], st["burn_chance"] * 100,
+                    st["toxin_chance"] * 100, st["skill_power"] * 100)
+        c.itemconfigure(self.stats_left, text=left)
+        c.itemconfigure(self.stats_right, text=right)
+        effect = f"방어막 {p.guard_t:.1f}s" if p.guard_t > 0 else "상시 효과 활성"
+        c.itemconfigure(self.stats_effect,
+                        text=f"{effect}  ·  지속 {st['effect_duration'] * 100:.0f}%")
+        qcost = skill_cost(35.0, st["skill_efficiency"])
+        ecost = skill_cost(25.0, st["skill_efficiency"])
+        qstate = f"{p.pulse_cd:.1f}s" if p.pulse_cd > 0 else (
+            "준비" if p.mana >= qcost else "마나 부족")
+        estate = f"{p.guard_cd:.1f}s" if p.guard_cd > 0 else (
+            "준비" if p.mana >= ecost else "마나 부족")
+        qkey = self.settings.bindings["skill_pulse"].upper()
+        ekey = self.settings.bindings["skill_guard"].upper()
+        c.itemconfigure(self.skill_pulse_txt,
+                        text=f"[{qkey}] 충격파  {qcost:.0f} MP  ·  {qstate}",
+                        fill=C_PLAYER if qstate == "준비" else C_DIM)
+        c.itemconfigure(self.skill_guard_txt,
+                        text=f"[{ekey}] 보호막  {ecost:.0f} MP  ·  {estate}",
+                        fill=C_HP if estate == "준비" else C_DIM)
 
         # 점수 카운트업
         d = self.score - self.score_shown
@@ -338,7 +405,7 @@ class VisualMixin:
             parts = []
             for uid, lv in sorted(self.levels.items(), key=lambda kv: -kv[1]):
                 parts.append(f"{UP_BY_ID[uid][1]} x{lv}")
-            c.itemconfigure(self.upg_txt, text=" · ".join(parts[:7]))
+            c.itemconfigure(self.upg_txt, text="소프트웨어: " + " · ".join(parts[:7]))
         else:
             c.itemconfigure(self.upg_txt, text="")
 
@@ -378,7 +445,8 @@ class VisualMixin:
                                         fill="#1d4a55", width=2, tags="scr")
         lines = [
             "설정한 이동 키 / 방향키  ·  이동",
-            "마우스  ·  조준 (자동 사격)",
+            f"마우스 · 조준  |  {self.settings.bindings['skill_pulse'].upper()} 충격파 / "
+            f"{self.settings.bindings['skill_guard'].upper()} 보호막",
             f"{self.settings.bindings['dash'].upper()} / Shift  ·  이동 방향 대시 (무적)",
             f"{self.settings.bindings['pause'].upper()}  ·  일시정지      R  ·  재시작      M  ·  음소거",
         ]
@@ -386,7 +454,7 @@ class VisualMixin:
             c.create_text(W / 2, 330 + i * 26, text=t, fill=C_TEXT,
                           font=F_UI, tags="scr")
         c.create_text(W / 2, 480,
-                      text="웨이브를 넘길 때마다 업그레이드 1장을 고르세요",
+                      text="웨이브를 넘길 때마다 소프트웨어 1장을 설치하세요",
                       fill=C_DIM, font=F_UI, tags="scr")
         best = self.save["best_score"]
         c.create_text(W / 2, 512,
@@ -448,7 +516,7 @@ class VisualMixin:
         c.create_text(W / 2, 104, text=f"WAVE {self.wave} CLEAR",
                       fill=C_HP, font=F_BIG, tags="scr")
         c.create_text(W / 2, 146,
-                      text="업그레이드 1장을 선택하세요  (1 / 2 / 3 또는 클릭)",
+                      text="소프트웨어 1장을 선택하세요  (1 / 2 / 3 또는 클릭)",
                       fill=C_DIM, font=F_UI, tags="scr")
 
         self.cards = []
@@ -492,7 +560,7 @@ class VisualMixin:
             self.card_anim.append(0.0)
             off = 58.0 + i * 24.0
             self.card_yoff.append(off)
-            tag = f"upgrade-card-{i}"
+            tag = f"software-card-{i}"
             for item in set(c.find_all()) - before:
                 c.addtag_withtag(tag, item)
             c.move(tag, 0, off)
@@ -511,7 +579,7 @@ class VisualMixin:
             offset = (58.0 + i * 24.0) * (1.0 - eased) + bob
             if hover:
                 offset -= 11.0
-            c.move(f"upgrade-card-{i}", 0, offset - self.card_yoff[i])
+            c.move(f"software-card-{i}", 0, offset - self.card_yoff[i])
             self.card_yoff[i] = offset
             c.itemconfigure(border, width=3 if hover else 2,
                             outline="#ffffff" if hover else
@@ -578,7 +646,7 @@ class VisualMixin:
                 (ACTION_LABELS[action], self.settings.bindings[action].upper())
                 for action in ACTION_ORDER
             ]
-            first_y, row_step, row_height = 206, 56, 46
+            first_y, row_step, row_height = 207, 42, 36
         else:
             prefs = self.settings
             items = [
@@ -764,6 +832,8 @@ class VisualMixin:
 
         for e in self.enemies:
             col = E_PARAMS[e.kind]["color"]
+            if e.statuses and self.frames % 12 < 6:
+                col = C_RUSH if any(s.kind == "burn" for s in e.statuses) else C_HP
             if e.flash > 0.35:
                 col = "#ffffff"
             x = e.x + ox
@@ -884,6 +954,9 @@ class VisualMixin:
             self.pool_ring.draw(x, y, 27.0 + (1 - dash_k) * 21.0,
                                 "", outline=C_PLAYER)
         self.pool_ring.draw(x, y, 25.0, "", outline=glow)
+        if p.guard_t > 0:
+            self.pool_ring.draw(x, y, 32 + math.sin(self.ui_t * 7) * 3,
+                                "", outline=C_HP)
         self.pool_ring.draw(x + ca * 7.0, y + sa * 7.0, 3.0, "#eaffff")
 
         sp = math.hypot(p.vx, p.vy)

@@ -11,7 +11,8 @@ from .constants import (W, H, rnd, C_BULLET)
 class Player:
     __slots__ = ("x", "y", "vx", "vy", "hp", "maxhp", "r", "aim",
                  "fire_cd", "dash_t", "dash_cd", "charges", "charge_t",
-                 "inv", "dash_dir", "last_move_dir", "drone_ang", "st", "recoil")
+                 "inv", "dash_dir", "last_move_dir", "drone_ang", "st", "recoil",
+                 "mana", "maxmana", "pulse_cd", "guard_cd", "guard_t")
 
     def __init__(self):
         self.x, self.y = W / 2, H / 2
@@ -30,18 +31,27 @@ class Player:
         self.last_move_dir = (0.0, -1.0)
         self.drone_ang = 0.0
         self.recoil = 0.0
+        self.mana = self.maxmana = 100.0
+        self.pulse_cd = self.guard_cd = self.guard_t = 0.0
         self.st = {
             "speed": 322.0, "rate": 5.4, "dmg": 10.0, "bspeed": 880.0,
             "pierce": 0, "split": 0, "homing": 0.0, "explode": 0.0,
             "ricochet": 0, "crit": 0.05, "lifesteal": 0.0, "thorns": 0.0,
             "dash_max": 1, "dash_blast": 0.0, "slow": 0.0, "magnet": 82.0,
             "drone": 0, "chain": 0, "rear": 0,
+            "armor": 4.0, "armor_pen": 0.0, "mana_regen": 6.0,
+            "hp_regen": 0.0, "burn_chance": 0.0, "burn_dps": 0.0,
+            "toxin_chance": 0.0, "toxin_dps": 0.0,
+            "life_on_hit": 0.0, "skill_power": 1.0,
+            "skill_cooldown": 1.0, "skill_efficiency": 1.0,
+            "effect_duration": 1.0,
         }
 
 
 class Enemy:
     __slots__ = ("kind", "x", "y", "vx", "vy", "hp", "maxhp", "r",
-                 "t", "cd", "state", "ang", "flash", "score", "spd", "dmg")
+                 "t", "cd", "state", "ang", "flash", "score", "spd", "dmg",
+                 "armor", "statuses")
 
     def __init__(self):
         self.kind = "drifter"
@@ -57,12 +67,14 @@ class Enemy:
         self.score = 10
         self.spd = 100.0
         self.dmg = 8.0
+        self.armor = 0.0
+        self.statuses = []
 
 
 class Bullet:
     __slots__ = ("x", "y", "vx", "vy", "r", "dmg", "life", "pierce",
                  "homing", "explode", "ricochet", "crit", "chain",
-                 "color", "dead", "hits", "friendly")
+                 "color", "dead", "hits", "friendly", "armor_pen")
 
     def __init__(self):
         self.x = self.y = 0.0
@@ -80,6 +92,7 @@ class Bullet:
         self.dead = False
         self.hits = []
         self.friendly = True
+        self.armor_pen = 0.0
 
 
 class Particle:

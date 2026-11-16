@@ -7,11 +7,13 @@ import random
 import time
 import traceback
 import tkinter as tk
-from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
+from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_HP, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
 from .audio import Audio
 from .content.enemies import E_PARAMS, SPAWN_COST
 from .content.stages import DEFAULT_STAGE_ID, get_stage, plan_wave
 from .content.upgrades import UPGRADES, UP_BY_ID, UP_WEIGHT, apply_upgrade
+from .combat import (add_dot, advance_dots, mitigate_damage, skill_cost,
+                     skill_cooldown, effective_armor)
 from .entities import Player, Enemy, Bullet, Particle, Shard, FText
 from .controls import (ACTION_ORDER, DEFAULT_BINDINGS, rebind_action,
                        movement_vector, dash_vector)
@@ -354,6 +356,10 @@ class Game(VisualMixin):
             if key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
                 if not was_held:
                     self.try_dash()
+            elif key == self.settings.bindings["skill_pulse"] and not was_held:
+                self.try_cast_skill("pulse")
+            elif key == self.settings.bindings["skill_guard"] and not was_held:
+                self.try_cast_skill("guard")
             elif key == "r" and not was_held:
                 self.new_game()
 
@@ -534,6 +540,7 @@ class Game(VisualMixin):
         e.r = prm["r"]
         e.spd = prm["spd"]
         e.dmg = prm["dmg"]
+        e.armor = prm["armor"] * (1.0 + 0.025 * max(0, self.wave - 1))
         e.score = prm["score"]
         if kind == "boss":
             e.maxhp = prm["hp"] + 380 * (self.wave // 5 - 1)
@@ -611,6 +618,43 @@ class Game(VisualMixin):
                                   knock=(p.dash_dir[0] * 140,
                                          p.dash_dir[1] * 140))
 
+    # --------------------------------------------------------------- 액티브 스킬
+    def try_cast_skill(self, kind):
+        """Return False without spending mana if the skill cannot be used."""
+        if self.state != "play" or self.paused:
+            return False
+        p = self.p
+        if kind == "pulse":
+            cd_attr, base_cost, base_cd = "pulse_cd", 35.0, 7.0
+        elif kind == "guard":
+            cd_attr, base_cost, base_cd = "guard_cd", 25.0, 12.0
+        else:
+            return False
+        cost = skill_cost(base_cost, p.st["skill_efficiency"])
+        if getattr(p, cd_attr) > 0 or p.mana + 1e-9 < cost:
+            return False
+        p.mana = max(0.0, p.mana - cost)
+        setattr(p, cd_attr, skill_cooldown(base_cd, p.st["skill_cooldown"]))
+        if kind == "pulse":
+            radius = 155.0
+            self.ring(p.x, p.y, 22, C_PLAYER, 400, 0.45)
+            self.burst(p.x, p.y, 22, C_PLAYER, 260, 0.38, 2.6)
+            for e in tuple(self.enemies):
+                if e.hp <= 0 or math.hypot(e.x - p.x, e.y - p.y) > radius + e.r:
+                    continue
+                self.damage_enemy(e, 22.0 * p.st["skill_power"], C_PLAYER)
+                if e.hp > 0:
+                    add_dot(e.statuses, "shock", 6.0 * p.st["skill_power"],
+                            3.0 * p.st["effect_duration"])
+            self.shake = max(self.shake, 5.0)
+        else:
+            p.guard_t = 4.0 * p.st["effect_duration"]
+            self.ring(p.x, p.y, 20, C_HP, 230, 0.5)
+            self.burst(p.x, p.y, 12, C_HP, 115, 0.3, 2.0)
+        self.audio.play("dash", 0.1)
+        self.events.emit("skill_cast", skill=kind, mana=p.mana)
+        return True
+
     # --------------------------------------------------------------- 사격
     def shoot(self, ax, ay, angle, dmg_mult=1.0, radius_mul=1.0):
         p = self.p
@@ -628,6 +672,7 @@ class Game(VisualMixin):
         b.explode = st["explode"]
         b.ricochet = int(st["ricochet"])
         b.crit = st["crit"]
+        b.armor_pen = st["armor_pen"]
         b.chain = int(st["chain"])
         b.color = C_BULLET if dmg_mult >= 1.0 else "#8fe0ff"
         self.bullets.append(b)
@@ -688,19 +733,26 @@ class Game(VisualMixin):
         self.audio.play("hshot", 0.2)
 
     # --------------------------------------------------------------- 피해
-    def damage_enemy(self, e, dmg, color=C_BULLET, knock=None, crit=False):
-        if e.hp <= 0:
-            return
-        e.hp -= dmg
-        e.flash = 1.0
+    def damage_enemy(self, e, dmg, color=C_BULLET, knock=None, crit=False,
+                     armor_pen=None, dot=False, show=True):
+        """One damage path for bullets, abilities, splash and status ticks."""
+        if e.hp <= 0 or dmg <= 0:
+            return 0.0
+        pen = self.p.st["armor_pen"] if armor_pen is None else armor_pen
+        actual = dmg if dot else mitigate_damage(dmg, e.armor, pen)
+        e.hp -= actual
+        if not dot:
+            e.flash = 1.0
         if knock:
             e.vx += knock[0]
             e.vy += knock[1]
-        self.pop_text(e.x + rnd(-6, 6), e.y - e.r - 4,
-                      f"{int(dmg)}" if not crit else f"{int(dmg)}!",
-                      C_GOLD if crit else color)
+        if show:
+            self.pop_text(e.x + rnd(-6, 6), e.y - e.r - 4,
+                          f"{int(round(actual))}" + ("!" if crit else ""),
+                          C_GOLD if crit else color)
         if e.hp <= 0:
             self.kill_enemy(e)
+        return actual
 
     def kill_enemy(self, e):
         if e.kind == "boss":
@@ -804,6 +856,7 @@ class Game(VisualMixin):
         self.step_player(dt, dts)
         self.step_spawns(dt)
         self.step_enemies(dts)
+        self.step_statuses(dts)
         self.build_grid()
         self.step_bullets(dts)
         self.step_shards(dts)
@@ -871,9 +924,29 @@ class Game(VisualMixin):
             else:
                 self.chain_fx[i] = (x1, y1, x2, y2, life)
 
+    def step_statuses(self, dt):
+        """DoT decays in game time and cannot proc itself or repeat a kill."""
+        for e in tuple(self.enemies):
+            for kind, damage in advance_dots(e.statuses, dt):
+                if e.hp <= 0:
+                    break
+                color = C_RUSH if kind == "burn" else (C_HP if kind == "toxin"
+                                                      else C_PLAYER)
+                self.damage_enemy(e, damage, color, dot=True, show=False)
+            if e.hp > 0 and e.statuses and self.frames % 18 == 0:
+                status_color = C_RUSH if any(v.kind == "burn" for v in e.statuses) else C_HP
+                self.burst(e.x, e.y, 2, status_color, 42, 0.18, 1.6)
+
     def step_player(self, dt, dts):
         p = self.p
         st = p.st
+        p.pulse_cd = max(0.0, p.pulse_cd - dt)
+        p.guard_cd = max(0.0, p.guard_cd - dt)
+        p.guard_t = max(0.0, p.guard_t - dt)
+        p.mana = min(p.maxmana, p.mana + st["mana_regen"] * dt)
+        if p.hp > 0:
+            heal_rate = st["hp_regen"] + (1.8 if p.guard_t > 0 else 0.0)
+            p.hp = min(p.maxhp, p.hp + heal_rate * dt)
 
         p.aim = math.atan2(self.my - p.y, self.mx - p.x)
 
@@ -1227,7 +1300,18 @@ class Game(VisualMixin):
         crit = self.rng.random() < b.crit
         dmg = b.dmg * (2.0 if crit else 1.0)
         self.damage_enemy(e, dmg, b.color, knock=(b.vx * 0.02, b.vy * 0.02),
-                          crit=crit)
+                          crit=crit, armor_pen=b.armor_pen)
+        # Only direct projectile hits proc on-hit effects. DoT/splash/chain cannot.
+        st = self.p.st
+        if st["life_on_hit"] > 0:
+            self.p.hp = min(self.p.maxhp, self.p.hp + st["life_on_hit"])
+        if e.hp > 0:
+            if st["burn_chance"] > 0 and self.rng.random() < st["burn_chance"]:
+                add_dot(e.statuses, "burn", st["burn_dps"],
+                        4.0 * st["effect_duration"])
+            if st["toxin_chance"] > 0 and self.rng.random() < st["toxin_chance"]:
+                add_dot(e.statuses, "toxin", st["toxin_dps"],
+                        5.0 * st["effect_duration"])
         self.audio.play("hit", 0.045)
         self.cursor_hit = 0.17
         self.shake = max(self.shake, 1.6)
@@ -1269,14 +1353,15 @@ class Game(VisualMixin):
         p = self.p
         if p.inv > 0 or self.opts.god:
             return
-        p.hp -= dmg
+        actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t))
+        p.hp -= actual
         p.inv = 0.9
         self.shake = 12.0
         self.hitstop = max(self.hitstop, 0.05)
         self.combo = 0
         self.audio.play("hurt", 0.2)
         self.burst(p.x, p.y, 16, C_BAD, 220, 0.5, 2.6)
-        self.pop_text(p.x, p.y - 30, f"-{int(dmg)}", C_BAD)
+        self.pop_text(p.x, p.y - 30, f"-{actual:.1f}", C_BAD)
         # 충격파로 주변 적을 밀어내 즉사 콤보를 방지
         for e in self.enemies:
             dx = e.x - p.x
@@ -1389,6 +1474,7 @@ class Game(VisualMixin):
         self.audio.play("pick", 0.1)
         self.screen_flash(0.17, C_PLAYER)
         self.events.emit("upgrade_picked", upgrade=u[0], wave=self.wave)
+        self.events.emit("software_picked", software=u[0], wave=self.wave)
         self.c.delete("scr")
         self.cards = []
         self.card_opts = []
@@ -1404,6 +1490,10 @@ class Game(VisualMixin):
             self.my = tgt.y + tgt.vy * 0.08
         if self.frames % 50 == 0:
             self.try_dash()
+        if self.frames % 270 == 0:
+            self.try_cast_skill("pulse")
+        if self.frames % 510 == 0:
+            self.try_cast_skill("guard")
         if self.frames % 18 == 0:
             self.keys.clear()
             if p.x < W * 0.34:
