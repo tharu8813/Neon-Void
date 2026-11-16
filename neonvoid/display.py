@@ -107,29 +107,29 @@ class ScaledCanvas(tk.Canvas):
             output["width"] = float(output["width"]) * self.viewport.scale
         return output
 
-    def _create(self, kind, coords, kw):
+    def _create_scaled(self, kind, coords, kw):
         creator = getattr(tk.Canvas, kind)
         item = creator(self, *self._map(coords), **self._draw_opts(kw))
         self._style(item, kw)
         return item
 
     def create_rectangle(self, *coords, **kw):
-        return self._create("create_rectangle", coords, kw)
+        return self._create_scaled("create_rectangle", coords, kw)
 
     def create_oval(self, *coords, **kw):
-        return self._create("create_oval", coords, kw)
+        return self._create_scaled("create_oval", coords, kw)
 
     def create_line(self, *coords, **kw):
-        return self._create("create_line", coords, kw)
+        return self._create_scaled("create_line", coords, kw)
 
     def create_arc(self, *coords, **kw):
-        return self._create("create_arc", coords, kw)
+        return self._create_scaled("create_arc", coords, kw)
 
     def create_polygon(self, *coords, **kw):
-        return self._create("create_polygon", coords, kw)
+        return self._create_scaled("create_polygon", coords, kw)
 
     def create_text(self, *coords, **kw):
-        return self._create("create_text", coords, kw)
+        return self._create_scaled("create_text", coords, kw)
 
     def coords(self, item, *newcoords):
         if newcoords:
