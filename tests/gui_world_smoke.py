@@ -70,6 +70,10 @@ def main():
         for wave in range(1, 6):
             game.spawn_queue.clear()
             game.enemies.clear()
+            if wave == 5:
+                boss = game.make_enemy(game.current_encounter.boss_kind)
+                game.damage_enemy(boss, boss.hp + 1)
+                assert game.boss_defeated
             game.check_wave(0.8)
             assert game.world.sector_waves["cpu"] == wave
             if wave < 5:
@@ -90,6 +94,10 @@ def main():
         game.interact_hub()
         assert game.state == "play" and game.world.active_sector == "memory"
         assert game.wave == 1
+        assert game.current_encounter is not None
+        assert game.current_encounter.boss_kind is None
+        game.render()
+        assert game.c.find_withtag("sector-gate")
         game.p.x, game.p.y = CPU_EXIT
         game.leave_sector()
         game.render()
