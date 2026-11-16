@@ -27,7 +27,7 @@ def main():
         assert game.state == "title"
         click(game, 760, 620)
         assert game.settings_open
-        assert len(game.settings_hits) == 4
+        assert len(game.settings_hits) == 6
         game._tick_ui(0.3)
         game.render()
         assert game.c.coords(game.settings_rule)[2] > 1000
