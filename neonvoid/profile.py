@@ -13,7 +13,7 @@ from typing import Callable
 from .constants import PROFILE_FILE
 from .events import EventBus, GameEvent
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_RECENT_RUNS = 20
 LOG = logging.getLogger(__name__)
 
@@ -48,11 +48,12 @@ class PlayerProfile:
     total_score: int = 0
     completed_runs: int = 0
     abandoned_runs: int = 0
+    extracted_runs: int = 0
     best_combo: int = 0
     recent_runs: list[RunRecord] = field(default_factory=list)
 
     def record_run(self, run: RunRecord) -> None:
-        if run.status not in ("dead", "abandoned"):
+        if run.status not in ("dead", "abandoned", "extracted"):
             raise ValueError("Unsupported run status")
         self.total_kills += run.kills
         self.boss_kills += run.boss_kills
@@ -60,8 +61,10 @@ class PlayerProfile:
         self.best_combo = max(self.best_combo, run.best_combo)
         if run.status == "dead":
             self.completed_runs += 1
-        else:
+        elif run.status == "abandoned":
             self.abandoned_runs += 1
+        else:
+            self.extracted_runs += 1
         self.recent_runs.insert(0, run)
         del self.recent_runs[MAX_RECENT_RUNS:]
 
@@ -70,7 +73,7 @@ def _parse_run(value: object) -> RunRecord:
     if not isinstance(value, dict):
         raise ValueError("Recent run must be an object")
     status = value.get("status", "dead")
-    if status not in ("dead", "abandoned"):
+    if status not in ("dead", "abandoned", "extracted"):
         raise ValueError("Unknown run status")
     keys = ("score", "wave", "kills", "boss_kills", "best_combo")
     data = {key: _nonnegative_int(value.get(key, 0), key) for key in keys}
@@ -83,10 +86,11 @@ def _parse_profile(value: object) -> PlayerProfile:
     if not isinstance(value, dict):
         raise ValueError("Profile must be a JSON object")
     version = value.get("schema_version")
-    if type(version) is not int or version != SCHEMA_VERSION:
+    if type(version) is not int or version not in (1, SCHEMA_VERSION):
         raise ValueError(f"Unsupported profile schema version: {version!r}")
     keys = ("total_kills", "boss_kills", "total_score",
-            "completed_runs", "abandoned_runs", "best_combo")
+            "completed_runs", "abandoned_runs", "best_combo",
+            "extracted_runs")
     data = {key: _nonnegative_int(value.get(key, 0), key) for key in keys}
     runs = value.get("recent_runs", [])
     if not isinstance(runs, list):
@@ -149,7 +153,8 @@ class ProfileTracker:
         self.run_kills = 0
         self.run_boss_kills = 0
         self.run_best_combo = 0
-        for name in ("run_started", "enemy_killed", "run_ended", "run_abandoned"):
+        for name in ("run_started", "enemy_killed", "run_ended",
+                     "run_abandoned", "run_extracted"):
             events.subscribe(name, self.handle)
 
     def handle(self, event: GameEvent) -> None:
@@ -160,15 +165,16 @@ class ProfileTracker:
             self.run_best_combo = 0
         elif event.name == "enemy_killed" and self.active:
             self.run_kills += 1
-            if event.payload.get("kind") == "boss":
+            if event.payload.get("kind") == "boss" or event.payload.get("boss") is True:
                 self.run_boss_kills += 1
             self.run_best_combo = max(self.run_best_combo,
                                       int(event.payload.get("combo", 0)))
-        elif event.name in ("run_ended", "run_abandoned") and self.active:
+        elif event.name in ("run_ended", "run_abandoned", "run_extracted") and self.active:
             self.active = False
             duration_frames = max(0, int(event.payload.get("duration_frames", 0)))
             record = RunRecord(
-                status="dead" if event.name == "run_ended" else "abandoned",
+                status={"run_ended": "dead", "run_abandoned": "abandoned",
+                        "run_extracted": "extracted"}[event.name],
                 score=max(0, int(event.payload.get("score", 0))),
                 wave=max(0, int(event.payload.get("wave", 0))),
                 kills=self.run_kills, boss_kills=self.run_boss_kills,

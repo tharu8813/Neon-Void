@@ -25,13 +25,13 @@ class PlayerProfileTests(unittest.TestCase):
             self.assertEqual(load_profile(path), obj)
             self.assertEqual(os.listdir(directory), ["profile.json"])
             with open(path, "r", encoding="utf-8") as stream:
-                self.assertEqual(json.load(stream)["schema_version"], 1)
+                self.assertEqual(json.load(stream)["schema_version"], 2)
 
     def test_invalid_schema_and_corrupt_file_use_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "profile.json")
             for payload in (
-                {"schema_version": 2},
+                {"schema_version": 3},
                 {"schema_version": True},
                 {"schema_version": 1, "total_kills": -3},
                 {"schema_version": 1, "completed_runs": 1.2},
@@ -87,6 +87,28 @@ class PlayerProfileTests(unittest.TestCase):
         self.assertEqual(profile.total_score, 1000)
         self.assertEqual(profile.recent_runs[0].status, "abandoned")
         self.assertEqual(persisted, [2, 3])
+
+    def test_v1_profile_is_migrated_and_extracted_runs_are_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "profile.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"schema_version": 1, "completed_runs": 2,
+                           "abandoned_runs": 1, "total_kills": 5}, stream)
+            previous = load_profile(path)
+            self.assertEqual(previous.completed_runs, 2)
+            self.assertEqual(previous.extracted_runs, 0)
+            bus = EventBus()
+            tracker = ProfileTracker(bus, previous)
+            bus.emit("run_started", runs=4)
+            bus.emit("enemy_killed", kind="overseer", boss=True, combo=8)
+            bus.emit("run_extracted", score=900, wave=5,
+                     duration_frames=1200)
+            self.assertEqual(previous.extracted_runs, 1)
+            self.assertEqual(previous.completed_runs, 2)
+            self.assertEqual(previous.boss_kills, 1)
+            self.assertEqual(previous.recent_runs[0].status, "extracted")
+            self.assertTrue(save_profile(previous, path))
+            self.assertEqual(load_profile(path), previous)
 
     def test_recent_runs_are_bounded(self):
         profile = PlayerProfile()
