@@ -1699,7 +1699,7 @@ class Game(VisualMixin):
         actual = mitigate_damage(dmg, effective_armor(p.st["armor"], p.guard_t),
                                  armor_pen)
         p.hp -= actual
-        if self.current_encounter is not None and infection_amount > 0:
+        if getattr(self, "current_encounter", None) is not None and infection_amount > 0:
             self.infection.apply_infection(infection_amount)
         p.inv = 0.9
         self.shake = 12.0
