@@ -17,7 +17,8 @@ class InfectionHudSeverityTests(unittest.TestCase):
 
     def test_safe_infection_and_healthy_os(self):
         self.assert_status(0, 100, "안정", "#55cba8")
-        self.assert_status(25, 100, "안정", "#55cba8")
+        self.assert_status(24, 100, "안정", "#55cba8")
+        self.assert_status(25, 100, "주의", "#e5a34e")
 
     def test_spreading_infection_and_weak_os_warn(self):
         self.assert_status(50, 100, "주의", "#e5a34e")
