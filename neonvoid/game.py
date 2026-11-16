@@ -3012,6 +3012,7 @@ class Game(VisualMixin):
 
     def open_upgrade(self):
         self.state = "upgrade"
+        self.hover_card = -1  # Never carry a previous wave's selection.
         self.card_t = 0.0
         self.screen_flash(0.16, C_GOLD)
         self.auto_pick_t = 0.0
