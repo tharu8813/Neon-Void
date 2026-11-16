@@ -56,6 +56,7 @@ var run_frames: int = 0
 var _pending_wave: bool = false
 var _pending_boss: bool = false
 var _pending_offers: Array[String] = []
+var _pending_boss_receipts: bool = false
 
 func _ready() -> void:
     assert(camera_3d.projection == Camera3D.PROJECTION_ORTHOGONAL)
@@ -233,29 +234,113 @@ func _physics_process(delta: float) -> void:
         _update_hud()
 
 func _on_wave_ready(boss_defeated: bool) -> void:
-    if mode != "combat":
+    if mode != "combat" or _pending_wave:
         return
-    if not campaign.confirm_wave(sim.enemies.size(), sim.spawn_queue.size(), boss_defeated):
+    _pending_wave = true
+    _pending_boss = boss_defeated
+    var sid: String = str(campaign.active_sector)
+    var reward_owner: RefCounted = software
+    if int(campaign.active_wave) == 5:
+        # The boss signature must be saved in the same checkpoint as the
+        # three final reward cards before live state changes.
+        reward_owner = Software.new()
+        if not reward_owner.restore_levels(software.levels, _deployed_base()):
+            _pause_gameplay()
+            ui.call("show_error", "보스 보상 적용 전에 소프트웨어 상태 검증에 실패했습니다.")
+            return
+        reward_owner.award_boss_signature(sid)
+    _pending_offers = reward_owner.roll_offers(3, sid, sim.rng)
+    _try_confirm_wave()
+
+func _try_confirm_wave() -> void:
+    if not _pending_wave:
         return
-    var sid: String = campaign.active_sector
+    var sid: String = str(campaign.active_sector)
+    var wave: int = int(campaign.active_wave)
+    if persistence_enabled:
+        # E's atomic transaction commits wave + XP + pending reward first.
+        PlayerBridge.write_player(sim, actor)
+        var preview_software: RefCounted = software
+        if wave == 5:
+            preview_software = Software.new()
+            if not preview_software.restore_levels(software.levels, _deployed_base()):
+                _pause_gameplay()
+                ui.call("show_error", "보스 보상 상태를 안전하게 생성하지 못했습니다.")
+                return
+            preview_software.award_boss_signature(sid)
+            preview_software.set_pending_offers(_pending_offers)
+        var future: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim,
+            preview_software, "upgrade", hub_position, _pending_offers, purify_uses,
+            score, run_kills, run_boss_kills, deployed_level, run_frames, wave)
+        var commit: Dictionary = SaveBridge.persist_wave(save_slot, future,
+            checkpoint_revision, str(campaign.run_id), sid, wave)
+        if not commit.get("applied", false) or not _reload_save():
+            _pause_gameplay()
+            ui.call("show_error", "웨이브는 아직 완료되지 않았습니다. 저장 실패, R로 재시도: " +
+                str(commit.get("reason", "readback_failed")))
+            return
+    if not campaign.confirm_wave(sim.enemies.size(), sim.spawn_queue.size(), _pending_boss):
+        _pause_gameplay()
+        ui.call("show_error", "검증된 전투 결과와 기록이 불일치합니다. 진행을 중단했습니다.")
+        return
+    _pending_wave = false
     sim.abort_wave()
     if campaign.is_sector_clean(sid):
         software.award_boss_signature(sid)
+    software.set_pending_offers(_pending_offers)
     _apply_stats()
-    var offers: Array[String] = software.roll_offers(3, sid, sim.rng)
+    _pending_boss_receipts = persistence_enabled and campaign.is_sector_clean(sid)
+    _present_wave_reward()
+
+func _present_wave_reward() -> void:
+    if _pending_boss_receipts:
+        var sid: String = str(campaign.active_sector)
+        var outcome: Dictionary = SaveBridge.persist_boss_and_sector_rewards(
+            save_slot, str(campaign.run_id), sid, campaign.is_os_clean())
+        if not outcome.get("ok", false):
+            _pause_gameplay()
+            ui.call("show_error", "보스/구역 영구 보상 저장 실패. R로 안전하게 재시도: " +
+                str(outcome.get("reason", "unknown")))
+            return
+        if not _reload_save():
+            _pause_gameplay()
+            ui.call("show_error", "보상 저장 후 데이터 재검증 실패. 진행을 중단했습니다.")
+            return
+        _pending_boss_receipts = false
     mode = "reward"
     _pause_gameplay()
-    ui.call("show_reward_cards", offers, software.levels)
+    ui.call("show_reward_cards", _pending_offers, software.levels)
     _update_hud()
 
 func _on_card_selected(index: int) -> void:
     if mode != "reward":
         return
+    if persistence_enabled:
+        # Work on a clone. The displayed reward remains untouched until the
+        # corresponding software levels and choice are saved.
+        var candidate: RefCounted = Software.new()
+        if not candidate.restore_levels(software.levels, _deployed_base()) or not candidate.set_pending_offers(software.pending_offers):
+            ui.call("show_error", "소프트웨어 상태를 복원할 수 없습니다.")
+            return
+        var intended: String = candidate.claim_offer(index)
+        if intended.is_empty():
+            return
+        var scene_after: String = "hub" if campaign.is_sector_clean(str(campaign.active_sector)) else "play"
+        var new_score: int = score + (250 if intended == "bonus" else 0)
+        var snapshot: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim,
+            candidate, scene_after, hub_position, [], purify_uses, new_score,
+            run_kills, run_boss_kills, deployed_level, run_frames)
+        var saved: Dictionary = SaveBridge.persist_checkpoint(save_slot, snapshot, checkpoint_revision)
+        if not saved.get("applied", false) or not _reload_save():
+            ui.call("show_error", "선택은 보류됐습니다. 저장 실패 후 다시 선택하세요: " +
+                str(saved.get("reason", "readback_failed")))
+            return
     var chosen: String = software.claim_offer(index)
     if chosen.is_empty():
         return
     if chosen == "bonus":
         score += 250
+    _pending_offers.clear()
     _apply_stats()
     ui.call("complete_reward_selection")
     mode = "clean" if campaign.is_sector_clean(campaign.active_sector) else "between"
@@ -495,3 +580,16 @@ func _reload_save() -> bool:
     var cp: Variant = saved_state.get("os_checkpoint.json")
     checkpoint_revision = int(cp.revision) if cp != null else 0
     return true
+
+func _input(event: InputEvent) -> void:
+    # While the input dispatcher is disabled after a save failure, R retries
+    # ONLY the exact pending transaction. Never roll new reward cards.
+    if event is InputEventKey:
+        var key_event: InputEventKey = event
+        if key_event.pressed and not key_event.echo and key_event.keycode == KEY_R:
+            if _pending_wave:
+                get_viewport().set_input_as_handled()
+                _try_confirm_wave()
+            elif _pending_boss_receipts:
+                get_viewport().set_input_as_handled()
+                _present_wave_reward()
