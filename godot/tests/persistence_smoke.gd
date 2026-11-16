@@ -8,6 +8,7 @@ const Validator = preload("res://scripts/persistence/legacy_validator.gd")
 var failed: int = 0
 
 func _initialize() -> void:
+    create_timer(75.0).timeout.connect(func(): printerr("P8 TIMEOUT: headless persistence script did not exit"); quit(1))
     call_deferred("_run")
 
 func expect(condition: bool, description: String) -> void:
@@ -70,10 +71,18 @@ func _run() -> void:
     expect(Validator.validate("os_checkpoint.json", state["os_checkpoint.json"]).ok, "legacy checkpoint fixture")
     expect(not Migration.import_legacy(legacy, slot).ok, "import requires explicit consent")
     var imported: Dictionary = Migration.import_legacy(legacy, slot, true)
-    expect(imported.ok, "explicit migration commits all five JSONs")
+    expect(imported.ok, "explicit migration commits all five JSONs: " + str(imported.get("reason", "")))
+    if not imported.ok:
+        Migration._delete_owned_tree(root_dir)
+        quit(1)
+        return
     expect(not Migration.import_legacy(legacy, slot, true).ok, "repeated migration cannot overwrite")
     var loaded: Dictionary = Store.read(slot)
-    expect(loaded.ok and loaded.revision == 1, "checksum envelope loaded")
+    expect(loaded.ok and loaded.revision == 1, "checksum envelope loaded: " + str(loaded.get("reason", "")))
+    if not loaded.ok:
+        Migration._delete_owned_tree(root_dir)
+        quit(1)
+        return
     if loaded.ok:
         expect(loaded.state["antivirus_db.json"].xp == 0, "DB is XP authority")
         expect(loaded.state["profile.json"].total_score == 0, "profile not mixed with XP")
