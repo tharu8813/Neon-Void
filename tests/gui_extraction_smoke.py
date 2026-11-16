@@ -7,9 +7,9 @@ import tkinter as tk
 from types import SimpleNamespace
 
 from neonvoid.content.upgrades import UP_BY_ID
-from neonvoid.database_storage import AntivirusDatabaseStore
+from neonvoid.database_storage import AntivirusDatabaseStore, save_database
 from neonvoid.game import Game
-from neonvoid.metaprogression import base_stats_for_level
+from neonvoid.metaprogression import base_stats_for_level, MutationResult
 from neonvoid.world.session import CPU_EXIT
 
 GATES = {"cpu": (1200, 270), "memory": (1960, 780),
@@ -137,7 +137,87 @@ def main():
             assert after.closed_runs[second_run] == "abandoned"
             assert after.software_archive == {software_id: 1}
             assert game.profile.extracted_runs == 1
-            print("[gui-extraction] CLEAN, 29 XP receipts, one software, level, OS collapse and next OS passed")
+
+            # Rebuild valid CLEAN proof without cheating the 29 receipt checks.
+            # Simulate a rare finished run that no longer owns any software.
+            game.p.x, game.p.y = 1580, 780
+            game.interact_hub()
+            assert game.world.room == "os"
+            third_run = game.campaign.run_id
+            for sid in ("CPU", "MEMORY", "STORAGE", "NETWORK"):
+                game.campaign.enter_sector(sid)
+                for wave in range(1, 6):
+                    encounter = game.campaign.start_wave()
+                    assert encounter.wave_index == wave
+                    assert game.campaign.clear_wave(
+                        hostiles_remaining=0, boss_defeated=(wave == 5))
+                game.campaign.leave_sector()
+                game.world.sector_waves[sid.lower()] = 5
+                game.world.sector_clean.add(sid.lower())
+            assert game.world.os_clean
+            assert game.database_store.load().xp == archived.xp + 900
+            game.levels.clear()
+            game.p.x, game.p.y = 1200, 780
+            game.open_extraction_terminal()
+            assert game.salvage_open and not game.extraction_open
+            assert game.salvage_options
+            game.render()
+            assert game.c.find_withtag("salvageui")
+            recovered_id = game.salvage_options[0]
+            game.on_key(SimpleNamespace(keysym="Return"))
+            assert game.salvage_claimed
+            assert game.levels == {recovered_id: 1}
+            assert game.extraction_open and not game.salvage_open
+
+            # Independently test the fully saturated archive. This must NOT
+            # invent a C extraction reward or overflow a saved module cap.
+            game.on_key(SimpleNamespace(keysym="Escape"))
+            full = game.database_store.load()
+            full.software_archive = {
+                uid: item[4] for uid, item in UP_BY_ID.items()}
+            assert save_database(full, path)
+            game.open_extraction_terminal()
+            assert game.salvage_open
+            assert not game.salvage_options
+            game.on_key(SimpleNamespace(keysym="Return"))
+            assert game.world.room == "base"
+            assert third_run in game.database_store.load().closed_runs
+            assert game.database_store.load().closed_runs[third_run] == "abandoned"
+            assert third_run not in game.database_store.load().processed_extractions
+
+            # C warning #1: a failed close receipt is reported and retried,
+            # and on persistent failure the OS run stays alive for recovery.
+            game.p.x, game.p.y = 1580, 780
+            game.interact_hub()
+            fourth_run = game.campaign.run_id
+            real_store = game.database_store
+
+            class FailingCloseStore:
+                def __init__(self, upstream):
+                    self.upstream = upstream
+                    self.calls = 0
+
+                def close_run_once(self, **kwargs):
+                    self.calls += 1
+                    return (self.upstream.load(),
+                            MutationResult(False, "save_failed"))
+
+            fail_store = FailingCloseStore(real_store)
+            game.database_store = fail_store
+            assert game.return_to_base(abandon=True) is False
+            assert fail_store.calls == 3
+            assert game.world.room == "os" and game.campaign.run_id == fourth_run
+            assert game.profile_tracker.active
+            assert game.database_close_error == "save_failed"
+            assert fourth_run not in real_store.load().closed_runs
+
+            game.database_store = real_store
+            assert game.return_to_base(abandon=True) is True
+            assert game.database_close_error is None
+            assert game.world.room == "base"
+            assert real_store.load().closed_runs[fourth_run] == "abandoned"
+            print("[gui-extraction] CLEAN, 29 receipts, salvage/full archive, "
+                  "retriable failed close, VFX, OS collapse, next OS passed")
     finally:
         root.destroy()
 
