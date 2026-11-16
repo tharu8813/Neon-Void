@@ -18,6 +18,16 @@ func kinds(plan: Dictionary) -> String:
     return ",".join(result)
 
 func _run() -> void:
+    var lab_scene: PackedScene = load("res://scenes/sectors/sector_lab.tscn") as PackedScene
+    check(lab_scene != null, "3D sector lab scene loads")
+    if lab_scene != null:
+        var lab: Node = lab_scene.instantiate()
+        check(lab is Node3D, "3D sector lab root is Node3D")
+        root.add_child(lab)
+        check(bool(lab.call("enter_sector_lab", "CPU")), "3D physical lab enters CPU")
+        lab.call("retreat_lab")
+        check(str(lab.get("mode")) == "hub", "3D physical lab returns to hub")
+        lab.queue_free()
     check(Catalog.IDS.size() == 4, "four sectors")
     check(Catalog.plan_wave("cpu", 0).is_empty(), "invalid index")
     check(Catalog.plan_wave("NOT_A_SECTOR", 1).is_empty(), "invalid sector")
