@@ -49,3 +49,9 @@ Profile format is explicitly versioned. Version 1 is the only supported schema; 
 ## Standalone Windows executable
 
 The PyInstaller onefile application stores its profile at `%LOCALAPPDATA%\\NeonVoid\\profile.json`, not inside the temporary extraction directory. Source Python execution continues to use `profile.json` beside `neon_void.py`. These are separate profiles, and no automatic migration is performed; manually copy an existing profile if you want to continue with it in the packaged app.
+
+## Successful OS extraction (profile schema v2)
+
+Schema v2 extends the old profile without removing legacy score/wave history. The new `extracted_runs` counter and `RunRecord(status="extracted")` represent an OS successfully cleaned followed by a durable one-software extraction. Existing schema-v1 files load with `extracted_runs=0` and are rewritten as v2 on the next save. The existing `completed_runs` counter keeps its historical meaning (dead runs) rather than silently recategorizing old records. Sector-specific bosses are counted via the `boss=True` event payload, while legacy `kind="boss"` remains compatible.
+
+Permanent XP, level and archived software are authoritative **only** in `antivirus_db.json`, not `profile.json`. Profile history is a separate UI/reporting record and is not the source for extraction eligibility.
