@@ -100,6 +100,7 @@ class CheckpointTests(unittest.TestCase):
         data["campaign"]["completed_waves"]["CPU"] = 3
         data["scene"] = "upgrade"
         data["sector"] = "cpu"
+        data["player_position"] = [200.0, 360.0]
         data["pending_cards"] = ["power", "rapid", "bonus"]
         data["software_levels"] = {"hull": 2, "mana": 1}
         data["player"]["hp"] = 123
