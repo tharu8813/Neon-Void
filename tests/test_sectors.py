@@ -8,7 +8,8 @@ from neonvoid.content.enemies import E_PARAMS, SPAWN_COST
 from neonvoid.content.upgrades import UP_BY_ID
 from neonvoid.content.sectors import (
     FINAL_WAVE, SECTOR_IDS, SECTORS, SectorCampaign, get_sector,
-    plan_sector_wave, sector_software_multiplier,
+    plan_sector_wave, sector_software_multiplier, select_boss_signature,
+    BOSS_SIGNATURE_SOFTWARE,
 )
 from neonvoid.content.stages import get_stage, plan_wave
 from neonvoid.content.virus_catalog import (
@@ -48,6 +49,20 @@ class SectorContentTests(unittest.TestCase):
         self.assertEqual(len(set(focus_sets)), 4)
         self.assertEqual(sector_software_multiplier(None, "power"), 1.0)
         self.assertEqual(sector_software_multiplier("MEMORY", "power"), 1.0)
+
+    def test_boss_signature_rewards_valid_and_fallback_when_maxed(self):
+        self.assertEqual(set(BOSS_SIGNATURE_SOFTWARE), set(SECTOR_IDS))
+        self.assertEqual(len({seq[0] for seq in BOSS_SIGNATURE_SOFTWARE.values()}), 4)
+        for sid, options in BOSS_SIGNATURE_SOFTWARE.items():
+            with self.subTest(sector=sid):
+                self.assertTrue(set(options) <= set(UP_BY_ID))
+                self.assertEqual(select_boss_signature(sid.lower(), {}), options[0])
+                levels = {uid: UP_BY_ID[uid][4] for uid in options[:1]}
+                self.assertEqual(select_boss_signature(sid, levels), options[1])
+                levels = {uid: UP_BY_ID[uid][4] for uid in options}
+                self.assertIsNone(select_boss_signature(sid, levels))
+        with self.assertRaises(ValueError):
+            select_boss_signature("INVALID", {})
 
     def test_twenty_independent_plans_and_boss_cadence(self):
         for sid in SECTOR_IDS:
