@@ -63,12 +63,27 @@ def main():
         game.p.hp = 40
         apply_upgrade(game, "burn")
         game.open_upgrade()
+        game.card_opts = [UP_BY_ID[uid] for uid in ("cool", "eco", "hull")]
+        game.build_upgrade_screen()
+        rendered = [game.c.itemcget(item, "text")
+                    for item in game.c.find_withtag("scr")
+                    if game.c.type(item) == "text"]
+        assert "7.0s → 6.4s" in rendered
+        assert "35.0 → 31.5 MP" in rendered
         game.card_opts = [UP_BY_ID[uid] for uid in ("hull", "burn", "split")]
         game.build_upgrade_screen()
+        game.card_t = 1.0
+        press(game, "Right")
         game.render()
+        assert game.hover_card == 0
+        assert game.c.itemcget(game.card_borders[0], "outline") == "#ffffff"
+        press(game, "Right")
+        game.render()
+        assert game.hover_card == 1
+        assert game.c.itemcget(game.card_borders[1], "outline") == "#ffffff"
         names = [game.c.itemcget(item, "text") for item in game.c.find_withtag("scr")
                  if game.c.type(item) == "text"]
-        assert any("소프트웨어 1장을 선택" in name for name in names)
+        assert any("소프트웨어 선택:" in name for name in names)
         assert "40.0 → 60.0" in names
         assert "18% → 36%" in names
         assert "1 → 3" in names

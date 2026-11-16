@@ -798,7 +798,7 @@ class VisualMixin:
         c.create_text(W / 2, 104, text=f"WAVE {self.wave} CLEAR",
                       fill=C_HP, font=F_BIG, tags="scr")
         c.create_text(W / 2, 143,
-                      text="소프트웨어 1장을 선택하세요  (1 / 2 / 3 또는 클릭)",
+                      text="소프트웨어 선택: 1 / 2 / 3 · ← → + Enter · 마우스 클릭",
                       fill=C_TEXT, font=F_UI, tags="scr")
         reward = ""
         if self.world.active_sector in SECTOR_NAMES:
@@ -876,6 +876,20 @@ class VisualMixin:
             return [("점수", f"{self.score:,} → {self.score + 250:,}")]
         before = self.p
         after = preview_upgrade(before, uid)
+        # Actual skill costs and cooldowns are more useful than internal
+        # efficiency multipliers. Keep both affected skills inside two rows.
+        if uid == "cool":
+            return [
+                (name, f"{skill_cooldown(base, before.st['skill_cooldown']):.1f}s"
+                 f" → {skill_cooldown(base, after.st['skill_cooldown']):.1f}s")
+                for name, base in (("충격파 대기", 7.0), ("보호막 대기", 12.0))
+            ]
+        if uid == "eco":
+            return [
+                (name, f"{skill_cost(base, before.st['skill_efficiency']):.1f}"
+                 f" → {skill_cost(base, after.st['skill_efficiency']):.1f} MP")
+                for name, base in (("충격파 소모", 35.0), ("보호막 소모", 25.0))
+            ]
         rows = []
         for key, label in UPGRADE_STAT_LABELS.items():
             old, new = before.st[key], after.st[key]
