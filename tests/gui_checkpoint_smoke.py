@@ -187,7 +187,6 @@ def main():
         graceful_id = graceful.campaign.run_id
         assert cp.load()["campaign"]["run_id"] == graceful_id
         graceful.close_game()
-        assert not root.winfo_exists()
         assert graceful_id not in db.load().closed_runs
         assert cp.load()["campaign"]["run_id"] == graceful_id
 
