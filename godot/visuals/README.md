@@ -3,7 +3,7 @@
 **Not integrated into the game. Do not merge before #55/#57/#58 and P0/P1 gates.**
 Standalone Godot 4.7.2 scene: `res://visuals/p9_showcase.tscn`. Use **Run Current Scene** to inspect the emissive 3D example on a physical Windows GPU. Fixed top-down orthographic camera is a showcase placeholder, not a validated P2 transform.
 
-The renderer-only API in `res://visuals/projectile_batch.gd` is `set_projectiles(logical_positions: PackedVector2Array, tints: PackedColorArray = PackedColorArray())` plus `clear_projectiles()`. Input coordinates are immutable legacy XY pixel snapshots; A converts through the existing `RuntimeConfig` to XZ. C owns combat simulation and emits read-only snapshots later. Visual animation never modifies game logic or uses gameplay RNG.
+The renderer-only API in `res://visuals/projectile_batch.gd` is `set_projectiles(logical_positions: PackedVector2Array, tints: PackedColorArray = PackedColorArray())` plus `clear_projectiles()`. Input coordinates are immutable legacy XY pixel snapshots; A uses the existing `runtime_config.gd` WORLD_UNITS_PER_PIXEL constant for XZ mapping; standalone SceneTree test scripts must not resolve autoload singletons by name. C owns combat simulation and emits read-only snapshots later. Visual animation never modifies game logic or uses gameplay RNG.
 
 MultiMesh holds at most 2048 visible mesh instances, clips excess visuals, and bounds culling for the hub. This is a **candidate GPU batching design**, not proven draw-call or FPS improvement. Linux headless CI confirms import, structure, coordinate mapping, count cap and clear only. P1 Windows export is a separate CI gate.
 

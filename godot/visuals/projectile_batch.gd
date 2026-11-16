@@ -1,4 +1,5 @@
 extends MultiMeshInstance3D
+const FrozenMapping = preload("res://scripts/runtime_config.gd")
 ## P9 VISUAL ONLY: immutable logical XY snapshots become instanced 3D meshes.
 ## Does not own collision, game simulation, RNG, save state, or damage rules.
 @export_range(16, 8192, 16) var capacity: int = 2048
@@ -36,7 +37,10 @@ func set_projectiles(logical_positions: PackedVector2Array, tints: PackedColorAr
     _ensure_batch()
     var count: int = mini(logical_positions.size(), multimesh.instance_count)
     for i in range(count):
-        var p: Vector3 = RuntimeConfig.logical_to_world(logical_positions[i], elevation)
+        # Standalone --script tests do not expose autoload global identifiers.
+        # Read the source-of-truth scale directly from the P1 script resource.
+        var scale: float = FrozenMapping.WORLD_UNITS_PER_PIXEL
+        var p: Vector3 = Vector3(logical_positions[i].x * scale, elevation, logical_positions[i].y * scale)
         multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
         var tint: Color = tints[i] if i < tints.size() else Color(0.35, 0.92, 1.0)
         multimesh.set_instance_color(i, tint)
