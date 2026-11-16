@@ -1182,12 +1182,13 @@ class VisualMixin:
                         clamp((self.ui_t - self.settings_opened_at) / 0.28, 0, 1))
             c.coords(self.settings_rule, 261, 91,
                      261 + (W - 522) * (1 - (1 - progress) ** 3), 91)
-        for button, _ in self._menu_buttons():
-            x0, y0, x1, y1 = c.coords(button)
-            hover = self.cursor_on and x0 <= self.mx <= x1 and y0 <= self.my <= y1
-            primary = float(c.itemcget(button, "width")) == 2
-            c.itemconfigure(button, fill="#174555" if hover else
-                            "#10313d" if primary else "#0a1826")
+        # Hover and primary styling share a single source of truth.
+        # Canvas width reflects the *current* hover state, not button type.
+        # Using it to infer primary buttons leaves secondary buttons highlighted.
+        self._update_menu_hover(
+            self.mx if self.cursor_on else -1,
+            self.my if self.cursor_on else -1,
+        )
         self._update_audio_hud()
         self._update_message()
         self._animate_terminals()
