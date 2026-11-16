@@ -7,6 +7,12 @@ from neonvoid.game import Game
 class LoadoutPagingTests(unittest.TestCase):
     def test_page_navigation_is_clamped(self):
         game = Game.__new__(Game)
+        game.checkpoint_prompt_open = False
+        game.salvage_open = False
+        game.extraction_open = False
+        game.database_open = False
+        game.profile_open = False
+        game.settings_open = False
         game.loadout_open = True
         game.levels = {str(i): 1 for i in range(60)}
         game.loadout_page = 0
