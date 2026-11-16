@@ -407,7 +407,11 @@ class Game(VisualMixin):
             self.announce_world(f"철수 검증 실패: {type(exc).__name__}", 5)
             return
         if not offer.allowed:
-            self.announce_world(f"철수 불가: {offer.reason}", 5)
+            if offer.reason in ("no_software", "archive_full"):
+                self.database = fresh
+                self.open_salvage_terminal(offer.reason)
+            else:
+                self.announce_world(f"철수 불가: {offer.reason}", 5)
             return
         self.database = fresh
         self.extraction_options = offer.eligible_software
@@ -415,6 +419,71 @@ class Game(VisualMixin):
         self.extraction_open = True
         self.keys.clear()
         self._draw_extraction_terminal()
+
+    def open_salvage_terminal(self, reason):
+        """A legal, one-time OS CLEAN software-recovery choice, not a C reward.
+
+        Only shown after C verifies all durable clean receipts. The selected
+        existing module is added via the same apply_upgrade path as wave loot,
+        then C independently checks it is owned before allowing extraction.
+        If the *entire* archive is capped, the only choice is explicit
+        no-reward return; never bypass permanent archive stack limits.
+        """
+        if reason not in ("no_software", "archive_full"):
+            raise ValueError("Not a recoverable software situation")
+        candidates = ()
+        if not self.salvage_claimed:
+            candidates = tuple(sorted(
+                uid for uid in UP_BY_ID
+                if self.levels.get(uid, 0) == 0 and
+                self.database.software_archive.get(uid, 0) < UP_BY_ID[uid][4]
+            ))
+        self.salvage_options = candidates
+        self.salvage_selected = 0
+        self.salvage_open = True
+        self.keys.clear()
+        self._draw_salvage_terminal()
+
+    def _handle_salvage_key(self, key):
+        if key in ("escape", self.settings.bindings["interact"]):
+            self.salvage_open = False
+            self.c.delete("salvageui")
+            self.keys.clear()
+            return
+        if key in ("up", "w") and self.salvage_options:
+            self.salvage_selected = (self.salvage_selected-1) % len(self.salvage_options)
+        elif key in ("down", "s") and self.salvage_options:
+            self.salvage_selected = (self.salvage_selected+1) % len(self.salvage_options)
+        elif key in ("return", "kp_enter", "space"):
+            if not self.salvage_options:
+                if self.return_to_base(abandon=True):
+                    self.announce_world(
+                        "OS CLEAN · 보관 한도 도달 · 보상 없이 복귀 / XP 유지", 6)
+                return
+            uid = self.salvage_options[self.salvage_selected]
+            try:
+                latest = self.database_store.load() if self.database_store else self.database
+            except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                self.database_error = f"{type(exc).__name__}: {exc}"
+                self.announce_world("소프트웨어 회수 불가 · DB 읽기 오류", 5)
+                return
+            if (latest.software_archive.get(uid, 0) >= UP_BY_ID[uid][4] or
+                    self.levels.get(uid, 0) != 0):
+                self.database = latest
+                self.announce_world("보관 한도가 변경됐습니다 · 다시 확인하세요", 5)
+                self.open_salvage_terminal("archive_full")
+                return
+            # Apply an actual available game upgrade, never edit the C archive.
+            apply_upgrade(self, uid)
+            self.salvage_claimed = True
+            self.salvage_open = False
+            self.c.delete("salvageui")
+            self.keys.clear()
+            self.announce_world(
+                f"OS CLEAN 소프트웨어 회수: {UP_BY_ID[uid][1]} · 이제 철수 선택 가능", 5)
+            self.open_extraction_terminal()
+            return
+        self._draw_salvage_terminal()
 
     def _handle_extraction_key(self, key):
         if key == "escape" or key == self.settings.bindings["interact"]:
@@ -596,6 +665,9 @@ class Game(VisualMixin):
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
         key = ev.keysym.lower()
+        if self.salvage_open:
+            self._handle_salvage_key(key)
+            return
         if self.extraction_open:
             self._handle_extraction_key(key)
             return
@@ -1392,7 +1464,7 @@ class Game(VisualMixin):
             self.os_close_retry_t = max(0.0, self.os_close_retry_t - dt)
         if self.state == "hub":
             if not self.paused and not self.settings_open and not (
-                    self.database_open or self.extraction_open):
+                    self.database_open or self.extraction_open or self.salvage_open):
                 self.step_hub(dt)
             self._step_fx(dts)
             return
