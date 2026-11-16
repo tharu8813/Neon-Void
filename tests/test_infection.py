@@ -21,6 +21,29 @@ class InfectionTests(unittest.TestCase):
             self.assertEqual(state.stage, stage)
         self.assertEqual([int(s) for s in InfectionStage], [0, 1, 2, 3])
 
+    def test_pressure_forecast_and_non_mutating_station_preview(self):
+        for infection, rate in ((0, 0), (49.99, 0), (50, 0.3),
+                                (74.99, 0.3), (75, 1.0), (100, 1.0)):
+            with self.subTest(infection=infection):
+                state = InfectionState(infection, 20)
+                self.assertAlmostEqual(state.integrity_pressure_per_second(), rate)
+                seconds = state.seconds_until_integrity_loss()
+                if rate:
+                    self.assertAlmostEqual(seconds, 20.0 / rate)
+                else:
+                    self.assertIsNone(seconds)
+        state = InfectionState(100, 20)
+        future = state.preview_purification(32, 9)
+        self.assertEqual(state.snapshot(), {"player_infection": 100,
+                                            "os_integrity": 20})
+        self.assertEqual(future.snapshot(), {"player_infection": 68,
+                                             "os_integrity": 29})
+        self.assertEqual(future.stage, InfectionStage.SPREADING)
+        self.assertAlmostEqual(future.integrity_pressure_per_second(), 0.3)
+        for invalid in (float("nan"), -1, "9"):
+            with self.assertRaises(ValueError):
+                state.preview_purification(invalid, 9)
+
     def test_application_purification_and_integrity_clamping(self):
         state = InfectionState(99, 99)
         self.assertEqual(state.apply_infection(10), 1)

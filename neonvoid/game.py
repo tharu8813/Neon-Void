@@ -119,6 +119,7 @@ class Game(VisualMixin):
         self.wave_combat_help = False
         self.infection = InfectionState()
         self.purify_uses = 3
+        self.last_wave_purified = None  # UI only, never part of saved schema
         self.database_store = (None if not self.persist_progress else AntivirusDatabaseStore())
         self.database_error = None
         try:
@@ -647,6 +648,7 @@ class Game(VisualMixin):
         self.p.vx = self.p.vy = 0.0
         self.infection = InfectionState.from_snapshot(data["infection"])
         self.purify_uses = data["purify_uses"]
+        self.last_wave_purified = None  # persisted rewards are not replayed
         self.salvage_claimed = data["salvage_claimed"]
         self.score, self.kills, self.combo = (
             data["score"], data["kills"], data["combo"])
@@ -1639,6 +1641,7 @@ class Game(VisualMixin):
         self.campaign = SectorCampaign(run_id, seed=seed, events=self.events)
         self.infection.reset_for_new_os()
         self.purify_uses = 3
+        self.last_wave_purified = None
         self.salvage_claimed = False
         self.salvage_open = False
         self.p.x, self.p.y = START
@@ -1793,6 +1796,7 @@ class Game(VisualMixin):
         self.wave_done_t = 0.0
         self.banner = plan.banner
         self.banner_upgrade = installed
+        self.last_wave_purified = None
         self.wave_combat_help = (n == 1 and self.world.active_sector in SECTOR_NAMES
                                  and not self.first_combat_help_shown)
         if self.wave_combat_help:
@@ -2957,7 +2961,7 @@ class Game(VisualMixin):
                     return
                 sector = self.world.active_sector
                 self.world.wave_cleared(sector, self.wave)
-                self.infection.purify(
+                self.last_wave_purified = self.infection.purify(
                     self.current_encounter.definition.purify_on_clear)
                 self.current_encounter = None
                 if sector in self.world.sector_clean:

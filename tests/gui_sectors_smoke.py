@@ -37,6 +37,14 @@ def main():
         game.interact_hub()
         assert game.purify_uses == 2
         assert game.infection.infection == 8 and game.infection.os_integrity == 100
+        game.infection.player_infection = 100
+        game.infection.os_integrity = 20
+        game.render()
+        preview = game.c.itemcget(game.hub_prompt, "text")
+        assert "정화 후 68%" in preview and "확산" in preview
+        assert "0.3%/s" in preview
+        game.infection.player_infection = 8
+        game.infection.os_integrity = 100
         game.settings.bindings["interact"] = "g"
         cleared = []
         game.events.subscribe("os_cleaned", lambda e: cleared.append(e))
@@ -58,6 +66,7 @@ def main():
                 game.infection.player_infection = 55
                 game.render()
                 assert "무결성 감소 중" in game.c.itemcget(game.infection_hint, "text")
+                assert "−0.3%/s" in game.c.itemcget(game.infection_detail, "text")
                 game.infection.player_infection = 75
                 game.settings.reduced_effects = True
                 game.render()

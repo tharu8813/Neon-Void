@@ -303,14 +303,16 @@ class VisualMixin:
                                                   W / 2 + 224, H - 38,
                                                   fill=C_HP, outline="")
         self.infection_bg = c.create_rectangle(
-            W-320, 107, W-24, 170, fill="#0b1526", outline="#384457")
+            W-420, 107, W-24, 190, fill="#0b1526", outline="#384457")
         self.infection_fill = c.create_rectangle(
-            W-316, 134, W-316, 144, fill="#e8ae50", outline="")
+            W-416, 134, W-416, 144, fill="#e8ae50", outline="")
         self.infection_text = c.create_text(
-            W-311, 121, anchor="w", text="INFECTION  0% · OS 100%",
+            W-411, 121, anchor="w", text="INFECTION  0% · OS 100%",
             fill="#e8c997", font=F_MONO)
         self.infection_hint = c.create_text(
-            W-311, 156, anchor="w", text="", fill=C_TEXT, font=F_UI)
+            W-411, 156, anchor="w", text="", fill=C_TEXT, font=F_UI)
+        self.infection_detail = c.create_text(
+            W-411, 176, anchor="w", text="", fill="#92b9c4", font=F_MONO)
         self.wave_txt = c.create_text(W - 24, 26, text="WAVE 1",
                                       fill=C_TEXT, font=F_BIG, anchor="e")
         self.score_txt = c.create_text(W - 24, 58, text="0",
@@ -343,7 +345,7 @@ class VisualMixin:
                     self.skill_guard_bar_bg, self.skill_guard_bar,
                     self.wave_txt, self.score_txt, self.combo_txt, self.upg_txt,
                     self.infection_bg, self.infection_fill, self.infection_text,
-                    self.infection_hint]
+                    self.infection_hint, self.infection_detail]
         self.hud += self.dash_pip_bgs
         self.hud += self.dash_pips
         self.hud += [self.boss_bg, self.boss_fg, self.boss_txt]
@@ -540,8 +542,8 @@ class VisualMixin:
         if self.world.active_sector is not None:
             infection = self.infection
             percentage = max(0.0, min(1.0, infection.infection / 100.0))
-            c.coords(self.infection_fill, W-316, 134,
-                     W-316 + 289*percentage, 144)
+            c.coords(self.infection_fill, W-416, 134,
+                     W-416 + 387*percentage, 144)
             color = ("#ff5872" if infection.stage >= InfectionStage.CRITICAL else
                      "#e5a34e" if infection.needs_purification else
                      "#55cba8")
@@ -563,6 +565,19 @@ class VisualMixin:
                 hint = f"감염 {SPREADING_AT:.0f}%부터 무결성 감소"
             c.itemconfigure(self.infection_hint, text=hint,
                             fill=C_BAD if critical and not safe else C_TEXT)
+            if safe:
+                detail = "정화 완료 · OS 감염 압력 없음"
+            else:
+                pressure = infection.integrity_pressure_per_second()
+                purge = (self.current_encounter.definition.purify_on_clear
+                         if self.current_encounter is not None else 0.0)
+                seconds = infection.seconds_until_integrity_loss()
+                if seconds is None:
+                    detail = f"현재 무결성 감소 없음 · 클리어 정화 최대 {purge:.0f}%p"
+                else:
+                    detail = (f"현속 −{pressure:.1f}%/s · 소진 약 {seconds:.0f}s"
+                              f" · 클리어 정화 {purge:.0f}%p")
+            c.itemconfigure(self.infection_detail, text=detail)
             if critical and not safe:
                 c.itemconfigure(self.infection_bg,
                                 outline="#ff7082", fill="#1d0c16")
@@ -570,11 +585,13 @@ class VisualMixin:
                 c.itemconfigure(self.infection_bg, outline="#384457",
                                 fill="#0b1526")
             for obj in (self.infection_bg, self.infection_fill,
-                        self.infection_text, self.infection_hint):
+                        self.infection_text, self.infection_hint,
+                        self.infection_detail):
                 c.itemconfigure(obj, state="normal")
         else:
             for obj in (self.infection_bg, self.infection_fill,
-                        self.infection_text, self.infection_hint):
+                        self.infection_text, self.infection_hint,
+                        self.infection_detail):
                 c.itemconfigure(obj, state="hidden")
 
         # 저체력 비네트: 체력이 낮을수록 화면 가장자리가 붉게 물든다.
@@ -717,10 +734,18 @@ class VisualMixin:
         c.create_text(W / 2, 143,
                       text="소프트웨어 1장을 선택하세요  (1 / 2 / 3 또는 클릭)",
                       fill=C_TEXT, font=F_UI, tags="scr")
+        reward = ""
+        if self.world.active_sector in SECTOR_NAMES:
+            if self.last_wave_purified is not None:
+                reward = f" · 이번 웨이브 감염 정화 −{self.last_wave_purified:.1f}%p"
+            else:
+                sector = SECTORS[self.world.active_sector.upper()]
+                reward = (f" · 정화 보상 최대 "
+                          f"{sector.waves[self.wave - 1].purify_on_clear:.0f}%p")
         c.create_text(W / 2, 179, text=(
             f"체력 {self.p.hp:.0f}/{self.p.maxhp:.0f}  ·  "
             f"마나 {self.p.mana:.0f}/{self.p.maxmana:.0f}  ·  "
-            f"설치 {len(self.levels)}종"),
+            f"설치 {len(self.levels)}종{reward}"),
             fill=C_PLAYER, font=F_HUD, tags="scr")
 
         self.cards = []
@@ -1592,8 +1617,15 @@ class VisualMixin:
                 if not self.purify_uses:
                     prompt = "정화 충전을 모두 사용했습니다"
                 elif infection or repair:
-                    prompt = (f"[{action_key}] 정화  ·  감염 −{infection:.1f}%  ·  "
-                              f"무결성 +{repair:.1f}%")
+                    after = self.infection.preview_purification(infection, repair)
+                    stage = ("정상", "감지", "확산", "위기")[after.stage]
+                    pressure = after.integrity_pressure_per_second()
+                    prompt = (f"[{action_key}] 정화 · 감염 −{infection:.1f}%p · "
+                              f"OS +{repair:.1f}%p"
+                              f"\n정화 후 {after.infection:.0f}% ({stage}) · "
+                              f"OS {after.os_integrity:.0f}% · "
+                              f"지속 감소 {pressure:.1f}%/s · "
+                              f"남은 {self.purify_uses - 1}회")
                 else:
                     prompt = "정화 불필요  ·  감염 없음 / OS 무결성 정상"
             elif near.id == "diagnostics":
@@ -1734,7 +1766,9 @@ class VisualMixin:
         if near:
             c.coords(self.gate_prompt, 84, y + 14)
             c.itemconfigure(self.gate_prompt, state="normal",
-                            text=f"[{self.settings.bindings['interact'].upper()}] 복귀")
+                            text=(f"[{self.settings.bindings['interact'].upper()}] 복귀 · " +
+                                  ("정화 완료" if self.world.active_sector in self.world.sector_clean
+                                   else "현재 웨이브 재시작 / 확정 보상 유지")))
         else:
             c.itemconfigure(self.gate_prompt, state="hidden")
 

@@ -107,6 +107,25 @@ class InfectionState:
     def needs_purification(self) -> bool:
         return self.stage >= InfectionStage.SPREADING
 
+    def integrity_pressure_per_second(self) -> float:
+        """Current passive OS loss rate, not future exposure or incoming hits."""
+        return ((SPREADING_PRESSURE if self.player_infection >= SPREADING_AT else 0.0)
+                + (CRITICAL_EXTRA_PRESSURE
+                   if self.player_infection >= CRITICAL_AT else 0.0))
+
+    def seconds_until_integrity_loss(self) -> float | None:
+        """Snapshot estimate assuming the current pressure stays constant."""
+        rate = self.integrity_pressure_per_second()
+        return None if rate <= 0 else self.os_integrity / rate
+
+    def preview_purification(self, infection_reduction: float,
+                             integrity_repair: float) -> "InfectionState":
+        """Non-mutating station preview, including threshold changes."""
+        removal = _amount(infection_reduction, "infection_reduction")
+        repair = _amount(integrity_repair, "integrity_repair")
+        return InfectionState(max(0.0, self.player_infection - removal),
+                              min(MAX_INTEGRITY, self.os_integrity + repair))
+
     def apply_infection(self, amount: float, *, paused: bool = False) -> float:
         """Apply a confirmed infection hit; return the actual amount added."""
         amount = _amount(amount, "amount")
