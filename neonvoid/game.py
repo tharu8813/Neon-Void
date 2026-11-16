@@ -1070,6 +1070,9 @@ class Game(VisualMixin):
         self._handle_key(ev.keysym.lower())
 
     def _handle_key(self, key, *, pointer=False):
+        if self.checkpoint_prompt_open:
+            self._handle_checkpoint_key(key)
+            return
         if self.salvage_open:
             self._handle_salvage_key(key)
             return
@@ -1213,6 +1216,13 @@ class Game(VisualMixin):
             self.hover_card = -1
 
     def on_mouse_down(self, ev):
+        if self.checkpoint_prompt_open:
+            if 300 <= ev.x <= W-300 and 288 <= ev.y <= 414:
+                self.checkpoint_choice = 0 if ev.y < 354 else 1
+                self._draw_checkpoint_prompt()
+            elif 490 <= ev.x <= 790 and 450 <= ev.y <= 510:
+                self._handle_checkpoint_key("return")
+            return
         self.mouse_down = self._aim_cursor()
         action = self._menu_action_at(ev.x, ev.y)
         if action is not None:
@@ -1412,6 +1422,54 @@ class Game(VisualMixin):
         self.events.emit("returned_to_base")
         return True
 
+    def _deploy_new_os(self):
+        """Start a fresh OS only after old checkpoint was explicitly discarded."""
+        if self.checkpoint_pending is not None or self.checkpoint_revision is not None:
+            self.show_message("진행 중인 OS가 있습니다 · 이어하기 또는 새 도전 선택")
+            return False
+        if self.database_store is not None and self.database_error is None:
+            try:
+                self.database = self.database_store.load()
+            except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                self.database_error = f"{type(exc).__name__}: {exc}"
+                self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 5)
+                return False
+        try:
+            starting = starting_software_levels(
+                self.database, self.starting_software_id)
+        except ValueError:
+            self.starting_software_id = None
+            starting = {}
+        base = base_stats_for_level(self.database.antivirus_level)
+        if not self.new_game(start_combat=False):
+            self.announce_world("이전 런 기록을 저장하지 못했습니다 · 다시 시도하세요")
+            return False
+        self.checkpoint_level = self.database.antivirus_level
+        self.p.maxhp = self.p.hp = base["maxhp"]
+        self.p.st["dmg"] = base["dmg"]
+        self.p.st["armor"] = base["armor"]
+        self.p.maxmana = self.p.mana = base["maxmana"]
+        for uid in starting:
+            apply_upgrade(self, uid)
+        self.world.deploy()
+        run_id = uuid4().hex
+        seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
+        self.campaign = SectorCampaign(run_id, seed=seed, events=self.events)
+        self.infection.reset_for_new_os()
+        self.purify_uses = 3
+        self.salvage_claimed = False
+        self.salvage_open = False
+        self.p.x, self.p.y = START
+        self.keys.clear()
+        self.events.emit("os_deployed")
+        if not self._persist_checkpoint():
+            self.announce_world("OS는 시작됐지만 진행도 저장에 실패했습니다", 6)
+        else:
+            self.announce_world(
+                f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
+                f"시작 소프트웨어 {next(iter(starting), '기본 무장')}", 4)
+        return True
+
     def interact_hub(self):
         node = self.world.nearest(self.p.x, self.p.y)
         if node is None:
@@ -1419,45 +1477,10 @@ class Game(VisualMixin):
             return
         if self.world.room == "base":
             if node.id == "deploy":
-                if self.database_store is not None and self.database_error is None:
-                    try:
-                        self.database = self.database_store.load()
-                    except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
-                        self.database_error = f"{type(exc).__name__}: {exc}"
-                        self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 4)
-                        return
-                try:
-                    starting = starting_software_levels(
-                        self.database, self.starting_software_id)
-                except ValueError:
-                    self.starting_software_id = None
-                    starting = {}
-                base = base_stats_for_level(self.database.antivirus_level)
-                if not self.new_game(start_combat=False):
-                    self.announce_world("이전 런 기록을 저장하지 못했습니다 · 다시 시도하세요")
-                    return
-                self.p.maxhp = self.p.hp = base["maxhp"]
-                self.p.st["dmg"] = base["dmg"]
-                self.p.st["armor"] = base["armor"]
-                self.p.maxmana = self.p.mana = base["maxmana"]
-                for uid in starting:
-                    apply_upgrade(self, uid)
-                self.world.deploy()
-                run_id = uuid4().hex
-                seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
-                self.campaign = SectorCampaign(run_id, seed=seed,
-                                               events=self.events)
-                self.infection.reset_for_new_os()
-                self.purify_uses = 3
-                self.salvage_claimed = False
-                self.salvage_open = False
-                self.p.x, self.p.y = START
-                self.keys.clear()
-                self.events.emit("os_deployed")
-                self.announce_world(
-                    f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
-                    f"시작 소프트웨어 {next(iter(starting), '기본 무장')}",
-                    4)
+                if self.checkpoint_pending is not None or self.checkpoint_error is not None:
+                    self._open_checkpoint_prompt()
+                else:
+                    self._deploy_new_os()
             elif node.id == "settings":
                 self.open_settings()
             elif node.id == "database":
