@@ -1497,12 +1497,12 @@ class Game(VisualMixin):
             self.infection.tick(
                 dts, exposure_per_second=
                 self.current_encounter.definition.exposure_per_second)
-            if (self.infection.os_integrity <= 0 and
-                    getattr(self, "os_close_retry_t", 0) <= 0):
-                # OS collapse ends this deployment, not the player's life.
-                # No extracted module is granted, but persisted XP survives.
+            if self.infection.os_integrity <= 0:
+                # Collapse suspends combat and retries closure at most once
+                # per second, preserving the same run ID and awarded XP.
+                if getattr(self, "os_close_retry_t", 0) > 0:
+                    return
                 if not self.return_to_base(abandon=True):
-                    # Keep the OS instance and retry at most once per second.
                     self.os_close_retry_t = 1.0
                     return
                 self.screen_flash(0.42, C_BAD)

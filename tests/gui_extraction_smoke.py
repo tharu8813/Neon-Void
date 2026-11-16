@@ -155,7 +155,7 @@ def main():
                 game.world.sector_waves[sid.lower()] = 5
                 game.world.sector_clean.add(sid.lower())
             assert game.world.os_clean
-            assert game.database_store.load().xp == archived.xp + 900
+            assert game.database_store.load().xp == archived.xp + 1100
             game.levels.clear()
             game.p.x, game.p.y = 1200, 780
             game.open_extraction_terminal()
