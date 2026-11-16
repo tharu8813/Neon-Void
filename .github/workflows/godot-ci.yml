@@ -66,6 +66,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:NEON_GODOT --headless --path godot --script res://tests/port_smoke.gd
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:NEON_GODOT --headless --path godot --script res://tests/persistence_smoke.gd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:NEON_GODOT --headless --path godot --quit-after 3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
