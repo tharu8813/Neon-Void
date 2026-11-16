@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from neonvoid.constants import DT
 from neonvoid.content.virus_catalog import ENCRYPTION_PULSE_RADIUS
+from neonvoid.content.sectors import select_boss_signature
 from neonvoid.game import Game
 from neonvoid.world.session import CPU_EXIT
 
@@ -112,6 +113,9 @@ def main():
                     game.damage_enemy(boss, boss.hp * 4 + 1)
                     assert game.boss_defeated
                     game.p.hp = game.p.maxhp * 0.4
+                before_software = dict(game.levels)
+                signature = (select_boss_signature(sector, before_software)
+                             if wave == 5 else None)
                 game.check_wave(0.8)
                 assert game.world.sector_waves[sector] == wave
                 assert game.campaign.progress[sector.upper()].completed_waves == wave
@@ -122,6 +126,9 @@ def main():
                     assert sector in game.world.sector_clean
                     assert game.state == "play"
                     assert abs(game.p.hp - game.p.maxhp * 0.55) < 1e-9
+                    if signature is not None:
+                        assert game.levels[signature] == before_software.get(signature, 0) + 1
+                        assert "획득" in game.sector_clear_reward
             game.render()
             assert "[G]" in game.c.itemcget(game.banner_item2, "text")
             assert "감염 압력 없음" in game.c.itemcget(game.infection_hint, "text")
@@ -141,8 +148,10 @@ def main():
                 game.render()
                 assert "OS 철수" in game.c.itemcget(game.hub_prompt, "text")
                 game.p.x, game.p.y = GATES[sector]
+            software_at_clear = dict(game.levels)
             game.interact_hub()
             assert game.p.hp == before_hp
+            assert game.levels == software_at_clear  # CLEAN re-entry not farmable
             game.leave_sector()
         assert game.world.os_clean and game.campaign.os_clean
         assert len(cleared) == 1
