@@ -82,11 +82,24 @@ static func validate(filename: String, obj: Variant) -> Dictionary:
         _: return {"ok": false, "reason": "unknown_file"}
     return {"ok": valid, "reason": "valid" if valid else "invalid_or_unsupported_schema"}
 
+static func _legacy_counter(value: Variant) -> bool:
+    # Python save.json calls int(...), including for numeric strings and
+    # finite fractional numbers. Keep the same nonnegative integer outcome.
+    if typeof(value) == TYPE_STRING:
+        var trimmed: String = value.strip_edges()
+        if not trimmed.is_valid_int() or trimmed.length() > 16:
+            return false
+        var number: int = trimmed.to_int()
+        return number >= 0 and float(number) <= MAX_SAFE_INT
+    if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+        return false
+    return is_finite(float(value)) and float(value) >= 0.0 and float(value) <= MAX_SAFE_INT
+
 static func _save(obj: Dictionary) -> bool:
     if obj.has("schema_version") and not _integer(obj["schema_version"], 1, 1):
         return false
     for key in ["best_score", "best_wave", "runs"]:
-        if not _integer(obj.get(key, 0)):
+        if not _legacy_counter(obj.get(key, 0)):
             return false
     return true
 
