@@ -1,4 +1,21 @@
-# A1: Playable world, antivirus hub and CPU gate
+# NEON VOID in-world OS lifecycle (A1 → checkpoint)
+
+**Current status (2026-11-16):** Four playable sectors, OS CLEAN/extraction and DB progression from A2/A3 are implemented. The **#22 checkpoint feature** now stores a resumed OS in a dedicated atomic `os_checkpoint.json`; earlier historical A1/A3 notes below describe the former session-only behavior.
+
+## OS checkpoint / crash recovery
+
+1. While an OS deployment is active, a valid save records its `run_id`, deterministic `seed`, per-sector completed waves, the player's equipped software and key combat resources, infection/integrity, purification charges, score and elapsed time.
+2. Saves happen at deployment, wave starts/clears, upgrade choice, sector entry/retreat, purification and roughly every five simulated seconds. Closing the window **suspends** the OS rather than issuing an abandonment receipt; pressing R to abandon, dying or extracting still finalizes the run.
+3. On the next launch, approach the outer hub's **OS DEPLOYMENT** gate. Choose **Continue old OS** to resume the identical `run_id`, or **Abandon and deploy new**. That explicit discard writes a C database closure receipt before removing the checkpoint. A checkpoint with an already closed/extracted OS receipt is always treated as stale and removed instead of being resurrected.
+4. Crash midwave: the previous **fully completed** waves, temporary software and resources are restored. Live enemies/projectiles are *not* saved; the interrupted wave restarts from the beginning. A wave cleared in C's database before the OS file was replaced is reconciled using durable XP receipts. XP and OS extraction remain idempotent.
+5. A save with an interrupted software-selection screen restores the same pending choices. After a successful extraction, death or deliberate abandonment, stale checkpoints cannot create extra software or XP. A saved **dead** marker cannot be resumed into a living player after a crash.
+6. Versioned JSON with strict schema validation, 128 KiB size limit, atomic `os.replace`, previous-good `.bak` file, CAS-style revision and a cross-process lock protects against two concurrent game processes. Corrupt bytes are preserved for manual recovery as `.corrupt` after explicit user choice, never silently overwritten.
+7. The primary save is `os_checkpoint.json`. It is **not** authoritative for lifetime XP or permanently archived software. C's `antivirus_db.json` remains the source of truth, unchanged. Python sources save beside the launcher; bundled Windows EXE uses `%LOCALAPPDATA%\\NeonVoid`.
+8. This is **safe-boundary resume**, not exact frame-by-frame replay: after an abrupt process stop, the last few seconds of HP/MP/position or unfinished combat may not be retained. Real Windows display/audio/extended playtesting remains in #24. DPI/fullscreen improvements are #23.
+
+Automated validation: `python -m unittest discover -s tests -v`, `python -m tests.gui_checkpoint_smoke` (Windows) or `xvfb-run -a python -m tests.gui_checkpoint_smoke` (Linux). The GUI test verifies CPU 3/5 + MEMORY 1/5 restoration, unchanged run ID, XP idempotence, pending software-choice screen, explicit new OS, stale closed run cleanup, and terminal death marker.
+
+## Historical design evolution
 
 This is the first playable vertical slice of the free-exploration overhaul specified by [Epic #10](https://github.com/tharu8813/Neon-Void/issues/10) and [A integration #13](https://github.com/tharu8813/Neon-Void/issues/13). It does **not** yet implement B's full multi-sector content nor C's persistent antivirus database and extraction.
 

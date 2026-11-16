@@ -36,6 +36,9 @@ from .database_storage import (AntivirusDatabaseStore, DatabaseCorruptError,
                                DatabaseStorageError)
 from .extraction import (prepare_extraction, commit_extraction_once,
                          select_starting_software, starting_software_levels)
+from .os_checkpoint import (CheckpointStore, CheckpointCorruptError,
+                            CheckpointConflictError, CheckpointStorageError,
+                            validate_checkpoint)
 
 class Game(VisualMixin):
     def __init__(self, root, opts):
@@ -133,6 +136,16 @@ class Game(VisualMixin):
         self.salvage_options = ()
         self.salvage_selected = 0
         self.salvage_claimed = False
+        # Separate OS checkpoint: never modify the authoritative antivirus DB
+        # or existing legacy saves. Selftests remain in-memory by default.
+        self.checkpoint_store = (CheckpointStore() if self.persist_progress else None)
+        self.checkpoint_pending = None
+        self.checkpoint_revision = None
+        self.checkpoint_error = None
+        self.checkpoint_prompt_open = False
+        self.checkpoint_choice = 0
+        self.checkpoint_level = 1
+        self.checkpoint_timer = 0.0
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
@@ -259,8 +272,331 @@ class Game(VisualMixin):
         if self.auto:
             self._build_title()
         self._build_cursor()
+        if self.checkpoint_store is not None:
+            self._discover_checkpoint()
         if not self.auto:
             self.loop()
+
+    # --------------------------------------------------- OS checkpoint recovery
+    def _discover_checkpoint(self):
+        """Boot in the safe base; offer resumption only at the deploy terminal."""
+        if self.checkpoint_store is None:
+            return
+        try:
+            payload = self.checkpoint_store.load()
+        except (CheckpointCorruptError, CheckpointStorageError, OSError) as exc:
+            self.checkpoint_error = f"{type(exc).__name__}: {exc}"
+            self.announce_world(
+                "OS 진행 저장 파일 손상/읽기 실패 · 배포 단말기에서 복구 선택", 8)
+            return
+        if payload is None:
+            return
+        self.checkpoint_revision = payload["revision"]
+        if self.database_error is not None:
+            self.checkpoint_pending = payload
+            self.checkpoint_error = "백신 DB 오류 · 영구 보상 복구 전 재개 불가"
+            return
+        run_id = payload["campaign"]["run_id"]
+        try:
+            current = self.database_store.load() if self.database_store else self.database
+        except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+            self.checkpoint_error = f"{type(exc).__name__}: {exc}"
+            return
+        self.database = current
+        if run_id in current.closed_runs:
+            # Crash between extraction/death receipt and checkpoint unlink.
+            # Never resurrect a run that C already marked terminal.
+            if self._clear_checkpoint():
+                self.announce_world("종료된 OS 기록 정리 완료 · 새 운영체제 배포 가능", 5)
+            return
+        self.checkpoint_pending = payload
+        self.announce_world("중단된 운영체제 발견 · 배포 단말기에서 이어하기 선택", 8)
+
+    def _checkpoint_payload(self):
+        if (self.campaign is None or self.world.room != "os" or
+                self.state not in ("hub", "play", "upgrade", "dead")):
+            return None
+        p = self.p
+        hub = self.state == "hub"
+        sector = None if hub else self.world.active_sector
+        if not hub and sector is None:
+            return None
+        return {
+            "schema_version": 1, "revision": self.checkpoint_revision or 1,
+            "campaign": self.campaign.checkpoint(),
+            "scene": self.state, "sector": sector,
+            "hub_position": list(self.world.hub_position),
+            "player_position": [
+                max(0.0, min(float(p.x), 2400.0 if hub else float(W))),
+                max(0.0, min(float(p.y), 1560.0 if hub else float(H))),
+            ],
+            "deployed_level": self.checkpoint_level,
+            "player": {
+                "hp": float(p.hp), "mana": float(p.mana),
+                "charges": int(p.charges),
+                "fire_cd": max(0.0, float(p.fire_cd)),
+                "pulse_cd": max(0.0, float(p.pulse_cd)),
+                "guard_cd": max(0.0, float(p.guard_cd)),
+                "guard_t": max(0.0, float(p.guard_t)),
+            },
+            "software_levels": dict(self.levels),
+            "pending_cards": [item[0] for item in self.card_opts]
+                if self.state == "upgrade" else [],
+            "infection": self.infection.snapshot(),
+            "purify_uses": self.purify_uses,
+            "salvage_claimed": self.salvage_claimed,
+            "score": self.score, "kills": self.kills, "combo": self.combo,
+            "run_kills": self.profile_tracker.run_kills,
+            "run_boss_kills": self.profile_tracker.run_boss_kills,
+            "run_best_combo": self.profile_tracker.run_best_combo,
+            "elapsed_frames": max(0, self.frames - self.run_start_frame),
+        }
+
+    def _persist_checkpoint(self):
+        if self.checkpoint_store is None:
+            return True
+        payload = self._checkpoint_payload()
+        if payload is None:
+            return True
+        try:
+            revision = self.checkpoint_store.save(
+                payload, expected_revision=self.checkpoint_revision)
+        except (CheckpointConflictError, CheckpointCorruptError,
+                CheckpointStorageError, ValueError, OSError) as exc:
+            self.checkpoint_error = f"{type(exc).__name__}: {exc}"
+            self.show_message("OS 저장 충돌/오류 · 다른 게임 창과 저장 파일을 확인하세요")
+            return False
+        if revision is None:
+            self.show_message("OS 진행도 저장 실패 · 데이터는 아직 확정되지 않았습니다")
+            return False
+        self.checkpoint_revision = revision
+        self.checkpoint_error = None
+        self.checkpoint_timer = 0.0
+        return True
+
+    def _clear_checkpoint(self):
+        if self.checkpoint_store is None:
+            self.checkpoint_pending = None
+            self.checkpoint_revision = None
+            return True
+        if self.checkpoint_revision is None:
+            return True  # Do not delete a checkpoint that we never owned.
+        try:
+            removed = self.checkpoint_store.clear(
+                expected_revision=self.checkpoint_revision)
+        except (CheckpointConflictError, CheckpointCorruptError,
+                CheckpointStorageError, ValueError, OSError) as exc:
+            self.checkpoint_error = f"{type(exc).__name__}: {exc}"
+            self.show_message("OS 체크포인트를 정리하지 못했습니다 · 재실행 시 확인 필요")
+            return False
+        if not removed:
+            self.show_message("OS 체크포인트 삭제 실패 · 재실행 시 다시 확인")
+            return False
+        self.checkpoint_revision = None
+        self.checkpoint_pending = None
+        return True
+
+    def _open_checkpoint_prompt(self):
+        self.checkpoint_prompt_open = True
+        self.checkpoint_choice = 0 if self.checkpoint_pending is not None else 1
+        self.keys.clear()
+        self._draw_checkpoint_prompt()
+
+    def _abandon_pending_checkpoint(self):
+        if self.database_error is not None:
+            self.show_message("백신 DB 손상 · 기존 OS 기록 보호를 위해 배포 취소")
+            return False
+        data = self.checkpoint_pending
+        if data is None:
+            if self.checkpoint_error is not None:
+                # Corrupt bytes are never silently overwritten; archive first.
+                try:
+                    path = self.checkpoint_store.archive_corrupt()
+                except (CheckpointStorageError, OSError) as exc:
+                    self.show_message(f"손상 파일 보관 실패: {exc}")
+                    return False
+                self.checkpoint_revision = None
+                self.checkpoint_error = None
+                if path is not None:
+                    self.announce_world("손상된 OS 파일을 .corrupt로 보관했습니다", 5)
+            return True
+        run_id = data["campaign"]["run_id"]
+        status = "dead" if data["scene"] == "dead" else "abandoned"
+        try:
+            if self.database_store is None:
+                updated, result = close_run_once(
+                    self.database, run_id=run_id, status=status)
+            else:
+                updated, result = self.database_store.close_run_once(
+                    run_id=run_id, status=status)
+        except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
+            self.show_message(f"이전 OS 중단 기록 저장 실패: {exc}")
+            return False
+        if not (result.applied or result.reason == "run_closed"):
+            self.show_message("이전 OS 중단 기록 저장 실패 · 다시 시도하세요")
+            return False
+        self.database = updated
+        if not self._clear_checkpoint():
+            return False
+        return True
+
+    def _handle_checkpoint_key(self, key):
+        if key in ("escape", self.settings.bindings["interact"]):
+            self.checkpoint_prompt_open = False
+            self.c.delete("resumeui")
+            self.keys.clear()
+            return
+        if key in ("up", "down", "w", "s"):
+            self.checkpoint_choice = 1 - self.checkpoint_choice
+            self._draw_checkpoint_prompt()
+        elif key in ("return", "kp_enter", "space"):
+            if self.checkpoint_choice == 0 and self.checkpoint_pending is not None:
+                if self.checkpoint_pending["scene"] == "dead":
+                    self.show_message("전투에서 사망한 OS는 이어할 수 없습니다 · 새 OS 선택")
+                    return
+                if self._resume_checkpoint(self.checkpoint_pending):
+                    self.checkpoint_prompt_open = False
+                    self.c.delete("resumeui")
+                return
+            if not self._abandon_pending_checkpoint():
+                return
+            self.checkpoint_prompt_open = False
+            self.c.delete("resumeui")
+            self.keys.clear()
+            self._deploy_new_os()
+
+    def _resume_checkpoint(self, data):
+        """Rehydrate the same OS id; only unfinished enemies/waves are replayed."""
+        try:
+            validate_checkpoint(data)
+            if data["scene"] == "dead":
+                self.show_message("종료된 OS는 복원할 수 없습니다")
+                return False
+            fresh = self.database_store.load() if self.database_store else self.database
+            if data["campaign"]["run_id"] in fresh.closed_runs:
+                self.show_message("이미 종료된 OS입니다 · 새 운영체제를 배포하세요")
+                self.database = fresh
+                self._clear_checkpoint()
+                return False
+            campaign = SectorCampaign.from_checkpoint(
+                data["campaign"], events=self.events)
+        except (ValueError, DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+            self.show_message(f"OS 복구 검증 실패: {exc}")
+            return False
+        self.database = fresh
+
+        # C's signed-off receipts can be one event newer than the checkpoint
+        # when the process crashed after XP commit but before OS file fsync.
+        advanced = False
+        for name, progress in campaign.progress.items():
+            db_sid = self._DB_SECTOR_IDS[name]
+            confirmed = 0
+            for idx in range(1, 6):
+                if f"{campaign.run_id}:{db_sid}:wave:{idx}" not in fresh.awarded_xp_ids:
+                    break
+                confirmed = idx
+            if confirmed > progress.completed_waves:
+                progress.completed_waves = confirmed
+                advanced = True
+        campaign._os_clean_emitted = campaign.os_clean
+        self.campaign = campaign
+        self.world.room = "os"
+        self.world.active_sector = None
+        self.world.hub_position = tuple(data["hub_position"])
+        self.world.sector_waves = {
+            name.lower(): progress.completed_waves
+            for name, progress in campaign.progress.items()}
+        self.world.sector_clean = {
+            sid.lower() for sid, progress in campaign.progress.items()
+            if progress.is_clean
+        }
+        self.checkpoint_level = data["deployed_level"]
+        base = base_stats_for_level(self.checkpoint_level)
+        self.p = Player()
+        self.p.maxhp = self.p.hp = base["maxhp"]
+        self.p.st["dmg"], self.p.st["armor"] = base["dmg"], base["armor"]
+        self.p.maxmana = self.p.mana = base["maxmana"]
+        self.levels = {}
+        for uid, count in sorted(data["software_levels"].items()):
+            for _ in range(count):
+                apply_upgrade(self, uid)
+        for field in ("hp", "mana", "charges", "fire_cd",
+                      "pulse_cd", "guard_cd", "guard_t"):
+            setattr(self.p, field, data["player"][field])
+        self.p.x, self.p.y = data["player_position"]
+        self.p.vx = self.p.vy = 0.0
+        self.infection = InfectionState.from_snapshot(data["infection"])
+        self.purify_uses = data["purify_uses"]
+        self.salvage_claimed = data["salvage_claimed"]
+        self.score, self.kills, self.combo = (
+            data["score"], data["kills"], data["combo"])
+        self.combo_t = 0.0
+        self.boss = None
+        self.boss_defeated = False
+        self.enemies.clear()
+        self.bullets.clear()
+        self.ebullets.clear()
+        self.spawn_queue.clear()
+        self.particles.clear()
+        self.shards.clear()
+        self.chain_fx.clear()
+        self.ftexts.clear()
+        self.virus_runtime.reset_wave()
+        self.virus_pending.clear()
+        self.current_encounter = None
+        self.card_opts = []
+        self.cards = []
+        self.paused = False
+        self.keys.clear()
+        self.run_start_frame = self.frames - data["elapsed_frames"]
+        self.events.emit("run_started", runs=self.save["runs"])
+        self.profile_tracker.run_kills = data["run_kills"]
+        self.profile_tracker.run_boss_kills = data["run_boss_kills"]
+        self.profile_tracker.run_best_combo = data["run_best_combo"]
+        if not self.music_started:
+            self.music_started = True
+            self.audio.start_music()
+
+        sector = data["sector"]
+        self.state = "hub"
+        self.checkpoint_revision = data["revision"]
+        self._show_hud(False)
+        if sector is None:
+            self.p.x, self.p.y = data["player_position"]
+        else:
+            self.world.active_sector = sector
+            campaign.enter_sector(sector.upper())
+            completed = campaign.progress[sector.upper()].completed_waves
+            if completed == 5:
+                self.state = "play"
+                self.wave = 5
+                self._show_hud(True)
+                self._show_sector_clear(sector)
+            elif (data["scene"] == "upgrade" or advanced and
+                  completed >= 1 and completed != data["campaign"]["completed_waves"][sector.upper()]):
+                self.state = "upgrade"
+                self.wave = completed
+                if (data["scene"] == "upgrade" and not advanced and
+                        completed == data["campaign"]["completed_waves"][sector.upper()]):
+                    ids = data["pending_cards"]
+                else:
+                    ids = [item[0] for item in self.roll_upgrades(3)]
+                self.card_opts = [UP_BY_ID[uid] if uid != "bonus" else
+                                  ("bonus", "잔여 신호", "점수 +250 즉시 획득", 0, 99)
+                                  for uid in ids]
+                self.build_upgrade_screen()
+            else:
+                self.start_wave(completed + 1)
+
+        self.checkpoint_revision = data["revision"]
+        self.checkpoint_pending = None
+        self.checkpoint_error = None
+        self.checkpoint_prompt_open = False
+        self.c.delete("resumeui")
+        self.sync_campaign_rewards()
+        self._persist_checkpoint()
+        self.announce_world("이전 OS 진행도를 복구했습니다 · 미완료 웨이브만 재시도", 6)
+        return True
 
     # --------------------------------------------------- 영구 백신 DB / 보상
     _DB_SECTOR_IDS = {
@@ -532,6 +868,7 @@ class Game(VisualMixin):
             # Apply an actual available game upgrade, never edit the C archive.
             apply_upgrade(self, uid)
             self.salvage_claimed = True
+            self._persist_checkpoint()
             self.salvage_open = False
             self.c.delete("salvageui")
             self.keys.clear()
@@ -607,20 +944,37 @@ class Game(VisualMixin):
         return True
 
     def close_game(self):
-        """Ask before closing without a durable failed/abandoned run receipt."""
-        closed = (self._close_database_run("dead") if
-                  self.campaign is not None and self.state == "dead" else
-                  self._abandon_active_run())
-        if not closed and not self.auto:
-            from tkinter import messagebox
-            if not messagebox.askyesno(
-                "NEON VOID · 저장 실패",
-                "운영체제 종료 기록을 백신 데이터베이스에 저장하지 못했습니다. "
-                "다시 시도하려면 '아니오'를 누르세요. "
-                "저장되지 않은 종료 기록을 포기하고 종료할까요?",
-                parent=self.root,
-            ):
-                return
+        """Ordinary quit SUSPENDS an OS; explicit abandon/death closes its DB."""
+        if (self.campaign is not None and self.state in ("hub", "play", "upgrade")
+                and self.checkpoint_store is not None):
+            if not self._persist_checkpoint():
+                from tkinter import messagebox
+                if not messagebox.askyesno(
+                    "NEON VOID · OS 저장 실패",
+                    "진행 중인 운영체제를 저장하지 못했습니다.\n"
+                    "아니오: 게임으로 돌아가 저장 재시도\n"
+                    "예: 이번 OS를 포기하고 종료 (확정 XP 유지)",
+                    parent=self.root,
+                ):
+                    return
+                if not self._abandon_active_run():
+                    self.show_message("포기 기록 저장도 실패했습니다 · 다시 시도하세요")
+                    return
+                self._clear_checkpoint()
+        else:
+            closed = (self._close_database_run("dead") if
+                      self.campaign is not None and self.state == "dead" else
+                      self._abandon_active_run())
+            if not closed and not self.auto:
+                from tkinter import messagebox
+                if not messagebox.askyesno(
+                    "NEON VOID · 저장 실패",
+                    "운영체제 종료 기록을 백신 데이터베이스에 저장하지 못했습니다. "
+                    "다시 시도하려면 '아니오'를 누르세요. "
+                    "저장되지 않은 종료 기록을 포기하고 종료할까요?",
+                    parent=self.root,
+                ):
+                    return
         try:
             self.audio.close()
         except Exception:
@@ -746,6 +1100,9 @@ class Game(VisualMixin):
         self._handle_key(ev.keysym.lower())
 
     def _handle_key(self, key, *, pointer=False):
+        if self.checkpoint_prompt_open:
+            self._handle_checkpoint_key(key)
+            return
         if self.salvage_open:
             self._handle_salvage_key(key)
             return
@@ -889,6 +1246,13 @@ class Game(VisualMixin):
             self.hover_card = -1
 
     def on_mouse_down(self, ev):
+        if self.checkpoint_prompt_open:
+            if 300 <= ev.x <= W-300 and 288 <= ev.y <= 414:
+                self.checkpoint_choice = 0 if ev.y < 354 else 1
+                self._draw_checkpoint_prompt()
+            elif 490 <= ev.x <= 790 and 450 <= ev.y <= 510:
+                self._handle_checkpoint_key("return")
+            return
         self.mouse_down = self._aim_cursor()
         action = self._menu_action_at(ev.x, ev.y)
         if action is not None:
@@ -1075,6 +1439,7 @@ class Game(VisualMixin):
         self.kills = 0
         self.combo = 0
         self.combo_t = 0.0
+        self.checkpoint_timer = 0.0
         self.hitstop = 0.0
         self.slow = 0.0
         self.shake = 0.0
@@ -1086,6 +1451,58 @@ class Game(VisualMixin):
         self.state = "hub"
         self.announce_world("백신 복구 완료 · 배포 단말기를 찾아주세요")
         self.events.emit("returned_to_base")
+        self._clear_checkpoint()
+        return True
+
+    def _deploy_new_os(self):
+        """Start a fresh OS only after old checkpoint was explicitly discarded."""
+        if self.checkpoint_pending is not None or self.checkpoint_revision is not None:
+            self.show_message("진행 중인 OS가 있습니다 · 이어하기 또는 새 도전 선택")
+            return False
+        if self.database_error is not None:
+            self.show_message("백신 DB 저장 상태를 먼저 복구해야 새 OS를 배포할 수 있습니다")
+            return False
+        if self.database_store is not None and self.database_error is None:
+            try:
+                self.database = self.database_store.load()
+            except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                self.database_error = f"{type(exc).__name__}: {exc}"
+                self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 5)
+                return False
+        try:
+            starting = starting_software_levels(
+                self.database, self.starting_software_id)
+        except ValueError:
+            self.starting_software_id = None
+            starting = {}
+        base = base_stats_for_level(self.database.antivirus_level)
+        if not self.new_game(start_combat=False):
+            self.announce_world("이전 런 기록을 저장하지 못했습니다 · 다시 시도하세요")
+            return False
+        self.checkpoint_level = self.database.antivirus_level
+        self.p.maxhp = self.p.hp = base["maxhp"]
+        self.p.st["dmg"] = base["dmg"]
+        self.p.st["armor"] = base["armor"]
+        self.p.maxmana = self.p.mana = base["maxmana"]
+        for uid in starting:
+            apply_upgrade(self, uid)
+        self.world.deploy()
+        run_id = uuid4().hex
+        seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
+        self.campaign = SectorCampaign(run_id, seed=seed, events=self.events)
+        self.infection.reset_for_new_os()
+        self.purify_uses = 3
+        self.salvage_claimed = False
+        self.salvage_open = False
+        self.p.x, self.p.y = START
+        self.keys.clear()
+        self.events.emit("os_deployed")
+        if not self._persist_checkpoint():
+            self.announce_world("OS는 시작됐지만 진행도 저장에 실패했습니다", 6)
+        else:
+            self.announce_world(
+                f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
+                f"시작 소프트웨어 {next(iter(starting), '기본 무장')}", 4)
         return True
 
     def interact_hub(self):
@@ -1095,45 +1512,10 @@ class Game(VisualMixin):
             return
         if self.world.room == "base":
             if node.id == "deploy":
-                if self.database_store is not None and self.database_error is None:
-                    try:
-                        self.database = self.database_store.load()
-                    except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
-                        self.database_error = f"{type(exc).__name__}: {exc}"
-                        self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 4)
-                        return
-                try:
-                    starting = starting_software_levels(
-                        self.database, self.starting_software_id)
-                except ValueError:
-                    self.starting_software_id = None
-                    starting = {}
-                base = base_stats_for_level(self.database.antivirus_level)
-                if not self.new_game(start_combat=False):
-                    self.announce_world("이전 런 기록을 저장하지 못했습니다 · 다시 시도하세요")
-                    return
-                self.p.maxhp = self.p.hp = base["maxhp"]
-                self.p.st["dmg"] = base["dmg"]
-                self.p.st["armor"] = base["armor"]
-                self.p.maxmana = self.p.mana = base["maxmana"]
-                for uid in starting:
-                    apply_upgrade(self, uid)
-                self.world.deploy()
-                run_id = uuid4().hex
-                seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
-                self.campaign = SectorCampaign(run_id, seed=seed,
-                                               events=self.events)
-                self.infection.reset_for_new_os()
-                self.purify_uses = 3
-                self.salvage_claimed = False
-                self.salvage_open = False
-                self.p.x, self.p.y = START
-                self.keys.clear()
-                self.events.emit("os_deployed")
-                self.announce_world(
-                    f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
-                    f"시작 소프트웨어 {next(iter(starting), '기본 무장')}",
-                    4)
+                if self.checkpoint_pending is not None or self.checkpoint_error is not None:
+                    self._open_checkpoint_prompt()
+                else:
+                    self._deploy_new_os()
             elif node.id == "settings":
                 self.open_settings()
             elif node.id == "database":
@@ -1157,6 +1539,7 @@ class Game(VisualMixin):
                 self.announce_world(
                     f"백신 정화 −{cleaned:.1f}% · OS 무결성 +{healed:.1f}% "
                     f"· 남은 사용 {self.purify_uses}회")
+                self._persist_checkpoint()
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
             if self.world.os_clean:
@@ -1190,6 +1573,7 @@ class Game(VisualMixin):
             self.spawn_queue = []
             self.enemies = []
             self._show_sector_clear(sector_id)
+        self._persist_checkpoint()
 
     def leave_sector(self):
         sector_id = self.world.leave_sector()
@@ -1219,6 +1603,7 @@ class Game(VisualMixin):
                             f"완료한 웨이브 {self.world.sector_waves[sector_id]}/5")
         self.events.emit("sector_exited", sector_id=sector_id,
                          cleared_waves=self.world.sector_waves[sector_id])
+        self._persist_checkpoint()
 
     def step_hub(self, dt):
         p = self.p
@@ -1272,6 +1657,7 @@ class Game(VisualMixin):
         self.screen_sweep(0.32, C_BOSS if plan.boss else C_PLAYER)
         self.events.emit("wave_started", wave=n, boss=plan.boss,
                          stage_id=plan.stage_id)
+        self._persist_checkpoint()
 
     def combo_mult(self):
         return 1.0 + min(self.combo, 40) * 0.1
@@ -1592,6 +1978,13 @@ class Game(VisualMixin):
         self.t += dt
         self.frames += 1
         self._tick_ui(dt)
+        if (self.campaign is not None and self.checkpoint_store is not None
+                and self.state in ("hub", "play", "upgrade")
+                and not self.paused):
+            self.checkpoint_timer += dt
+            if self.checkpoint_timer >= 5.0:
+                self.checkpoint_timer = 0.0
+                self._persist_checkpoint()
 
         if self.banner_t > 0:
             self.banner_t -= dt
@@ -1621,7 +2014,8 @@ class Game(VisualMixin):
             self.os_close_retry_t = max(0.0, self.os_close_retry_t - dt)
         if self.state == "hub":
             if not (self.paused or self.settings_open or self.profile_open or
-                    self.database_open or self.extraction_open or self.salvage_open):
+                    self.database_open or self.extraction_open or self.salvage_open
+                    or self.checkpoint_prompt_open):
                 self.step_hub(dt)
             self._step_fx(dts)
             return
@@ -2348,7 +2742,10 @@ class Game(VisualMixin):
         self.events.emit("run_ended", score=self.score, wave=self.wave,
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
+        self._persist_checkpoint()  # Durable death marker before C closes it.
         closed = self._close_database_run("dead")
+        if closed:
+            self._clear_checkpoint()
 
         c = self.c
         c.delete("scr")
@@ -2404,6 +2801,7 @@ class Game(VisualMixin):
                     healed = min(self.p.maxhp - self.p.hp, self.p.maxhp * 0.15)
                     self.p.hp += healed
                     self._show_sector_clear(sector, healed)
+                    self._persist_checkpoint()
                     if self.world.os_clean:
                         self.announce_world("OS CLEAN · 중앙 시스템에서 철수를 준비하세요", 4)
                     return
@@ -2418,6 +2816,7 @@ class Game(VisualMixin):
         self.audio.play("wave", 0.2)
         self.card_opts = self.roll_upgrades(3)
         self.build_upgrade_screen()
+        self._persist_checkpoint()
 
     def roll_upgrades(self, n):
         pool = []

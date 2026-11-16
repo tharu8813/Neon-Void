@@ -24,3 +24,10 @@ htmlcov/
 /antivirus_db.json
 /antivirus_db.json.bak
 /antivirus_db.json.lock
+
+# OS session save; never commit player progress or corrupt recovery copies
+/os_checkpoint.json
+/os_checkpoint.json.bak
+/os_checkpoint.json.lock
+/os_checkpoint.json.corrupt*
+/.neon-checkpoint-*.tmp

@@ -1108,6 +1108,7 @@ class VisualMixin:
         c.tag_raise("profileui")
         c.tag_raise("extractui")
         c.tag_raise("salvageui")
+        c.tag_raise("resumeui")
         c.tag_raise("term-fx")
         c.tag_raise(self.message_bg)
         c.tag_raise(self.message_txt)
@@ -1862,6 +1863,70 @@ class VisualMixin:
         self._menu_button(layer, "escape", W - 407, 587, W - 208, 627,
                           "허브로 돌아가기", "ESC", primary=True)
         c.tag_raise(layer)
+
+    def _draw_checkpoint_prompt(self):
+        """In-world gate prompt; OS progress is never selected from title GUI."""
+        c = self.c
+        c.delete("resumeui")
+        if not self.checkpoint_prompt_open:
+            return
+        data = self.checkpoint_pending
+        c.create_rectangle(0, 0, W, H, fill="#020711", stipple="gray75",
+                           outline="", tags="resumeui")
+        c.create_rectangle(265, 133, W-265, 570, fill="#0a1e2b",
+                           outline="#3d93b3", width=2, tags="resumeui")
+        c.create_text(W/2, 178, text="OS RECOVERY  ·  ANTIVIRUS DEPLOYMENT",
+                      fill="#8beaf7", font=F_BIG, tags="resumeui")
+        if data is None:
+            c.create_text(
+                W/2, 226,
+                text="중단된 OS 기록을 안전하게 읽지 못했습니다.",
+                fill="#ffb1ad", font=F_UI, tags="resumeui")
+            c.create_text(
+                W/2, 254,
+                text="손상된 원본은 .corrupt 파일로 보존하고 새 OS를 시작할 수 있습니다.",
+                fill="#b6cbd2", font=F_UI, tags="resumeui")
+        else:
+            progress = data["campaign"]["completed_waves"]
+            total = sum(progress.values())
+            c.create_text(
+                W/2, 220,
+                text=("사망한 운영체제 기록 · 이어하기 불가" if data["scene"] == "dead"
+                      else f"RUN {data['campaign']['run_id'][:16]}  ·  진행 {total}/20 웨이브"),
+                fill="#c3e7f1", font=F_MID, tags="resumeui")
+            c.create_text(
+                W/2, 255,
+                text=("CPU {CPU}/5   MEMORY {MEMORY}/5   "
+                      "STORAGE {STORAGE}/5   NETWORK {NETWORK}/5").format(**progress),
+                fill="#8cbac9", font=F_UI, tags="resumeui")
+
+        labels = (
+            ("이전 운영체제 이어하기" if data is not None and
+             data["scene"] != "dead" else "이어하기 불가"),
+            ("이전 OS 종료 기록 확정 후 새 배포" if data is not None and
+             data["scene"] == "dead" else
+             "이전 OS 포기 후 새 운영체제 배포" if data is not None else
+             "손상된 기록 보관 후 새 운영체제 배포"),
+        )
+        for i, label in enumerate(labels):
+            cy = 323 + i*72
+            selected = self.checkpoint_choice == i
+            c.create_rectangle(324, cy-26, W-324, cy+25,
+                               fill="#1b4d5d" if selected else "#122836",
+                               outline="#76e6ef" if selected else "#395768",
+                               width=2 if selected else 1,
+                               tags="resumeui")
+            c.create_text(W/2, cy, text=label,
+                          fill="#ffffff" if selected else "#9fb9c3",
+                          font=F_UI, tags="resumeui")
+        c.create_rectangle(492, 451, 788, 501, fill="#235569",
+                           outline="#83dce9", width=2, tags="resumeui")
+        c.create_text(W/2, 475, text="ENTER / 클릭 · 확인",
+                      fill="#e4ffff", font=F_UI, tags="resumeui")
+        c.create_text(W/2, 534,
+                      text="↑↓ 선택 · ESC 또는 상호작용 키로 취소",
+                      fill="#8aa8b5", font=F_UI, tags="resumeui")
+        c.tag_raise("resumeui")
 
     def _draw_database_terminal(self):
         c = self.c
