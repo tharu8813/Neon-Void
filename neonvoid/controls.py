@@ -11,7 +11,7 @@ import math
 import string
 
 ACTION_ORDER = ("up", "down", "left", "right", "dash", "pause",
-                "skill_pulse", "skill_guard")
+                "skill_pulse", "skill_guard", "interact")
 ACTION_LABELS = {
     "up": "위로 이동",
     "down": "아래로 이동",
@@ -21,6 +21,7 @@ ACTION_LABELS = {
     "pause": "일시정지",
     "skill_pulse": "충격파 스킬",
     "skill_guard": "보호막 스킬",
+    "interact": "월드 상호작용",
 }
 DEFAULT_BINDINGS = {
     "up": "w",
@@ -31,6 +32,7 @@ DEFAULT_BINDINGS = {
     "pause": "p",
     "skill_pulse": "q",
     "skill_guard": "e",
+    "interact": "f",
 }
 RESERVED_KEYS = frozenset(("m", "r", "o"))
 ALLOWED_KEYS = (frozenset(string.ascii_lowercase) - RESERVED_KEYS) | frozenset(("space",))
@@ -76,7 +78,27 @@ def migrate_v2_bindings(bindings):
                 break
         else:
             raise ValueError("No free skill key")
-    return validate_bindings(old)
+    return migrate_v3_bindings(old)
+
+
+def migrate_v3_bindings(bindings):
+    """Keep eight custom controls and add an unused world-interact key."""
+    old_actions = ACTION_ORDER[:-1]
+    if not isinstance(bindings, dict) or set(bindings) != set(old_actions):
+        raise ValueError("Invalid schema-v3 bindings")
+    updated = {}
+    for action in old_actions:
+        key = bindings[action]
+        if type(key) is not str or key.lower().strip() not in ALLOWED_KEYS:
+            raise ValueError("Invalid schema-v3 binding")
+        updated[action] = key.lower().strip()
+    if len(set(updated.values())) != len(updated):
+        raise ValueError("Duplicate schema-v3 binding")
+    for candidate in ("f", "g", "h", "j", "k", "l", "z", "x", "c", "v", "b"):
+        if candidate not in updated.values():
+            updated["interact"] = candidate
+            return validate_bindings(updated)
+    raise ValueError("No available interact key")
 
 
 def rebind_action(bindings, action, key):

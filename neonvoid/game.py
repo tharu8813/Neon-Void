@@ -23,6 +23,8 @@ from .render_pool import OvalPool, PolyPool, TextPool, LinePool
 from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
+from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
+                            move_on_world, camera_for)
 
 class Game(VisualMixin):
     def __init__(self, root, opts):
@@ -69,6 +71,9 @@ class Game(VisualMixin):
         )
         self.run_start_frame = 0
         self.rng = random.Random(opts.seed)
+        self.world = WorldSession()
+        self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
+        self.world_notice_t = 4.0
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
@@ -143,7 +148,7 @@ class Game(VisualMixin):
         # HUD
         self._build_hud()
 
-        self.state = "title"
+        self.state = "title" if self.auto else "hub"
         self.t = 0.0
         self.acc = 0.0
         self.last = time.perf_counter()
@@ -151,6 +156,7 @@ class Game(VisualMixin):
         self.frames = 0
 
         self.p = Player()
+        self.p.x, self.p.y = START
         self.enemies = []
         self.bullets = []
         self.ebullets = []
@@ -182,7 +188,8 @@ class Game(VisualMixin):
         self.dead_t = 0.0
         self._drone_cd = 0.0
 
-        self._build_title()
+        if self.auto:
+            self._build_title()
         self._build_cursor()
         if not self.auto:
             self.loop()
@@ -203,7 +210,7 @@ class Game(VisualMixin):
         """Show the overlay only from the title or a paused run."""
         if self.settings_open:
             return
-        if self.state != "title" and not (self.state == "play" and self.paused):
+        if self.state not in ("title", "hub") and not (self.state == "play" and self.paused):
             return
         self.settings_open = True
         self.settings_page = "general"
@@ -307,7 +314,7 @@ class Game(VisualMixin):
             self._handle_settings_key(key)
             return
 
-        if key == "o" and (self.state == "title" or
+        if key == "o" and (self.state in ("title", "hub") or
                            (self.state == "play" and self.paused)):
             self.open_settings()
             return
@@ -330,19 +337,29 @@ class Game(VisualMixin):
             return
 
         if key == self.settings.bindings["pause"] or (
-            key == "escape" and self.state == "play"):
-            if self.state == "play" and not was_held:
+            key == "escape" and self.state in ("play", "hub")):
+            if self.state in ("play", "hub") and not was_held:
                 self.paused = not self.paused
                 self.pause_t = 0.0
                 self._draw_pause()
             return
 
         if self.state == "dead":
-            if key in ("r", "return", "space"):
-                self.new_game()
-            elif key == "escape":
-                self._build_title()
-                self.state = "title"
+            if key in ("r", "return", "space", "escape"):
+                if self.auto:
+                    self.new_game()
+                else:
+                    self.return_to_base()
+            return
+
+        if self.state == "hub":
+            if self.paused:
+                return
+            if key == self.settings.bindings["interact"] and not was_held:
+                self.interact_hub()
+            elif key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
+                if not was_held:
+                    self.try_dash()
             return
 
         if self.state == "upgrade":
@@ -353,6 +370,12 @@ class Game(VisualMixin):
             return
 
         if self.state == "play" and not self.paused:
+            if key == self.settings.bindings["interact"] and not was_held:
+                if self.world.active_sector == "cpu" and (
+                    math.hypot(self.p.x - CPU_EXIT[0],
+                               self.p.y - CPU_EXIT[1]) < 112.0):
+                    self.leave_sector()
+                return
             if key == self.settings.bindings["dash"] or key in ("shift_l", "shift_r"):
                 if not was_held:
                     self.try_dash()
@@ -361,7 +384,10 @@ class Game(VisualMixin):
             elif key == self.settings.bindings["skill_guard"] and not was_held:
                 self.try_cast_skill("guard")
             elif key == "r" and not was_held:
-                self.new_game()
+                if self.auto:
+                    self.new_game()
+                else:
+                    self.return_to_base(abandon=True)
 
     def on_key_up(self, ev):
         self.keys.discard(ev.keysym.lower())
@@ -422,7 +448,10 @@ class Game(VisualMixin):
             else:
                 self.new_game()
         elif self.state == "dead":
-            self.new_game()
+            if self.auto:
+                self.new_game()
+            else:
+                self.return_to_base()
         elif self.state == "play" and self.paused:
             if W / 2 - 160 <= ev.x <= W / 2 + 160 and H / 2 + 85 <= ev.y <= H / 2 + 128:
                 self.open_settings()
@@ -437,7 +466,7 @@ class Game(VisualMixin):
         self.mouse_down = False
 
     # ------------------------------------------------------------------ 상태
-    def new_game(self):
+    def new_game(self, *, start_combat=True):
         self._abandon_active_run()
         self.run_start_frame = self.frames
         c = self.c
@@ -497,7 +526,11 @@ class Game(VisualMixin):
         if not self.music_started:
             self.music_started = True
             self.audio.start_music()
-        self.start_wave(1)
+        if start_combat:
+            self.start_wave(1)
+        else:
+            self.state = "hub"
+            self._show_hud(False)
 
     def start_wave(self, n):
         """Apply the stage director's deterministic, data-driven wave plan."""
