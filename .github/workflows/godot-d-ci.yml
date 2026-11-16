@@ -63,6 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd
           timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/software_smoke.gd
           if [ -f 'godot/tests/ui_smoke.gd' ]; then
             timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/ui_smoke.gd
@@ -85,6 +86,7 @@ jobs:
             } finally { $p.Dispose() }
           }
           Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd'
           Invoke-CheckedGodot '--headless --path godot --script res://tests/software_smoke.gd'
           if (Test-Path 'godot/tests/ui_smoke.gd') {
             Invoke-CheckedGodot '--headless --path godot --script res://tests/ui_smoke.gd'
