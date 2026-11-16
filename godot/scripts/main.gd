@@ -11,6 +11,7 @@ const SaveStore = preload("res://scripts/persistence/save_store.gd")
 const Progression = preload("res://scripts/progression/antivirus_progression.gd")
 const CheckpointRules = preload("res://scripts/progression/checkpoint_rules.gd")
 const Bindings = preload("res://scripts/input/legacy_bindings.gd")
+const Migration = preload("res://scripts/persistence/migration_service.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 const ARENA_SPAWN: Vector2 = Vector2(195.0, 360.0)
@@ -58,6 +59,8 @@ var _pending_wave: bool = false
 var _pending_boss: bool = false
 var _pending_offers: Array[String] = []
 var _pending_boss_receipts: bool = false
+var selected_archived_software: String = ""
+var _import_dialog: FileDialog = null
 
 func _ready() -> void:
     assert(camera_3d.projection == Camera3D.PROJECTION_ORTHOGONAL)
@@ -143,6 +146,12 @@ func start_new_run() -> bool:
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("wave_ready", _on_wave_ready)
     software.reset(_deployed_base())
+    if persistence_enabled and not selected_archived_software.is_empty():
+        var start: Dictionary = Progression.starting_software(
+            saved_state["antivirus_db.json"], selected_archived_software)
+        if not start.get("ok", false) or not software.restore_levels(start["levels"], _deployed_base()):
+            ui.call("show_error", "선택된 영구 소프트웨어를 검증하지 못했습니다.")
+            return false
     _pending_wave = false
     _pending_offers.clear()
     purify_uses = 3
@@ -442,6 +451,10 @@ func _on_menu_action(action: String, payload: Dictionary) -> void:
                 _resume_gameplay()
         "extract_software":
             extract_software(str(payload.get("id", "")))
+        "select_archived":
+            select_archived_software(str(payload.get("id", "")))
+        "import_legacy":
+            begin_legacy_import()
         "resume_checkpoint":
             if not resume_checkpoint():
                 ui.call("show_error", "저장된 OS를 안전하게 복구할 수 없었습니다.")
@@ -546,6 +559,7 @@ func _hud_snapshot() -> Dictionary:
         },
         "profile": profile,
         "extraction_options": software.levels.keys(),
+        "selected_archived_software": selected_archived_software,
     }
 
 func _update_hud() -> void:
@@ -829,3 +843,57 @@ func _apply_runtime_settings(settings: Dictionary) -> void:
             DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
             DisplayServer.window_set_size(Vector2i(
                 int(settings.get("window_width", 1280)), int(settings.get("window_height", 720))))
+
+func select_archived_software(uid: String) -> bool:
+    if not uid.is_empty():
+        var db: Dictionary = saved_state.get("antivirus_db.json", {})
+        if db.is_empty() or not Progression.starting_software(db, uid).get("ok", false):
+            ui.call("show_error", "영구 보유하지 않은 소프트웨어는 장착할 수 없습니다.")
+            return false
+    selected_archived_software = uid
+    _update_hud()
+    return true
+
+func begin_legacy_import() -> bool:
+    if not persistence_enabled or save_slot.is_empty() or mode != "title":
+        return false
+    if DirAccess.dir_exists_absolute(save_slot) or FileAccess.file_exists(save_slot):
+        ui.call("show_error", "기존 Godot 저장 슬롯이 이미 존재합니다. 안전을 위해 가져오기로 덮어쓸 수 없습니다.")
+        return false
+    if _import_dialog != null:
+        return false
+    _import_dialog = FileDialog.new()
+    _import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    _import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+    _import_dialog.title = "기존 Python NeonVoid 저장 폴더 선택 (원본 절대 변경 안 함)"
+    _import_dialog.dir_selected.connect(_legacy_folder_selected)
+    _import_dialog.canceled.connect(_close_import_dialog)
+    add_child(_import_dialog)
+    if OS.get_name() == "Windows":
+        var suggested: String = OS.get_environment("LOCALAPPDATA").path_join("NeonVoid")
+        if DirAccess.dir_exists_absolute(suggested):
+            _import_dialog.current_dir = suggested
+    _import_dialog.popup_centered_ratio(0.72)
+    return true
+
+func _close_import_dialog() -> void:
+    if is_instance_valid(_import_dialog):
+        _import_dialog.queue_free()
+    _import_dialog = null
+
+func _legacy_folder_selected(folder: String) -> void:
+    _close_import_dialog()
+    if DirAccess.dir_exists_absolute(save_slot) or FileAccess.file_exists(save_slot):
+        ui.call("show_error", "다른 프로세스가 저장 슬롯을 생성했습니다. 이관을 중단했습니다.")
+        return
+    # Explicit folder selection is the import consent. E copies and hashes
+    # original bytes read-only, then atomically creates a separate Godot slot.
+    var imported: Dictionary = Migration.import_legacy(folder, save_slot, true)
+    if not imported.get("ok", false) or not _reload_save():
+        ui.call("show_error", "이관하지 않았습니다. 원본 보존: " + str(imported.get("reason", "readback_failed")))
+        return
+    selected_archived_software = ""
+    controls.call("apply_bindings", saved_state["settings.json"]["bindings"])
+    _apply_runtime_settings(saved_state["settings.json"])
+    _update_hud()
+    ui.call("open_menu", "title")
