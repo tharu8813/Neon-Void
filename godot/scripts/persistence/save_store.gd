@@ -35,7 +35,7 @@ static func validate_state(state: Variant) -> bool:
 static func _envelope(state: Dictionary, revision: int) -> String:
     var canonical: String = JSON.stringify(state, "", true, true)
     return JSON.stringify({"format": 1, "revision": revision,
-        "payload_sha256": canonical.sha256_text(), "payload": state}, "", true, true) + "\n"
+        "payload_sha256": canonical.sha256_text(), "payload_json": canonical}, "", true, true) + "\n"
 
 static func _read_bytes(path: String, limit: int = MAX_STATE_BYTES) -> Dictionary:
     if not FileAccess.file_exists(path):
@@ -73,18 +73,18 @@ static func read(slot_path: String) -> Dictionary:
     var env: Variant = parsed.data
     if typeof(env) != TYPE_DICTIONARY or env.size() != 4:
         return {"ok": false, "reason": "invalid_envelope"}
-    if not (env.has("format") and env.has("revision") and env.has("payload_sha256") and env.has("payload")):
+    if not (env.has("format") and env.has("revision") and env.has("payload_sha256") and env.has("payload_json")):
         return {"ok": false, "reason": "invalid_envelope"}
     if not Validator._integer(env.format, 1, 1) or not Validator._integer(env.revision, 1, 1000000000):
         return {"ok": false, "reason": "unsupported_version"}
-    if typeof(env.payload_sha256) != TYPE_STRING or env.payload_sha256.length() != 64:
+    if typeof(env.payload_sha256) != TYPE_STRING or env.payload_sha256.length() != 64 or typeof(env.payload_json) != TYPE_STRING:
         return {"ok": false, "reason": "bad_digest"}
-    var expected: String = JSON.stringify(env.payload, "", true, true).sha256_text()
-    if expected != env.payload_sha256:
+    if env.payload_json.sha256_text() != env.payload_sha256:
         return {"ok": false, "reason": "checksum_mismatch"}
-    if not validate_state(env.payload):
+    var unpacked: Dictionary = _parse(env.payload_json.to_utf8_buffer())
+    if not unpacked.ok or not validate_state(unpacked.get("data")):
         return {"ok": false, "reason": "invalid_payload"}
-    return {"ok": true, "revision": int(env.revision), "state": env.payload}
+    return {"ok": true, "revision": int(env.revision), "state": unpacked.data}
 
 static func _atomic_write(path: String, data: PackedByteArray) -> bool:
     var temp: String = path + ".tmp-" + str(OS.get_process_id()) + "-" + str(Time.get_ticks_usec())
