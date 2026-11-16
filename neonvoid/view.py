@@ -652,6 +652,25 @@ class VisualMixin:
                 return key
         return None
 
+    def _update_menu_hover(self, x, y):
+        """Keep all modal buttons visually responsive without rebuilding screens.
+
+        Only the active layer participates; hidden menus must never appear
+        interactive through an overlay. Disabled during key rebinding.
+        """
+        active = None if (getattr(self, "checkpoint_prompt_open", False)
+                          or getattr(self, "rebinding_action", None)) else self._menu_action_at(x, y)
+        for button, key in self._menu_buttons():
+            primary = self.c.itemcget(button, "width") == "2.0"
+            hovered = key == active
+            self.c.itemconfigure(
+                button,
+                fill=("#185064" if hovered else
+                      "#10313d" if primary else "#0a1826"),
+                outline=(C_PLAYER if hovered or primary else "#31536b"),
+                width=2 if hovered or primary else 1,
+            )
+
     def _build_title(self):
         c = self.c
         c.delete("scr")
