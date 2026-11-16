@@ -351,7 +351,7 @@ class Game(VisualMixin):
                 return False
         self.database_close_error = "save_failed"
         self.announce_world("런 종료 기록을 저장하지 못했습니다 · Enter/R 재시도", 6)
-        return False"
+        return False
 
     def _database_options(self):
         return (None,) + tuple(sorted(self.database.software_archive))
