@@ -123,8 +123,8 @@ class InfectionState:
         """Non-mutating station preview, including threshold changes."""
         removal = _amount(infection_reduction, "infection_reduction")
         repair = _amount(integrity_repair, "integrity_repair")
-        return InfectionState(self.player_infection - removal,
-                              self.os_integrity + repair)
+        return InfectionState(max(0.0, self.player_infection - removal),
+                              min(MAX_INTEGRITY, self.os_integrity + repair))
 
     def apply_infection(self, amount: float, *, paused: bool = False) -> float:
         """Apply a confirmed infection hit; return the actual amount added."""
