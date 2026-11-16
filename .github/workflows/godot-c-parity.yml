@@ -1,0 +1,73 @@
+name: Godot C combat and sector parity
+
+on:
+  pull_request:
+    paths:
+      - 'godot/scripts/combat/**'
+      - 'godot/scripts/enemies/**'
+      - 'godot/scripts/sectors/**'
+      - 'godot/scenes/combat/**'
+      - 'godot/tests/combat_smoke.gd'
+      - 'godot/tests/sector_smoke.gd'
+      - '.github/workflows/godot-c-parity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'godot/scripts/combat/**'
+      - 'godot/scripts/enemies/**'
+      - 'godot/scripts/sectors/**'
+      - 'godot/scenes/combat/**'
+      - 'godot/tests/combat_smoke.gd'
+      - 'godot/tests/sector_smoke.gd'
+      - '.github/workflows/godot-c-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_TAG: 4.7.2-stable
+
+jobs:
+  combat-parity:
+    name: C combat/sector fixed-seed checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v${GODOT_TAG}linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}linux.x86_64"
+          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}linux.x86_64" >> "$GITHUB_ENV"
+      - name: Install Godot on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/godot" -Force | Out-Null
+          $url = "https://github.com/godotengine/godot-builds/releases/download/$env:GODOT_TAG/Godot_v$env:GODOT_TAG" + "_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP/godot.zip"
+          Expand-Archive -LiteralPath "$env:RUNNER_TEMP/godot.zip" -DestinationPath "$env:RUNNER_TEMP/godot"
+          $exe = Get-ChildItem -Path "$env:RUNNER_TEMP/godot" -Filter '*win64.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Godot editor not found' }
+          "NEON_GODOT=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Import and run C deterministic regressions
+        shell: pwsh
+        run: |
+          & $env:NEON_GODOT --headless --path godot --editor --import --quit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:NEON_GODOT --headless --path godot --script res://tests/combat_smoke.gd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path 'godot/tests/sector_smoke.gd') {
+            & $env:NEON_GODOT --headless --path godot --script res://tests/sector_smoke.gd
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
