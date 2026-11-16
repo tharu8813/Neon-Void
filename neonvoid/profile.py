@@ -12,6 +12,7 @@ from typing import Callable
 
 from .constants import PROFILE_FILE
 from .events import EventBus, GameEvent
+from .storage import quarantine_corrupt
 
 SCHEMA_VERSION = 2
 MAX_RECENT_RUNS = 20
@@ -110,6 +111,8 @@ def load_profile(path: str | os.PathLike | None = None) -> PlayerProfile:
         return PlayerProfile()
     except (OSError, ValueError, TypeError, OverflowError) as exc:
         LOG.warning("Player profile load failed (%s): %s", location, exc)
+        # 손상된 원본은 그대로 두지 않고 옆으로 옮겨 보존한다.
+        quarantine_corrupt(location)
         return PlayerProfile()
 
 

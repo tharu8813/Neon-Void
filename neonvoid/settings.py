@@ -12,6 +12,7 @@ import tempfile
 from .constants import SETTINGS_FILE
 from .controls import (DEFAULT_BINDINGS, migrate_v2_bindings,
                        migrate_v3_bindings, validate_bindings)
+from .storage import quarantine_corrupt
 
 SCHEMA_VERSION = 4
 LOG = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ def load_settings(path: str | os.PathLike | None = None) -> Settings:
         return Settings()
     except (OSError, ValueError, TypeError, OverflowError) as exc:
         LOG.warning("Settings load failed (%s): %s", location, exc)
+        # 손상된 원본은 옆으로 옮겨 보존한다(조용히 덮어쓰지 않는다).
+        quarantine_corrupt(location)
         return Settings()
 
 

@@ -15,12 +15,14 @@ from neonvoid.content.upgrades import UPGRADES, apply_upgrade
 from neonvoid.entities import Bullet, Enemy, Player
 from neonvoid.events import EventBus
 from neonvoid.game import Game
+from neonvoid.world.session import WorldSession
 
 
 def stub_game():
     g = Game.__new__(Game)
     g.p = Player()
     g.state = "play"
+    g.world = WorldSession()
     g.paused = False
     g.enemies = []
     g.shake = 0.0

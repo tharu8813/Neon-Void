@@ -74,7 +74,7 @@ SECTORS: dict[str, SectorDefinition] = {
     "CPU": SectorDefinition(
         "CPU", "CPU CORE", 2, "Overload and fast melee pressure",
         "gate_cpu", "exit_cpu",
-        StageDefinition("CPU", "CPU CORE", base_budget=9.0, budget_per_wave=3.5,
+        StageDefinition("CPU", "CPU CORE", base_budget=7.0, budget_per_wave=3.25,
                         enemy_unlocks=((1, "overheater"), (2, "rusher"),
                                        (3, "trojan"), (4, "packet_swarm")),
                         fallback_kind="overheater", boss_kind="overseer",
@@ -86,7 +86,7 @@ SECTORS: dict[str, SectorDefinition] = {
     "MEMORY": SectorDefinition(
         "MEMORY", "MEMORY SECTOR", 3, "Limited worm replication",
         "gate_memory", "exit_memory",
-        StageDefinition("MEMORY", "MEMORY SECTOR", base_budget=8.0, budget_per_wave=3.0,
+        StageDefinition("MEMORY", "MEMORY SECTOR", base_budget=6.5, budget_per_wave=3.0,
                         enemy_unlocks=((1, "worm"), (2, "splitter"),
                                        (3, "trojan"), (4, "rootkit")),
                         fallback_kind="worm", boss_kind="replicator",

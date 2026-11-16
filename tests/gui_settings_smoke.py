@@ -10,6 +10,11 @@ from neonvoid.game import Game
 def key(game, name):
     game.on_key(SimpleNamespace(keysym=name))
 
+def click(game, x, y):
+    event = SimpleNamespace(x=x, y=y)
+    game.on_mouse_down(event)
+    game.on_mouse_up(event)
+
 
 def main():
     root = tk.Tk()
@@ -18,9 +23,14 @@ def main():
     try:
         game = Game(root, options)
         assert game.state == "title"
-        key(game, "o")
+        click(game, 80, 80)
+        assert game.state == "title"
+        click(game, 760, 620)
         assert game.settings_open
         assert len(game.settings_hits) == 4
+        game._tick_ui(0.3)
+        game.render()
+        assert game.c.coords(game.settings_rule)[2] > 1000
         start_volume = game.settings.volume
         key(game, "Left")
         assert game.settings.volume < start_volume
@@ -34,21 +44,24 @@ def main():
         key(game, "Return")
         assert game.show_fps
         game.render()
+        assert game.c.itemcget(game.title_line, "state") == "hidden"
         key(game, "Escape")
         assert not game.settings_open
         key(game, "Return")
         assert game.state == "play"
+        assert game.message_t == 0
         key(game, "p")
         assert game.paused
-        key(game, "o")
+        click(game, 640, 470)
         assert game.settings_open
         assert game.paused
         game.render()
         key(game, "o")
         assert not game.settings_open
         assert game.paused
-        key(game, "p")
+        click(game, 640, 412)
         assert not game.paused
+        assert not game.mouse_down
         game.render()
         print("[gui-settings] title and pause settings passed")
     finally:

@@ -259,6 +259,11 @@ class _Mixer:
         winmm.waveOutWrite.argtypes = [
             ctypes.c_void_p, ctypes.POINTER(WAVEHDR), wintypes.UINT]
         winmm.waveOutWrite.restype = wintypes.UINT
+        winmm.waveOutUnprepareHeader.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+        winmm.waveOutUnprepareHeader.restype = wintypes.UINT
+        winmm.waveOutClose.argtypes = [ctypes.c_void_p]
+        winmm.waveOutClose.restype = wintypes.UINT
 
         wf = WAVEFORMATEX(1, 1, self.RATE, self.RATE * 2, 2, 16, 0)
         handle = ctypes.c_void_p()
@@ -273,20 +278,48 @@ class _Mixer:
         self.hdrs = []
         self.bufs = []
         self.ptrs = []
-        for _ in range(self.NBUF):
-            buf = ctypes.create_string_buffer(self.NFRAMES * 2)
-            hdr = WAVEHDR()
-            hdr.lpData = ctypes.cast(buf, ctypes.c_void_p)
-            hdr.dwBufferLength = self.NFRAMES * 2
-            hdr.dwFlags = 0
-            if winmm.waveOutPrepareHeader(handle, ctypes.byref(hdr),
-                                          ctypes.sizeof(hdr)) != 0:
-                raise RuntimeError("waveOutPrepareHeader 실패")
-            self.hdrs.append(hdr)
-            self.bufs.append(buf)
-            self.ptrs.append(ctypes.cast(buf, ctypes.POINTER(ctypes.c_int16)))
+        try:
+            for _ in range(self.NBUF):
+                buf = ctypes.create_string_buffer(self.NFRAMES * 2)
+                hdr = WAVEHDR()
+                hdr.lpData = ctypes.cast(buf, ctypes.c_void_p)
+                hdr.dwBufferLength = self.NFRAMES * 2
+                hdr.dwFlags = 0
+                if winmm.waveOutPrepareHeader(handle, ctypes.byref(hdr),
+                                              ctypes.sizeof(hdr)) != 0:
+                    raise RuntimeError("waveOutPrepareHeader 실패")
+                self.hdrs.append(hdr)
+                self.bufs.append(buf)
+                self.ptrs.append(ctypes.cast(buf, ctypes.POINTER(ctypes.c_int16)))
+        except Exception:
+            # 헤더 준비에 실패하면 이미 열린 waveOut 장치를 그대로 두지 않는다.
+            self._close_device()
+            raise
         self.ok = True
         threading.Thread(target=self._run, daemon=True).start()
+
+    def _close_device(self):
+        """Release the waveOut device and every prepared header."""
+        winmm = getattr(self, "winmm", None)
+        handle = getattr(self, "handle", None)
+        if winmm is None or handle is None or not getattr(handle, "value", None):
+            return
+        try:
+            for hdr in getattr(self, "hdrs", ()):  # 헤더를 먼저 반납한다.
+                try:
+                    winmm.waveOutUnprepareHeader(handle, ctypes.byref(hdr),
+                                                 ctypes.sizeof(hdr))
+                except Exception:
+                    pass
+            winmm.waveOutClose(handle)
+        except Exception:
+            pass
+        self.handle = ctypes.c_void_p()
+
+    def close(self):
+        """Stop playback and release the audio device."""
+        self.ok = False
+        self._close_device()
 
     def _run(self):
         try:
@@ -432,8 +465,11 @@ class Audio:
                 self.enabled = False
 
     def _simple_worker(self):
+        # None 센티널로 종료할 수 있어야 스레드가 영원히 남지 않는다.
         while True:
             name = self.q.get()
+            if name is None:
+                break
             try:
                 self.winsound.PlaySound(
                     self.wavdata[name],
@@ -445,13 +481,14 @@ class Audio:
     def play(self, name, gap=0.05):
         if not self.enabled or self.muted:
             return
+        fx = self.effects.get(name)
+        if fx is None:
+            # 존재하지 않는 큐는 레이트 리밋 슬롯을 소모하지 않는다.
+            return
         now = time.perf_counter()
         if now - self.last.get(name, 0.0) < gap:
             return
         self.last[name] = now
-        fx = self.effects.get(name)
-        if fx is None:
-            return
         if self.mixer is not None:
             self.mixer.play(fx[0], fx[1] * self.volume)
         else:
@@ -459,6 +496,20 @@ class Audio:
                 self.q.put_nowait(name)
             except queue.Full:
                 pass
+
+    def close(self):
+        """Release the audio device and stop the fallback worker thread."""
+        self.enabled = False
+        try:
+            self.q.put_nowait(None)
+        except queue.Full:
+            pass
+        if self.mixer is not None:
+            try:
+                self.mixer.close()
+            except Exception:
+                pass
+            self.mixer = None
 
     def start_music(self):
         if self.mixer is None:

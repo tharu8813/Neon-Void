@@ -32,9 +32,9 @@ The profile begins tracking when the new build is first run; historical runs in 
 ## Flow
 
 - `ProfileTracker` subscribes to the existing single-threaded `EventBus` and gathers kills/boss kills/combo without touching combat logic.
-- On `run_ended` or `run_abandoned`, it appends a summary and atomically writes the profile.
+- On `run_ended`, `run_abandoned`, or `run_extracted`, it appends a summary and atomically writes the profile.
 - If the JSON is missing or corrupted, the game falls back to an empty profile. The original save file is not modified by profile loading.
-- The title menu now displays new lifetime totals, independently of the original high score.
+- The base hub's DIAGNOSTICS terminal displays lifetime totals and the latest 20 runs in newest-first order. Each row shows the outcome, last wave, kills, boss kills, best combo, score, and elapsed time.
 
 ## Migration strategy
 

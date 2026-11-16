@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 import tempfile
+import time
 from typing import Callable, TypeVar
 
 from .runtime_paths import data_directory
@@ -79,7 +80,15 @@ def _atomic_bytes(location: Path, data: bytes) -> None:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temp_name, location)
+        for attempt in range(4):
+            try:
+                os.replace(temp_name, location)
+                break
+            except PermissionError as exc:
+                # Another Windows process can briefly hold the file open.
+                if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 3:
+                    raise
+                time.sleep(0.01 * 2 ** attempt)
         temp_name = None
         if os.name != "nt":
             # fsync the containing directory when the platform permits it.

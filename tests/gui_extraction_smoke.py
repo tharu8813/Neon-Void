@@ -35,7 +35,7 @@ def main():
             assert game.database_open
             game.render()
             assert game.c.find_withtag("dbui")
-            game.on_key(SimpleNamespace(keysym="Return"))
+            game.on_mouse_down(SimpleNamespace(x=450, y=590))
             assert game.starting_software_id is None
             assert not game.database_open
 
@@ -82,14 +82,24 @@ def main():
             assert game.c.find_withtag("extractui")
             software_id = game.extraction_options[0]
             assert software_id in completed_run_software
-            game.on_key(SimpleNamespace(keysym="Return"))
+            score = game.score
+            game.on_mouse_down(SimpleNamespace(x=640, y=244))
+            assert game.extraction_open
+            assert game.database_store.load().software_archive == {}
+            game.on_mouse_down(SimpleNamespace(x=450, y=575))
             assert not game.extraction_open
             assert game.state == "hub" and game.world.room == "base"
             assert game.profile.extracted_runs == 1
             assert game.profile_tracker.active is False
             assert game.extraction_fx_t > 0
+            assert game.save["best_score"] == score
             game.render()
             assert game.c.find_withtag("extraction-vfx")
+            game.extraction_fx_t = 0
+            game.render()
+            assert game.c.itemcget(game.hub_extract_sub, "state") == "normal"
+            assert "XP +1,100" in game.c.itemcget(game.hub_extract_sub, "text")
+            assert UP_BY_ID[software_id][1] in game.c.itemcget(game.hub_extract_sub, "text")
             archived = game.database_store.load()
             assert archived.software_archive == {software_id: 1}
             assert archived.processed_extractions == {run_id: software_id}
@@ -108,12 +118,14 @@ def main():
             # Starting software is chosen at the base terminal, one copy only.
             game.p.x, game.p.y = 820, 610
             game.interact_hub()
-            game.on_key(SimpleNamespace(keysym="Down"))
+            game.on_mouse_down(SimpleNamespace(x=640, y=296))
+            assert game.database_selected == 1
             game.on_key(SimpleNamespace(keysym="Return"))
             assert game.starting_software_id == software_id
             game.p.x, game.p.y = 1580, 780
             game.interact_hub()
             assert game.campaign.run_id != run_id
+            assert not game.extraction_summary
             stats = base_stats_for_level(archived.antivirus_level)
             assert game.p.maxhp == stats["maxhp"]
             assert game.p.st["dmg"] == stats["dmg"] + (

@@ -199,6 +199,27 @@ class StorageTests(unittest.TestCase):
             self.assertFalse(storage.save_database(replace(AntivirusDatabase(), xp=1), self.path))
         self.assertFalse(self.path.exists())
 
+    def test_windows_file_lock_retries_main_file_and_backup(self):
+        before, _ = self.store.grant_xp_once(run_id="os", event_id="wave:1", amount=20)
+        replace_file = storage.os.replace
+        blocked = set()
+
+        def locked_once(source, destination):
+            if destination not in blocked:
+                blocked.add(destination)
+                error = PermissionError("File temporarily in use")
+                error.winerror = 5
+                raise error
+            replace_file(source, destination)
+
+        with patch.object(storage.os, "replace", side_effect=locked_once):
+            after, result = self.store.grant_xp_once(run_id="os", event_id="wave:2", amount=20)
+        self.assertTrue(result.applied)
+        self.assertEqual(len(blocked), 2)
+        self.assertEqual(self.store.load(), after)
+        self.assertEqual(after.xp, 40)
+        self.assertEqual(storage.load_database_backup(self.path), before)
+
     def test_replace_failure_is_not_a_grant_and_retry_succeeds(self):
         self.store.grant_xp_once(run_id="os", event_id="wave:1", amount=20)
         original = self.store.load()

@@ -20,3 +20,7 @@ htmlcov/
 
 /profile.json
 /.neon-profile-*.tmp
+
+/antivirus_db.json
+/antivirus_db.json.bak
+/antivirus_db.json.lock

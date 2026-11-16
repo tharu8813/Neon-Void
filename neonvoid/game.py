@@ -1,4 +1,4 @@
-"""Simulation and game flow."""
+﻿"""Simulation and game flow."""
 
 from __future__ import annotations
 
@@ -25,8 +25,9 @@ from .storage import load_save, write_save
 from .view import VisualMixin
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
-from .content.sectors import SectorCampaign, get_sector, SECTOR_IDS as CAMPAIGN_SECTORS
-from .content.virus_catalog import (PATTERNS, VirusRuntime, MAX_LIVE_ENEMIES)
+from .content.sectors import SectorCampaign
+from .content.virus_catalog import (ENCRYPTION_PULSE_RADIUS, PATTERNS,
+                                    VirusRuntime, MAX_LIVE_ENEMIES)
 from .infection import InfectionState
 from uuid import uuid4
 from .metaprogression import (AntivirusDatabase, award_progress_once,
@@ -43,8 +44,11 @@ class Game(VisualMixin):
         self.opts = opts
         self.stage = get_stage(getattr(opts, "stage", DEFAULT_STAGE_ID))
         self.auto = bool(opts.selftest)
+        # 자동 검증(--selftest)·GUI 스모크가 실제 플레이어 저장 파일을
+        # 덮어쓰지 않도록, 실행 방식이 결정되는 시점에 고정한다.
+        self.persist_progress = not self.auto
         self.selftest_left = int(opts.selftest or 0)
-        self.settings = Settings() if self.auto else load_settings()
+        self.settings = (Settings() if not self.persist_progress else load_settings())
         self.settings_open = False
         self.settings_page = "general"
         self.settings_selected = 0
@@ -61,7 +65,6 @@ class Game(VisualMixin):
         self.muted = self.settings.muted
         self.mute_t = 0.0
         self.lowhp_t = 0.0
-        self.combo_mark = 0
 
         root.title("NEON VOID")
         root.configure(bg=C_BG)
@@ -74,13 +77,20 @@ class Game(VisualMixin):
             # 자동 검증 중에는 창을 띄우지 않는다
             root.withdraw()
 
-        self.save = load_save()
-        self.profile = PlayerProfile() if self.auto else load_profile()
+        # 자동 검증(--selftest)·GUI 스모크는 실제 플레이어 저장 파일을
+        # 덮어쓰면 안 되므로 메모리 전용 기록을 사용한다.
+        self.save = ({"best_score": 0, "best_wave": 0, "runs": 0}
+                     if not self.persist_progress else load_save())
+        self.profile = (PlayerProfile() if not self.persist_progress else load_profile())
         self.profile_tracker = ProfileTracker(
-            self.events, self.profile, persist=None if self.auto else save_profile
+            self.events, self.profile, persist=(None if not self.persist_progress else save_profile)
         )
         self.run_start_frame = 0
         self.rng = random.Random(opts.seed)
+        if opts.seed is not None:
+            # 연출용 전역 난수도 같은 시드로 고정해야 --seed 리플레이가
+            # 화면까지 동일하게 재현된다.
+            random.seed(opts.seed)
         self.world = WorldSession()
         self.campaign = None
         self.current_encounter = None
@@ -89,7 +99,7 @@ class Game(VisualMixin):
         self.boss_defeated = False
         self.infection = InfectionState()
         self.purify_uses = 3
-        self.database_store = None if self.auto else AntivirusDatabaseStore()
+        self.database_store = (None if not self.persist_progress else AntivirusDatabaseStore())
         self.database_error = None
         try:
             self.database = (self.database_store.load() if self.database_store
@@ -102,6 +112,9 @@ class Game(VisualMixin):
             self.database = AntivirusDatabase()
         self.starting_software_id = None
         self.database_open = False
+        self.profile_open = False
+        self.profile_page = 0
+        self.loadout_open = False
         self.database_selected = 0
         self.extraction_open = False
         self.extraction_options = ()
@@ -111,7 +124,10 @@ class Game(VisualMixin):
         self.events.subscribe("os_cleaned", self._on_sector_progress)
         self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
         self.world_notice_t = 4.0
+        self.message = ""
+        self.message_t = 0.0
         self.extraction_fx_t = 0.0
+        self.extraction_summary = ""
         self.database_close_error = None
         self.salvage_open = False
         self.salvage_options = ()
@@ -170,9 +186,18 @@ class Game(VisualMixin):
         self.grid_items = []
         self._build_background()
 
+        # 인월드 허브 장면은 한 번만 만들고, 매 프레임은 위치/색만 갱신한다.
+        self._build_hub_scene()
+        # 구역 출구 문도 한 번만 만들어 프레임마다 재생성하지 않는다.
+        self._build_sector_gate()
+        # 인월드 터미널 공통 연출(CRT 스캔/선택 표시)
+        self._build_terminal_fx()
+        self.term_marker_boxes = {"db": None, "extract": None, "salvage": None}
+
         # 렌더 순서대로 풀 생성
         self.pool_enemy = PolyPool(self.c, 200, 8, fill=C_ENEMY, outline="")
         self.pool_ring = OvalPool(self.c, 90, fill="", outline=C_BOSS)
+        self.pool_warning = OvalPool(self.c, 96, width=2)
         self.pool_particle = OvalPool(self.c, 300, fill="#ffffff", outline="")
         self.pool_ebullet = OvalPool(self.c, 140, fill=C_EBULLET, outline="")
         self.pool_streak = LinePool(self.c, 240, capstyle="round", fill=C_BULLET)
@@ -221,12 +246,12 @@ class Game(VisualMixin):
         self.shake = 0.0
         self.paused = False
         self.banner = ""
+        self.banner_upgrade = ""
         self.banner_t = 0.0
         self.kills = 0
         self.boss = None
         self.cards = []
         self.card_opts = []
-        self.title_pulse = 0.0
         self.auto_pick_t = 0.0
         self.dead_t = 0.0
         self._drone_cd = 0.0
@@ -259,6 +284,7 @@ class Game(VisualMixin):
         except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
             self.database_error = f"{type(exc).__name__}: {exc}"
             self.announce_world("백신 DB 보상 기록 오류 · 데이터베이스를 확인하세요", 5)
+            self.show_message("백신 DB 보상 기록 오류 · 영구 보상이 저장되지 않았습니다")
             return None
         if result.applied:
             self.database = updated
@@ -302,7 +328,9 @@ class Game(VisualMixin):
         if self.campaign is None or self.database_error is not None:
             return
         for sector, state in self.campaign.progress.items():
-            db_sector = self._DB_SECTOR_IDS[sector]
+            db_sector = self._DB_SECTOR_IDS.get(sector)
+            if db_sector is None:
+                continue
             for wave in range(1, state.completed_waves + 1):
                 self._reward_db(self.campaign.run_id, "wave_cleared",
                                 sector_id=db_sector, wave_index=wave)
@@ -327,6 +355,7 @@ class Game(VisualMixin):
         if self.database_error is not None:
             self.database_close_error = self.database_error
             self.announce_world("백신 DB 오류 · 런 종료 기록 미확정", 6)
+            self.show_message("백신 DB 오류 · 런 종료 기록이 확정되지 않았습니다")
             return False
         for _ in range(3):
             try:
@@ -348,9 +377,11 @@ class Game(VisualMixin):
             if result.reason != "save_failed":
                 self.database_close_error = result.reason
                 self.announce_world("백신 DB 종료 기록 거부 · " + result.reason, 6)
+                self.show_message("백신 DB 종료 기록 거부 · " + result.reason)
                 return False
         self.database_close_error = "save_failed"
         self.announce_world("런 종료 기록을 저장하지 못했습니다 · Enter/R 재시도", 6)
+        self.show_message("런 종료 기록을 저장하지 못했습니다 · Enter/R 로 재시도")
         return False
 
     def _database_options(self):
@@ -361,6 +392,29 @@ class Game(VisualMixin):
         self.database_selected = 0
         self.keys.clear()
         self._draw_database_terminal()
+
+    def open_profile_terminal(self):
+        self.profile_open = True
+        self.profile_page = 0
+        self.keys.clear()
+        self._draw_profile_terminal()
+
+    def _profile_page_count(self):
+        count = len(self.profile.recent_runs)
+        size = self.PROFILE_PAGE_SIZE
+        return max(1, (count + size - 1) // size)
+
+    def _handle_profile_key(self, key):
+        if key in ("escape", self.settings.bindings["interact"]):
+            self.profile_open = False
+            self.c.delete("profileui")
+            self.keys.clear()
+        elif key in ("left", "right"):
+            step = -1 if key == "left" else 1
+            page = max(0, min(self._profile_page_count() - 1, self.profile_page + step))
+            if page != self.profile_page:
+                self.profile_page = page
+                self._draw_profile_terminal()
 
     def _handle_database_key(self, key):
         if key in ("escape", self.settings.bindings["interact"], "o"):
@@ -467,12 +521,12 @@ class Game(VisualMixin):
                 latest = self.database_store.load() if self.database_store else self.database
             except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
                 self.database_error = f"{type(exc).__name__}: {exc}"
-                self.announce_world("소프트웨어 회수 불가 · DB 읽기 오류", 5)
+                self.show_message("소프트웨어 회수 불가 · DB 읽기 오류", 5)
                 return
             if (latest.software_archive.get(uid, 0) >= UP_BY_ID[uid][4] or
                     self.levels.get(uid, 0) != 0):
                 self.database = latest
-                self.announce_world("보관 한도가 변경됐습니다 · 다시 확인하세요", 5)
+                self.show_message("보관 한도가 변경됐습니다 · 다시 확인하세요", 5)
                 self.open_salvage_terminal("archive_full")
                 return
             # Apply an actual available game upgrade, never edit the C archive.
@@ -511,10 +565,10 @@ class Game(VisualMixin):
                 else:
                     updated, result = self.database_store.commit_extraction_once(**kwargs)
             except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
-                self.announce_world(f"영구 보관 저장 오류: {type(exc).__name__}", 5)
+                self.show_message(f"영구 보관 저장 오류: {type(exc).__name__}", 5)
                 return
             if not result.applied:
-                self.announce_world(f"철수 저장 거부: {result.reason}", 5)
+                self.show_message(f"철수 저장 거부: {result.reason}", 5)
                 return
             # The game may leave the OS ONLY after the durable receipt exists.
             self.database = updated
@@ -523,6 +577,13 @@ class Game(VisualMixin):
             self.keys.clear()
             self.events.emit("extraction_committed", run_id=run_id,
                              software=software_id, level=self.database.antivirus_level)
+            is_record = self._record_best()
+            run_xp = sum(amount for receipt, amount in updated.awarded_xp_ids.items()
+                         if receipt.startswith(f"{run_id}:"))
+            self.extraction_summary = (
+                f"점수 {self.score:,}  ·  정화 {len(self.world.sector_clean)}/4  ·  XP +{run_xp:,}"
+                f"{'  ·  최고 점수' if is_record else ''}\n"
+                f"영구 보관  {UP_BY_ID[software_id][1]}")
             self.events.emit(
                 "run_extracted", score=self.score, wave=self.wave,
                 duration_frames=self.frames - self.run_start_frame)
@@ -560,6 +621,10 @@ class Game(VisualMixin):
                 parent=self.root,
             ):
                 return
+        try:
+            self.audio.close()
+        except Exception:
+            pass
         self.root.destroy()
 
     # --------------------------------------------------------------- 설정
@@ -570,11 +635,13 @@ class Game(VisualMixin):
         if self.state not in ("title", "hub") and not (self.state == "play" and self.paused):
             return
         self.settings_open = True
+        self.settings_opened_at = self.ui_t
         self.settings_page = "general"
         self.settings_selected = 0
         self.rebinding_action = None
         self.settings_notice = ""
         self.keys.clear()
+        self.mouse_down = False
         self._draw_settings()
 
     def close_settings(self):
@@ -585,6 +652,10 @@ class Game(VisualMixin):
             self.settings_hits = []
             self.c.delete("cfg")
             self.keys.clear()
+            if self.state == "title":
+                self._build_title()
+            elif self.paused:
+                self._draw_pause()
 
     def apply_settings(self):
         """Apply visual/audio preferences immediately and persist changes."""
@@ -592,8 +663,11 @@ class Game(VisualMixin):
         self.muted = self.audio.set_muted(self.settings.muted)
         self.show_fps = bool(self.opts.fps or self.settings.show_fps)
         self.mute_t = 1.8
-        if not self.auto:
-            save_settings(self.settings)
+        if self.persist_progress and not save_settings(self.settings):
+            if self.settings_open:
+                self.settings_notice = "설정을 저장하지 못했습니다 · 현재 실행에만 적용됩니다."
+            else:
+                self.show_message("설정을 저장하지 못했습니다 · 현재 실행에만 적용됩니다.")
         if self.settings_open:
             self._draw_settings()
 
@@ -607,6 +681,8 @@ class Game(VisualMixin):
         elif index == 2:
             self.settings.reduced_effects = not self.settings.reduced_effects
         elif index == 3:
+            if self.opts.fps:
+                return
             self.settings.show_fps = not self.settings.show_fps
         else:
             return
@@ -628,7 +704,8 @@ class Game(VisualMixin):
                     self.settings_notice = "변경한 키를 저장했습니다."
                     self.rebinding_action = None
                     self.apply_settings()
-            self._draw_settings()
+            if self.rebinding_action is not None or key == "escape":
+                self._draw_settings()
             return
 
         if key in ("escape", "o"):
@@ -666,7 +743,9 @@ class Game(VisualMixin):
 
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
-        key = ev.keysym.lower()
+        self._handle_key(ev.keysym.lower())
+
+    def _handle_key(self, key, *, pointer=False):
         if self.salvage_open:
             self._handle_salvage_key(key)
             return
@@ -676,8 +755,25 @@ class Game(VisualMixin):
         if self.database_open:
             self._handle_database_key(key)
             return
+        if self.profile_open:
+            self._handle_profile_key(key)
+            return
         if self.settings_open:
             self._handle_settings_key(key)
+            return
+        if self.loadout_open:
+            if key == "escape":
+                self.loadout_open = False
+                self.c.delete("loadoutui")
+                self.keys.clear()
+            return
+
+        if key == "tab" and (self.state == "upgrade" or
+                             (self.paused and self.state in ("play", "hub"))):
+            self.loadout_open = True
+            self.keys.clear()
+            self.hover_card = -1
+            self._draw_loadout()
             return
 
         if key == "o" and (self.state in ("title", "hub") or
@@ -685,8 +781,9 @@ class Game(VisualMixin):
             self.open_settings()
             return
 
-        was_held = key in self.keys
-        self.keys.add(key)
+        was_held = not pointer and key in self.keys
+        if not pointer:
+            self.keys.add(key)
 
         # System commands remain fixed, so configuration can never hide them.
         if key == "m":
@@ -697,7 +794,9 @@ class Game(VisualMixin):
 
         if self.state == "title":
             if key in ("return", "kp_enter", "space"):
-                self.new_game()
+                if not self.new_game():
+                    self.show_message(
+                        "런 종료 기록을 저장하지 못했습니다 · 저장 후 다시 시도하세요")
             elif key == "escape":
                 self.close_game()
             return
@@ -706,6 +805,7 @@ class Game(VisualMixin):
             key == "escape" and self.state in ("play", "hub")):
             if self.state in ("play", "hub") and not was_held:
                 self.paused = not self.paused
+                self.mouse_down = False
                 self.pause_t = 0.0
                 self._draw_pause()
             return
@@ -714,8 +814,9 @@ class Game(VisualMixin):
             if key in ("r", "return", "space", "escape"):
                 if self.auto:
                     self.new_game()
-                else:
-                    self.return_to_base()
+                elif not self.return_to_base():
+                    self.show_message(
+                        "런 종료 기록을 저장하지 못했습니다 · Enter로 다시 시도하세요")
             return
 
         if self.state == "hub":
@@ -759,13 +860,17 @@ class Game(VisualMixin):
         self.keys.discard(ev.keysym.lower())
 
     def on_motion(self, ev):
-        if (ev.x - self.mx) ** 2 + (ev.y - self.my) ** 2 > 49:
+        if (self._aim_cursor() and not self.settings.reduced_effects
+                and (ev.x - self.mx) ** 2 + (ev.y - self.my) ** 2 > 49):
             self.cursor_trail.append((self.mx, self.my, 0.26))
             self.cursor_trail = self.cursor_trail[-8:]
         self.mx, self.my = ev.x, ev.y
         self.cursor_on = True
-        self.c.configure(cursor="none")
+        if self.loadout_open:
+            return
         if self.settings_open:
+            if self.rebinding_action is not None:
+                return
             for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
                 if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
                     if self.settings_selected != idx:
@@ -784,17 +889,29 @@ class Game(VisualMixin):
             self.hover_card = -1
 
     def on_mouse_down(self, ev):
-        self.mouse_down = True
-        if self.settings_open:
-            if 556 <= ev.y <= 590 and W / 2 - 180 <= ev.x <= W / 2 + 180:
-                self.settings_page = ("controls" if self.settings_page == "general"
-                                      else "general")
-                self.settings_selected = 0
-                self.settings_notice = ""
-                self._draw_settings()
+        self.mouse_down = self._aim_cursor()
+        action = self._menu_action_at(ev.x, ev.y)
+        if action is not None:
+            if self.rebinding_action is not None and action != "escape":
                 return
-            if 593 <= ev.y <= 640 and W / 2 - 180 <= ev.x <= W / 2 + 180:
-                self.close_settings()
+            self._handle_key(action, pointer=True)
+            return
+        if self.loadout_open:
+            return
+        if self.salvage_open:
+            self._select_terminal_row("salvageui", "salvage_selected",
+                                      self._draw_salvage_terminal, ev.x, ev.y)
+            return
+        if self.extraction_open:
+            self._select_terminal_row("extractui", "extraction_selected",
+                                      self._draw_extraction_terminal, ev.x, ev.y)
+            return
+        if self.database_open:
+            self._select_terminal_row("dbui", "database_selected",
+                                      self._draw_database_terminal, ev.x, ev.y)
+            return
+        if self.settings_open:
+            if self.rebinding_action is not None:
                 return
             for idx, (x0, y0, x1, y1) in enumerate(self.settings_hits):
                 if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
@@ -808,20 +925,7 @@ class Game(VisualMixin):
                         self.change_setting(idx, direction)
                     break
             return
-        if self.state == "title":
-            if W / 2 - 150 <= ev.x <= W / 2 + 150 and 623 <= ev.y <= 668:
-                self.open_settings()
-            else:
-                self.new_game()
-        elif self.state == "dead":
-            if self.auto:
-                self.new_game()
-            else:
-                self.return_to_base()
-        elif self.state == "play" and self.paused:
-            if W / 2 - 160 <= ev.x <= W / 2 + 160 and H / 2 + 85 <= ev.y <= H / 2 + 128:
-                self.open_settings()
-        elif self.state == "upgrade":
+        if self.state == "upgrade":
             for idx, (x0, y0, x1, y1) in enumerate(self.cards):
                 off = self.card_yoff[idx] if idx < len(self.card_yoff) else 0.0
                 if x0 <= ev.x <= x1 and y0 + off <= ev.y <= y1 + off:
@@ -831,12 +935,28 @@ class Game(VisualMixin):
     def on_mouse_up(self, ev):
         self.mouse_down = False
 
+    def _select_terminal_row(self, layer, field, redraw, x, y):
+        for item in self.c.find_overlapping(x, y, x, y):
+            tags = self.c.gettags(item)
+            if layer in tags and "terminal-row" in tags:
+                setattr(self, field, int(tags[2].removeprefix("row:")))
+                redraw()
+                return
+
     # ------------------------------------------------------------------ 상태
     def new_game(self, *, start_combat=True):
         if not self._abandon_active_run():
             return False
         self.run_start_frame = self.frames
         self.extraction_fx_t = 0.0
+        self.extraction_summary = ""
+        # 이전 런의 캠페인/바이러스 상태를 남겨두면 재사용된 메모리 주소로
+        # 바이러스 종류 충돌이 발생할 수 있으므로 반드시 초기화한다.
+        self.campaign = None
+        self.current_encounter = None
+        self.virus_runtime.reset_wave()
+        self.virus_pending.clear()
+        self.boss_defeated = False
         c = self.c
         c.delete("scr")
         c.delete("ovl")
@@ -867,7 +987,6 @@ class Game(VisualMixin):
         self.banner_t = 0.0
         self.dead_t = 0.0
         self.lowhp_t = 0.0
-        self.combo_mark = 0
         self.hp_ratio_chip = 1.0
         self.score_shown = 0.0
         self.wave_pop = 0.0
@@ -889,7 +1008,8 @@ class Game(VisualMixin):
         self.screen_flash(0.32, C_PLAYER)
         self.screen_sweep(0.5, C_PLAYER)
         self.save["runs"] += 1
-        write_save(self.save)
+        if self.persist_progress:
+            write_save(self.save)
         self.events.emit("run_started", runs=self.save["runs"])
         if not self.music_started:
             self.music_started = True
@@ -899,11 +1019,17 @@ class Game(VisualMixin):
         else:
             self.state = "hub"
             self._show_hud(False)
+        return True
 
     # ------------------------------------------------------ 플레이 가능한 월드
     def announce_world(self, message, duration=3.0):
         self.world_notice = message
         self.world_notice_t = duration
+
+    def show_message(self, message, duration=6.0):
+        """Surface an error on every screen, not only inside the hub."""
+        self.message = message
+        self.message_t = duration
 
     def return_to_base(self, abandon=False):
         if abandon:
@@ -914,10 +1040,14 @@ class Game(VisualMixin):
                 return False
         self.world.reset_to_base()
         self.database_open = False
+        self.profile_open = False
+        self.loadout_open = False
         self.extraction_open = False
         self.salvage_open = False
         self.c.delete("salvageui")
         self.c.delete("dbui")
+        self.c.delete("profileui")
+        self.c.delete("loadoutui")
         self.c.delete("extractui")
         self.campaign = None
         self.current_encounter = None
@@ -937,7 +1067,19 @@ class Game(VisualMixin):
         self.particles.clear()
         self.shards.clear()
         self.chain_fx.clear()
+        self.ftexts.clear()
         self.levels.clear()
+        # 허브 HUD에 이전 런의 수치가 남지 않도록 점수/웨이브도 초기화한다.
+        self.wave = 0
+        self.score = 0
+        self.kills = 0
+        self.combo = 0
+        self.combo_t = 0.0
+        self.hitstop = 0.0
+        self.slow = 0.0
+        self.shake = 0.0
+        self.boss = None
+        self.wave_done_t = 0.0
         self.c.delete("scr")
         self.c.delete("ovl")
         self._show_hud(False)
@@ -967,7 +1109,9 @@ class Game(VisualMixin):
                     self.starting_software_id = None
                     starting = {}
                 base = base_stats_for_level(self.database.antivirus_level)
-                self.new_game(start_combat=False)
+                if not self.new_game(start_combat=False):
+                    self.announce_world("이전 런 기록을 저장하지 못했습니다 · 다시 시도하세요")
+                    return
                 self.p.maxhp = self.p.hp = base["maxhp"]
                 self.p.st["dmg"] = base["dmg"]
                 self.p.st["armor"] = base["armor"]
@@ -994,21 +1138,24 @@ class Game(VisualMixin):
                 self.open_settings()
             elif node.id == "database":
                 self.open_database_terminal()
-            else:
-                self.announce_world("진단 준비 · 실전 전투는 OS 배포 후 시작할 수 있습니다")
+            elif node.id == "diagnostics":
+                self.open_profile_terminal()
             return
 
         if node.id in SECTOR_NAMES:
             self.enter_sector(node.id)
         elif node.id == "purify":
+            cleaned, healed = self.purification_preview()
             if self.purify_uses <= 0:
                 self.announce_world("정화 노드 사용 횟수를 모두 소모했습니다")
+            elif not (cleaned or healed):
+                self.announce_world("감염 없음 · OS 무결성 정상 · 정화 충전 유지")
             else:
-                cleaned = self.infection.purify(32.0)
-                healed = self.infection.repair_integrity(9.0)
+                self.infection.purify(cleaned)
+                self.infection.repair_integrity(healed)
                 self.purify_uses -= 1
                 self.announce_world(
-                    f"백신 정화 -{cleaned:.0f}% · OS 무결성 +{healed:.0f}% "
+                    f"백신 정화 −{cleaned:.1f}% · OS 무결성 +{healed:.1f}% "
                     f"· 남은 사용 {self.purify_uses}회")
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
@@ -1017,6 +1164,10 @@ class Game(VisualMixin):
             else:
                 self.announce_world(
                     f"OS STATUS · 정화 {done}/4 · 네 구역을 모두 정화하세요")
+
+    def purification_preview(self):
+        return (min(self.infection.infection, 32.0),
+                min(100.0 - self.infection.os_integrity, 9.0))
 
     def enter_sector(self, sector_id):
         self.world.hub_position = (self.p.x, self.p.y)
@@ -1031,16 +1182,14 @@ class Game(VisualMixin):
         self.c.delete("scr")
         self.c.delete("ovl")
         self._show_hud(True)
-        self.events.emit("sector_entered", sector_id=sector_id)
+        self.events.emit("sector_entered", sector_id=sector_id.upper())
         if wave <= 5 and sector_id not in self.world.sector_clean:
             self.start_wave(wave)
         else:
             self.wave = 5
             self.spawn_queue = []
             self.enemies = []
-            self.banner = f"{SECTOR_NAMES[sector_id]} · CLEAN"
-            self.banner_t = 2.0
-            self.banner_total = self.banner_t
+            self._show_sector_clear(sector_id)
 
     def leave_sector(self):
         sector_id = self.world.leave_sector()
@@ -1062,6 +1211,7 @@ class Game(VisualMixin):
         self.shards.clear()
         self.chain_fx.clear()
         self.particles.clear()
+        self.ftexts.clear()
         self.wave_done_t = 0.0
         self.c.delete("scr")
         self._show_hud(False)
@@ -1093,7 +1243,7 @@ class Game(VisualMixin):
                            self.mx - (p.x - cam_x))
         p.inv = max(0.0, p.inv - dt)
 
-    def start_wave(self, n):
+    def start_wave(self, n, *, installed=""):
         """Run a B-defined sector plan, or legacy void in --selftest mode."""
         if self.world.active_sector is not None and self.campaign is not None:
             encounter = self.campaign.start_wave()
@@ -1110,7 +1260,11 @@ class Game(VisualMixin):
         self.spawn_queue = list(plan.spawns)
         self.wave_done_t = 0.0
         self.banner = plan.banner
-        self.banner_t = plan.banner_seconds
+        self.banner_upgrade = installed
+        self.banner_t = (3.2 if self.world.active_sector == "cpu" and n == 1
+                         else plan.banner_seconds)
+        if installed:
+            self.banner_t = max(2.4, self.banner_t)
         self.audio.play(plan.audio_cue, plan.audio_gap)
         self.state = "play"
         self.banner_total = self.banner_t
@@ -1150,10 +1304,8 @@ class Game(VisualMixin):
             "overseer", "replicator", "encryptor", "zero_day"}
         if kind == "boss":
             e.maxhp = prm["hp"] + 380 * (self.wave // 5 - 1)
-            e.cd = 1.6
         elif is_boss:
             e.maxhp = prm["hp"] * (1.0 + 0.06 * (self.wave - 1))
-            e.cd = 1.6
         else:
             e.maxhp = prm["hp"] * (1.0 + 0.13 * (self.wave - 1)) * scale
         e.maxhp = max(4.0, e.maxhp)
@@ -1232,6 +1384,8 @@ class Game(VisualMixin):
     def try_cast_skill(self, kind):
         """Return False without spending mana if the skill cannot be used."""
         if self.state != "play" or self.paused:
+            return False
+        if self.world.active_sector in self.world.sector_clean:
             return False
         p = self.p
         if kind == "pulse":
@@ -1437,7 +1591,6 @@ class Game(VisualMixin):
     def step(self, dt):
         self.t += dt
         self.frames += 1
-        self.title_pulse += dt
         self._tick_ui(dt)
 
         if self.banner_t > 0:
@@ -1460,12 +1613,14 @@ class Game(VisualMixin):
 
         if self.world_notice_t > 0:
             self.world_notice_t -= dt
+        if self.message_t > 0:
+            self.message_t = max(0.0, self.message_t - dt)
         if self.extraction_fx_t > 0:
             self.extraction_fx_t = max(0.0, self.extraction_fx_t - dt)
         if getattr(self, "os_close_retry_t", 0) > 0:
             self.os_close_retry_t = max(0.0, self.os_close_retry_t - dt)
         if self.state == "hub":
-            if not self.paused and not self.settings_open and not (
+            if not (self.paused or self.settings_open or self.profile_open or
                     self.database_open or self.extraction_open or self.salvage_open):
                 self.step_hub(dt)
             self._step_fx(dts)
@@ -1478,6 +1633,8 @@ class Game(VisualMixin):
 
         if self.state == "upgrade":
             self._step_fx(dts * 0.4)
+            if self.loadout_open:
+                return
             self.auto_pick_t += dt
             if self.auto and self.auto_pick_t > 0.25 and self.card_opts:
                 self.pick_upgrade(self.rng.randrange(len(self.card_opts)))
@@ -1598,13 +1755,15 @@ class Game(VisualMixin):
     def step_player(self, dt, dts):
         p = self.p
         st = p.st
-        p.pulse_cd = max(0.0, p.pulse_cd - dt)
-        p.guard_cd = max(0.0, p.guard_cd - dt)
-        p.guard_t = max(0.0, p.guard_t - dt)
-        p.mana = min(p.maxmana, p.mana + st["mana_regen"] * dt)
-        if p.hp > 0:
+        in_combat = self.world.active_sector not in self.world.sector_clean
+        if in_combat:
+            p.pulse_cd = max(0.0, p.pulse_cd - dt)
+            p.guard_cd = max(0.0, p.guard_cd - dt)
+            p.guard_t = max(0.0, p.guard_t - dt)
+            p.mana = min(p.maxmana, p.mana + st["mana_regen"] * dt)
             heal_rate = st["hp_regen"] + (1.8 if p.guard_t > 0 else 0.0)
-            p.hp = min(p.maxhp, p.hp + heal_rate * dt)
+            if p.hp > 0:
+                p.hp = min(p.maxhp, p.hp + heal_rate * dt)
 
         p.aim = math.atan2(self.my - p.y, self.mx - p.x)
 
@@ -1658,6 +1817,8 @@ class Game(VisualMixin):
         else:
             p.charge_t = 0.0
 
+        if not in_combat:
+            return
         self.player_shoot()
 
         if st["drone"] > 0:
@@ -1682,8 +1843,31 @@ class Game(VisualMixin):
             self.shoot(dx, dy, ang, 0.62, 0.8)
 
     def nearest_enemy(self, x, y, radius, exclude=None):
+        """Closest live enemy within `radius`.
+
+        Small searches reuse the 96px spatial hash built for bullet
+        collisions; only very wide searches (auto-play, boss tracking) fall
+        back to a linear scan, where the grid would cost more than it saves.
+        """
         best = None
         bd = radius * radius
+        span = int(math.ceil(radius / 96.0)) + 1
+        if self.grid and span <= 4:
+            kx = int(x // 96)
+            ky = int(y // 96)
+            for gx in range(kx - span, kx + span + 1):
+                for gy in range(ky - span, ky + span + 1):
+                    bucket = self.grid.get((gx, gy))
+                    if not bucket:
+                        continue
+                    for e in bucket:
+                        if e is exclude or e.hp <= 0:
+                            continue
+                        d = (e.x - x) ** 2 + (e.y - y) ** 2
+                        if d < bd:
+                            bd = d
+                            best = e
+            return best
         for e in self.enemies:
             if e is exclude or e.hp <= 0:
                 continue
@@ -1865,7 +2049,7 @@ class Game(VisualMixin):
             return
         if behavior == "encryption_pulse":
             self.ring(enemy.x, enemy.y, 20, C_BAD, 340, 0.45)
-            if math.hypot(enemy.x-self.p.x, enemy.y-self.p.y) < 185:
+            if math.hypot(enemy.x - self.p.x, enemy.y - self.p.y) < ENCRYPTION_PULSE_RADIUS:
                 self.hurt_player(action.power, infection_amount=action.infection_on_hit)
             return
         if behavior in ("feint_volley", "armor_piercing_volley", "quick_volley"):
@@ -2048,8 +2232,13 @@ class Game(VisualMixin):
                             PATTERNS[e.kind].infection_on_hit
                             if e.kind in PATTERNS else 0.0))
                     if p.st["thorns"] > 0:
+                        # 가시 갑옷 반사는 적을 플레이어에게서 밀어내야 한다.
+                        # (위치 차이를 그대로 쓰면 적이 플레이어 쪽으로 끌린다.)
+                        tx, ty = e.x - p.x, e.y - p.y
+                        td = math.hypot(tx, ty) or 1.0
                         self.damage_enemy(e, p.st["thorns"], C_PLAYER,
-                                          knock=(p.x - e.x, p.y - e.y))
+                                          knock=(tx / td * 260.0,
+                                                 ty / td * 260.0))
                     break
 
     def on_bullet_hit(self, b, e):
@@ -2135,6 +2324,14 @@ class Game(VisualMixin):
             p.hp = 0
             self.game_over()
 
+    def _record_best(self):
+        is_record = self.score > self.save["best_score"]
+        self.save["best_score"] = max(self.save["best_score"], self.score)
+        self.save["best_wave"] = max(self.save["best_wave"], self.wave)
+        if self.persist_progress:
+            write_save(self.save)
+        return is_record
+
     def game_over(self):
         self.state = "dead"
         self.go_t = 0.0
@@ -2147,13 +2344,7 @@ class Game(VisualMixin):
             self.ring(self.p.x, self.p.y, 20, C_BAD, 200 + i * 80, 0.8)
         self.burst(self.p.x, self.p.y, 50, C_BAD, 380, 1.0, 3.2)
 
-        if self.score > self.save["best_score"]:
-            is_record = True
-            self.save["best_score"] = self.score
-        else:
-            is_record = False
-        self.save["best_wave"] = max(self.save["best_wave"], self.wave)
-        write_save(self.save)
+        is_record = self._record_best()
         self.events.emit("run_ended", score=self.score, wave=self.wave,
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
@@ -2173,20 +2364,20 @@ class Game(VisualMixin):
         if is_record:
             c.create_text(W / 2, 356, text="★ NEW RECORD ★", fill=C_GOLD,
                           font=F_MID, tags="scr")
-        self.dead_restart = c.create_text(W / 2, 420,
-                                          text=("R 또는 클릭  ·  재시작" if self.auto
-                                                else "ENTER 또는 클릭 · 백신 허브 복귀"),
-                                          fill=C_PLAYER, font=F_BIG, tags="scr")
-        c.create_text(W / 2, 460,
-                      text="ESC  ·  타이틀" if self.auto else
-                      "ESC  ·  백신 시스템 허브", fill=C_DIM,
-                      font=F_UI, tags="scr")
+        self._menu_button("scr", "return", W / 2 - 170, 397, W / 2 + 170, 447,
+                          "재시작" if self.auto else "백신 허브 복귀", "ENTER", primary=True)
         if not closed:
             c.create_text(W / 2, 505,
                           text="백신 DB 종료 기록 저장 실패 · Enter로 다시 시도하세요",
                           fill=C_BAD, font=F_UI, tags="scr")
 
     # ------------------------------------------------------------- 웨이브
+    def _show_sector_clear(self, sector, healed=0.0):
+        self.banner = f"{SECTOR_NAMES[sector]} · CLEAN"
+        self.banner_t = self.banner_total = 3.0
+        self.wave_done_t = 0.0
+        self.sector_clear_heal = healed
+
     def check_wave(self, dt):
         if self.state != "play":
             return
@@ -2209,10 +2400,10 @@ class Game(VisualMixin):
                     self.current_encounter.definition.purify_on_clear)
                 self.current_encounter = None
                 if sector in self.world.sector_clean:
-                    self.banner = f"{SECTOR_NAMES[sector]} · CLEAN · F: RETURN"
-                    self.banner_t = 3.0
-                    self.banner_total = self.banner_t
-                    self.wave_done_t = 0.0
+                    self.ebullets.clear()
+                    healed = min(self.p.maxhp - self.p.hp, self.p.maxhp * 0.15)
+                    self.p.hp += healed
+                    self._show_sector_clear(sector, healed)
                     if self.world.os_clean:
                         self.announce_world("OS CLEAN · 중앙 시스템에서 철수를 준비하세요", 4)
                     return
@@ -2252,22 +2443,26 @@ class Game(VisualMixin):
         return opts
 
     def pick_upgrade(self, idx):
-        if idx >= len(self.card_opts):
+        if (self.state != "upgrade" or self.loadout_open
+                or not 0 <= idx < len(self.card_opts)):
             return
         u = self.card_opts[idx]
-        if u[0] == "bonus":
+        uid, name = u[:2]
+        if uid == "bonus":
             self.score += 250
+            receipt = f"{name} · 점수 +250"
         else:
-            apply_upgrade(self, u[0])
+            apply_upgrade(self, uid)
+            receipt = f"{name} Lv.{self.levels[uid]} 설치 완료"
         self.audio.play("pick", 0.1)
         self.screen_flash(0.17, C_PLAYER)
-        self.events.emit("upgrade_picked", upgrade=u[0], wave=self.wave)
-        self.events.emit("software_picked", software=u[0], wave=self.wave)
+        self.events.emit("upgrade_picked", upgrade=uid, wave=self.wave)
+        self.events.emit("software_picked", software=uid, wave=self.wave)
         self.c.delete("scr")
         self.cards = []
         self.card_opts = []
         self._show_hud(True)
-        self.start_wave(self.wave + 1)
+        self.start_wave(self.wave + 1, installed=receipt)
 
     # ------------------------------------------------------------ 자동 플레이
     def auto_play(self, dt):
@@ -2311,19 +2506,33 @@ class Game(VisualMixin):
             self.fps = self.fps * 0.92 + (1.0 / max(raw, 1e-4)) * 0.08
             if steps:
                 self.render()
-            self.root.after(5, self.loop)
         except tk.TclError:
+            # 창이 이미 닫혔거나 캔버스가 삭제된 경우다. 루프를 다시 예약하면
+            # 영영 멈춰 버리므로 창이 살아 있는지만 확인하고 종료한다.
+            traceback.print_exc()
             try:
-                if self.root.winfo_exists():
-                    traceback.print_exc()
+                if not self.root.winfo_exists():
+                    return
             except Exception:
-                pass
+                return
         except Exception:
             traceback.print_exc()
+            # 예기치 않은 오류로 진행 중인 런의 영구 기록이 열려 있는 채로
+            # 창만 사라지지 않도록 먼저 종료 영수증을 남긴다.
+            try:
+                self._abandon_active_run()
+            except Exception:
+                pass
             try:
                 self.root.destroy()
             except Exception:
                 pass
+            return
+        # 어떤 예외에서도 다음 프레임은 반드시 예약해야 창이 얼지 않는다.
+        try:
+            self.root.after(5, self.loop)
+        except tk.TclError:
+            pass
 
     def selftest_run(self):
         """창/실시간 대기 없이 고정 스텝으로 빠르게 시뮬레이션한다."""

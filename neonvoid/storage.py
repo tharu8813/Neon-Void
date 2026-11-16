@@ -11,6 +11,27 @@ import tempfile
 from .constants import SAVE_FILE
 
 
+def quarantine_corrupt(path) -> str | None:
+    """Move a damaged file aside instead of silently destroying it.
+
+    A truncated or garbled save/profile/settings file is valuable: the player
+    may want to repair it by hand. The original is renamed to `<name>.corrupt`
+    so the next successful write cannot erase the evidence.
+    """
+    try:
+        if not os.path.exists(path):
+            return None
+        target = f"{path}.corrupt"
+        index = 1
+        while os.path.exists(target):
+            target = f"{path}.corrupt.{index}"
+            index += 1
+        os.replace(path, target)
+        return target
+    except OSError:
+        return None
+
+
 def load_save():
     """Read the original save.json schema and keep legacy defaults."""
     try:
@@ -20,8 +41,12 @@ def load_save():
             return {"best_score": int(data.get("best_score", 0)),
                     "best_wave": int(data.get("best_wave", 0)),
                     "runs": int(data.get("runs", 0))}
-    except (OSError, ValueError, TypeError):
+    except FileNotFoundError:
         pass
+    except (OSError, ValueError, TypeError) as exc:
+        logging.getLogger(__name__).warning(
+            "Save file is damaged (%s): %s", SAVE_FILE, exc)
+        quarantine_corrupt(SAVE_FILE)
     return {"best_score": 0, "best_wave": 0, "runs": 0}
 
 
