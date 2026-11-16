@@ -47,6 +47,20 @@ func _run() -> void:
     var legacy: String = root_dir.path_join("legacy")
     var slot: String = root_dir.path_join("port-slot")
     expect(DirAccess.make_dir_recursive_absolute(legacy) == OK, "make isolated fixture directory")
+    var old_settings := {"schema_version": 2, "volume": -0.25,
+        "bindings": {"up": "w", "down": "s", "left": "a", "right": "d", "dash": "space", "pause": "p"}}
+    var v2_settings: Dictionary = Validator.convert("settings.json", old_settings)
+    expect(v2_settings.ok, "legacy settings v2 accepted and normalized")
+    if v2_settings.ok:
+        expect(v2_settings.value.schema_version == 5 and v2_settings.value.volume == 0.0,
+            "settings version advanced with Python's volume clamp")
+        expect(v2_settings.value.bindings.skill_pulse == "q" and v2_settings.value.bindings.skill_guard == "e",
+            "legacy v2 key layout extended without conflict")
+    var old_profile: Dictionary = {"schema_version": 1, "total_score": 42, "recent_runs": []}
+    var v1_profile: Dictionary = Validator.convert("profile.json", old_profile)
+    expect(v1_profile.ok and v1_profile.value.schema_version == 2
+        and v1_profile.value.extracted_runs == 0 and v1_profile.value.total_score == 42,
+        "profile v1 normalized to v2 without changing totals")
     var state: Dictionary = Store.fresh_state()
     state["os_checkpoint.json"] = checkpoint_fixture("os-test")
     var originals := {}
