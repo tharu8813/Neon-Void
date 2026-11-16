@@ -20,7 +20,7 @@ class SettingsKeyboardNavigationTests(unittest.TestCase):
         self.assertEqual(self.game._draw_settings.call_count, 2)
 
     def test_home_and_end_controls(self):
-        from neonvoid.settings import ACTION_ORDER
+        from neonvoid.controls import ACTION_ORDER
         self.game.settings_page = "controls"
         self.game._handle_settings_key("end")
         self.assertEqual(self.game.settings_selected, len(ACTION_ORDER) - 1)
