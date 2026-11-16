@@ -131,6 +131,46 @@ def main():
         finally:
             root.destroy()
 
+        # A death marker created before a terminal receipt can be committed
+        # must not offer a free resurrection after process death.
+        root, dead = create(cp, db)
+        try:
+            dead.p.x, dead.p.y = 1580, 780
+            dead.interact_hub()
+            death_id = dead.campaign.run_id
+            dead.p.x, dead.p.y = 1200, 270
+            dead.interact_hub()
+            dead.p.hp = 0
+            dead.state = "dead"
+            assert dead._persist_checkpoint()
+            assert cp.load()["scene"] == "dead"
+        finally:
+            root.destroy()
+        root, death_prompt = create(cp, db)
+        try:
+            death_prompt.p.x, death_prompt.p.y = 1580, 780
+            death_prompt.interact_hub()
+            press(death_prompt, "Return")
+            assert death_prompt.checkpoint_prompt_open
+            assert death_prompt.campaign is None
+            press(death_prompt, "Down")
+            press(death_prompt, "Return")
+            assert death_prompt.campaign.run_id != death_id
+            assert db.load().closed_runs[death_id] == "dead"
+            assert death_id not in db.load().processed_extractions
+        finally:
+            root.destroy()
+        # The checkpoint of the NEW OS is still present and resumable.
+        root, stale = create(cp, db)
+        try:
+            assert stale.checkpoint_pending is not None
+            dead_new_id = stale.checkpoint_pending["campaign"]["run_id"]
+            assert dead_new_id != death_id
+            assert db.load().closed_runs[new_id] == "abandoned"
+            _, result = db.close_run_once(run_id=dead_new_id, status="abandoned")
+            assert result.applied
+        finally:
+            root.destroy()
         root, stale = create(cp, db)
         try:
             assert stale.checkpoint_pending is None

@@ -1891,7 +1891,8 @@ class VisualMixin:
             total = sum(progress.values())
             c.create_text(
                 W/2, 220,
-                text=f"RUN {data['campaign']['run_id'][:16]}  ·  진행 {total}/20 웨이브",
+                text=("사망한 운영체제 기록 · 이어하기 불가" if data["scene"] == "dead"
+                      else f"RUN {data['campaign']['run_id'][:16]}  ·  진행 {total}/20 웨이브"),
                 fill="#c3e7f1", font=F_MID, tags="resumeui")
             c.create_text(
                 W/2, 255,
@@ -1900,9 +1901,11 @@ class VisualMixin:
                 fill="#8cbac9", font=F_UI, tags="resumeui")
 
         labels = (
-            ("이전 운영체제 이어하기" if data is not None else
-             "이전 기록 읽기 불가"),
-            ("이전 OS 포기 후 새 운영체제 배포" if data is not None else
+            ("이전 운영체제 이어하기" if data is not None and
+             data["scene"] != "dead" else "이어하기 불가"),
+            ("이전 OS 종료 기록 확정 후 새 배포" if data is not None and
+             data["scene"] == "dead" else
+             "이전 OS 포기 후 새 운영체제 배포" if data is not None else
              "손상된 기록 보관 후 새 운영체제 배포"),
         )
         for i, label in enumerate(labels):

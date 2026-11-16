@@ -156,6 +156,17 @@ class CheckpointTests(unittest.TestCase):
             self.assertEqual(store.load()["score"], 0)
             self.assertEqual(store.save(data, expected_revision=1), 2)
 
+    def test_dead_marker_allows_zero_hp_but_never_upgrade_choices(self):
+        data = sample_checkpoint()
+        data["scene"] = "dead"
+        data["sector"] = "cpu"
+        data["player_position"] = [180, 360]
+        data["player"]["hp"] = 0
+        validate_checkpoint(data)
+        data["scene"] = "play"
+        with self.assertRaises(ValueError):
+            validate_checkpoint(data)
+
     def test_finished_sector_progress_retained_but_no_live_wave(self):
         campaign = SectorCampaign("os-test", seed=65)
         campaign.enter_sector("CPU")
