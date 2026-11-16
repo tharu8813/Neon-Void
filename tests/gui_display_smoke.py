@@ -72,7 +72,7 @@ def main():
         game._draw_settings()
         game.render()
         # A mapped click on the right option area selects no unrelated item.
-        real_mouse(game, 760, 480)
+        real_mouse(game, 760, 502)
         assert game.settings_selected == 5
         game.close_settings()
 
