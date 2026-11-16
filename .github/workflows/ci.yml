@@ -32,6 +32,9 @@ jobs:
       - name: Windows keybinding GUI smoke test
         if: runner.os == 'Windows'
         run: python -m tests.gui_bindings_smoke
+      - name: Windows antivirus extraction GUI smoke test
+        if: runner.os == 'Windows'
+        run: python -m tests.gui_extraction_smoke
       - name: Windows four-sector GUI smoke test
         if: runner.os == 'Windows'
         run: python -m tests.gui_sectors_smoke
@@ -56,6 +59,9 @@ jobs:
       - name: Linux keybinding GUI smoke test
         if: runner.os == 'Linux'
         run: xvfb-run -a python -m tests.gui_bindings_smoke
+      - name: Linux antivirus extraction GUI smoke test
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m tests.gui_extraction_smoke
       - name: Linux four-sector GUI smoke test
         if: runner.os == 'Linux'
         run: xvfb-run -a python -m tests.gui_sectors_smoke
