@@ -528,13 +528,10 @@ func _close_failed_run(status: String) -> bool:
         return false
     _pause_gameplay()
     if persistence_enabled:
-        var closed: Dictionary = Progression.persist_close_run(save_slot, str(campaign.run_id), status)
+        var closed: Dictionary = _finalize_saved_run(status)
         if not closed.get("applied", false) or not _reload_save():
-            ui.call("show_error", "실패한 OS 종료 기록을 저장하지 못했습니다. 사용자 데이터를 유지하고 진행을 중단했습니다.")
-            return false
-        var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
-        if not cleared.get("applied", false) or not _reload_save():
-            ui.call("show_error", "OS 종료는 기록됐지만 체크포인트를 정리하지 못했습니다. 새 OS 배포 전에 정리가 필요합니다.")
+            ui.call("show_error", "실패한 OS 종료 기록을 저장하지 못했습니다. 사용자 데이터를 유지하고 진행을 중단했습니다: " +
+                str(closed.get("reason", "readback_failed")))
             return false
     sim.abort_wave()
     mode = "dead"
@@ -798,15 +795,19 @@ func abandon_checkpoint() -> bool:
     if cp == null:
         return false
     var run_id: String = str(cp.campaign.run_id)
-    if not saved_state["antivirus_db.json"]["closed_runs"].has(run_id):
-        var closed: Dictionary = Progression.persist_close_run(save_slot, run_id, "abandoned")
-        if not closed.get("applied", false) or not _reload_save():
-            ui.call("show_error", "기존 OS를 안전하게 종료하지 못했습니다.")
+    if saved_state["antivirus_db.json"]["closed_runs"].has(run_id):
+        # Compatibility recovery for old two-step terminal saves. The new
+        # single-transaction finalizer never creates this half-closed state.
+        var previous: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
+        if not previous.get("applied", false) or not _reload_save():
+            ui.call("show_error", "이전 방식의 종료 체크포인트를 정리하지 못했습니다.")
             return false
-    var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
-    if not cleared.get("applied", false) or not _reload_save():
-        ui.call("show_error", "체크포인트 정리 실패. 저장 파일은 유지됩니다.")
-        return false
+    else:
+        var closed: Dictionary = _finalize_saved_run("abandoned")
+        if not closed.get("applied", false) or not _reload_save():
+            ui.call("show_error", "기존 OS를 안전하게 종료하지 못했습니다: " +
+                str(closed.get("reason", "readback_failed")))
+            return false
     sim.abort_wave()
     mode = "title"
     actor.set("simulation_enabled", false)
@@ -819,17 +820,10 @@ func extract_software(uid: String) -> bool:
     if not persistence_enabled or mode != "hub" or not campaign.is_os_clean():
         ui.call("show_error", "OS CLEAN 완료 및 안전한 영구 저장이 필요합니다.")
         return false
-    var cleaned: Array = []
-    for sid in SaveBridge.SECTOR_TO_SAVE:
-        cleaned.append(SaveBridge.sector_to_save(str(sid)))
-    var stored: Dictionary = Progression.persist_extraction(
-        save_slot, str(campaign.run_id), cleaned, software.levels, uid)
-    if not stored.get("applied", false) or not _reload_save():
-        ui.call("show_error", "영구 소프트웨어 보존에 실패했습니다: " + str(stored.get("reason", "unknown")))
-        return false
-    var cleared: Dictionary = CheckpointRules.clear_after_run(save_slot, checkpoint_revision)
-    if not cleared.get("applied", false) or not _reload_save():
-        ui.call("show_error", "보존은 완료됐으나 기존 체크포인트 정리가 필요합니다. 새 배포를 중단했습니다.")
+    var archived: Dictionary = _finalize_saved_run("extracted", uid)
+    if not archived.get("applied", false) or not _reload_save():
+        ui.call("show_error", "영구 소프트웨어 보존과 기록을 안전하게 완료하지 못했습니다: " +
+            str(archived.get("reason", "readback_failed")))
         return false
     mode = "title"
     actor.set("simulation_enabled", false)
@@ -944,3 +938,11 @@ func _save_hub_checkpoint() -> bool:
         run_boss_kills, deployed_level, run_frames)
     var result: Dictionary = SaveBridge.persist_checkpoint(save_slot, next, checkpoint_revision)
     return result.get("applied", false) and _reload_save()
+
+func _finalize_saved_run(status: String, selected_id: String = "") -> Dictionary:
+    var highest_wave: int = int(campaign.active_wave)
+    for sid in campaign.progress:
+        highest_wave = maxi(highest_wave, int(campaign.progress[sid]))
+    return SaveBridge.finalize_run(save_slot, str(campaign.run_id), status,
+        software.levels.duplicate(true), selected_id, score, run_kills,
+        run_boss_kills, 0, run_frames, highest_wave)
