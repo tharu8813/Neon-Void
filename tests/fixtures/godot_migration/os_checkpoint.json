@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "campaign": {
+    "run_id": "p0-synthetic-run-001",
+    "seed": 42,
+    "completed_waves": {
+      "CPU": 0,
+      "MEMORY": 0,
+      "STORAGE": 0,
+      "NETWORK": 0
+    }
+  },
+  "scene": "hub",
+  "sector": null,
+  "hub_position": [
+    1200,
+    780
+  ],
+  "player_position": [
+    1200,
+    780
+  ],
+  "deployed_level": 1,
+  "player": {
+    "hp": 100,
+    "mana": 100,
+    "charges": 1,
+    "fire_cd": 0,
+    "pulse_cd": 0,
+    "guard_cd": 0,
+    "guard_t": 0
+  },
+  "software_levels": {},
+  "pending_cards": [],
+  "infection": {
+    "player_infection": 0,
+    "os_integrity": 100
+  },
+  "purify_uses": 3,
+  "salvage_claimed": false,
+  "score": 0,
+  "kills": 0,
+  "combo": 0,
+  "run_kills": 0,
+  "run_boss_kills": 0,
+  "run_best_combo": 0,
+  "elapsed_frames": 0
+}

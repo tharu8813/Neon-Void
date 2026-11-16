@@ -1,0 +1,21 @@
+{
+  "schema_version": 5,
+  "volume": 0.9,
+  "muted": false,
+  "show_fps": false,
+  "reduced_effects": false,
+  "display_mode": "windowed",
+  "window_width": 1280,
+  "window_height": 720,
+  "bindings": {
+    "up": "w",
+    "down": "s",
+    "left": "a",
+    "right": "d",
+    "dash": "space",
+    "pause": "p",
+    "skill_pulse": "q",
+    "skill_guard": "e",
+    "interact": "f"
+  }
+}

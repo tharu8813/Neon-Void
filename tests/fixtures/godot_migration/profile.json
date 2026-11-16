@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "total_kills": 2,
+  "boss_kills": 1,
+  "total_score": 150,
+  "completed_runs": 0,
+  "abandoned_runs": 0,
+  "extracted_runs": 1,
+  "best_combo": 2,
+  "recent_runs": [
+    {
+      "status": "extracted",
+      "score": 150,
+      "wave": 5,
+      "kills": 2,
+      "boss_kills": 1,
+      "best_combo": 2,
+      "duration_seconds": 120
+    }
+  ]
+}
