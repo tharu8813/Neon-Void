@@ -948,8 +948,14 @@ class VisualMixin:
                 ("연출 줄이기", "켜짐" if prefs.reduced_effects else "꺼짐"),
                 ("FPS 표시", "실행 옵션으로 켜짐" if self.opts.fps else
                  "켜짐" if prefs.show_fps else "꺼짐"),
+                ("화면 모드", {"windowed": "창 모드",
+                             "fullscreen": "전체화면",
+                             "borderless": "테두리 없는 창"}[prefs.display_mode]),
+                ("창 크기", f"{prefs.window_width} × {prefs.window_height}"
+                 if prefs.display_mode == "windowed" else
+                 f"{prefs.window_width} × {prefs.window_height} (창 복귀 시)"),
             ]
-            first_y, row_step, row_height = 225, 74, 59
+            first_y, row_step, row_height = 213, 54, 46
 
         self.settings_hits = []
         for index, (title, value) in enumerate(items):
@@ -976,9 +982,9 @@ class VisualMixin:
         self._menu_button("cfg", "tab", 320, 568, 626, 608, next_page, "TAB")
         self._menu_button("cfg", "escape", 654, 568, 960, 608,
                           "돌아가기", "ESC / O")
-        hint = ("Enter / 클릭: 키 등록   ·   Delete: 기본값 복원   ·   Shift/방향키 보조 조작 유지"
+        hint = ("Enter / 클릭: 키 등록 · Delete: 기본값 복원 · F11: 전체화면"
                 if is_controls else
-                "설정 변경 즉시 저장   ·   볼륨은 Windows 믹서에서 적용")
+                "F11 전체화면 · Alt+Enter 테두리 없는 창 · 창 모서리 드래그 가능")
         c.create_text(W / 2, 638, text=hint, fill=C_DIM, font=F_MONO, tags="cfg")
         if self.settings_notice:
             c.create_text(W / 2, 658, text=self.settings_notice,
@@ -1093,9 +1099,13 @@ class VisualMixin:
                     12, H - 10, text="", fill="#2c4a66", font=F_MONO,
                     anchor="sw", tags=("hud-top",))
                 item = self._fps_item
-            c.itemconfigure(item, text=f"{self.fps:5.1f} fps  "
-                                       f"obj {len(self.bullets)}+{len(self.enemies)}",
-                            state="normal")
+            c.itemconfigure(item, text=(
+                f"{self.fps:5.1f} fps · render {self.render_ms:4.1f}ms "
+                f"p95 {self.render_p95_ms:4.1f}ms · canvas {self.canvas_items:,}"
+                f" · RSS {self.memory_mib:.0f} MiB" if self.memory_mib is not None else
+                f"{self.fps:5.1f} fps · render {self.render_ms:4.1f}ms · "
+                f"p95 {self.render_p95_ms:4.1f}ms · canvas {self.canvas_items:,}"
+            ), state="normal")
         elif getattr(self, "_fps_item", None):
             c.itemconfigure(self._fps_item, state="hidden")
         self._render_screen_fx()
@@ -1114,6 +1124,7 @@ class VisualMixin:
         c.tag_raise(self.message_txt)
         self.draw_cursor()
         c.tag_raise("cursor")
+        c.raise_letterbox()
 
     # ----------------------------------------------------------- 인월드 허브
     HUB_GRID_STEP = 120

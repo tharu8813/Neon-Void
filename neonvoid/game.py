@@ -7,6 +7,8 @@ import random
 import time
 import traceback
 import tkinter as tk
+from types import SimpleNamespace
+from collections import deque
 from .constants import (W, H, DT, TAU, clamp, rnd, C_BG, C_PLAYER, C_BULLET, C_ENEMY, C_SHOOT, C_RUSH, C_BOSS, C_EBULLET, C_SHARD, C_TEXT, C_DIM, C_BAD, C_HP, C_GOLD, F_HUGE, F_BIG, F_MID, F_UI, F_DMG)
 from .audio import Audio
 from .content.enemies import E_PARAMS, SPAWN_COST
@@ -23,6 +25,9 @@ from .render_pool import OvalPool, PolyPool, TextPool, LinePool
 from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
+from .display import ScaledCanvas
+from .performance import resident_memory_mib
+from .settings import DISPLAY_MODES, MIN_WIDTH, MIN_HEIGHT
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
 from .content.sectors import SectorCampaign
@@ -71,11 +76,21 @@ class Game(VisualMixin):
 
         root.title("NEON VOID")
         root.configure(bg=C_BG)
-        root.resizable(False, False)
-
-        self.c = tk.Canvas(root, width=W, height=H, bg=C_BG,
-                           highlightthickness=0, bd=0)
-        self.c.pack()
+        root.resizable(True, True)
+        root.minsize(MIN_WIDTH, MIN_HEIGHT)
+        self._resize_save_after = None
+        self._display_change = False
+        self._window_presets = ((960, 540), (1280, 720),
+                                (1600, 900), (1920, 1080))
+        self.render_samples = deque(maxlen=240)
+        self.render_ms = 0.0
+        self.render_p95_ms = 0.0
+        self.canvas_items = 0
+        self.memory_mib = None
+        self.c = ScaledCanvas(root)
+        self.c.pack(fill="both", expand=True)
+        self.c.bind("<Configure>", self._on_canvas_resize)
+        self._apply_display_mode(initial=True)
         if self.auto:
             # 자동 검증 중에는 창을 띄우지 않는다
             root.withdraw()
@@ -155,12 +170,12 @@ class Game(VisualMixin):
         root.bind("<KeyPress>", self.on_key)
         root.bind("<KeyRelease>", self.on_key_up)
         root.bind("<FocusOut>", self._on_focus_out)
-        self.c.bind("<Motion>", self.on_motion)
-        self.c.bind("<ButtonPress-1>", self.on_mouse_down)
-        self.c.bind("<ButtonRelease-1>", self.on_mouse_up)
+        self.c.bind("<Motion>", self._screen_motion)
+        self.c.bind("<ButtonPress-1>", self._screen_mouse_down)
+        self.c.bind("<ButtonRelease-1>", self._screen_mouse_up)
         # 기본 OS 커서를 숨기고 게임 전용 커서를 그린다
         self.c.configure(cursor="none")
-        self.c.bind("<Enter>", self._on_pointer_enter)
+        self.c.bind("<Enter>", self._screen_pointer_enter)
         self.c.bind("<Leave>", self._on_pointer_leave)
 
         # 애니메이션/연출 상태
@@ -276,6 +291,109 @@ class Game(VisualMixin):
             self._discover_checkpoint()
         if not self.auto:
             self.loop()
+
+    # --------------------------------------------------------------- 화면 모드
+    def _apply_display_mode(self, initial=False):
+        """Change only the viewport/window; combat keeps logical 1280x720."""
+        mode = self.settings.display_mode
+        self._display_change = True
+        try:
+            if mode == "windowed":
+                self.root.overrideredirect(False)
+                self.root.attributes("-fullscreen", False)
+                screenw = max(MIN_WIDTH, self.root.winfo_screenwidth() - 55)
+                screenh = max(MIN_HEIGHT, self.root.winfo_screenheight() - 100)
+                width = min(self.settings.window_width, screenw)
+                height = min(self.settings.window_height, screenh)
+                self.root.geometry(f"{width}x{height}")
+            elif mode == "fullscreen":
+                self.root.overrideredirect(False)
+                self.root.attributes("-fullscreen", True)
+            else:
+                self.root.attributes("-fullscreen", False)
+                self.root.overrideredirect(True)
+                self.root.geometry(
+                    f"{self.root.winfo_screenwidth()}x"
+                    f"{self.root.winfo_screenheight()}+0+0"
+                )
+        except tk.TclError:
+            # Some WMs lack borderless/fullscreen. Stay usable in windowed mode.
+            self.settings.display_mode = "windowed"
+            self.root.overrideredirect(False)
+            self.root.attributes("-fullscreen", False)
+            self.root.geometry(f"{self.settings.window_width}x"
+                               f"{self.settings.window_height}")
+        finally:
+            self._display_change = False
+        if not initial and self.settings_open:
+            self._draw_settings()
+
+    def _on_canvas_resize(self, event):
+        if event.width < 1 or event.height < 1:
+            return
+        self.c.set_viewport_size(event.width, event.height)
+        if (self.persist_progress and not self._display_change
+                and self.settings.display_mode == "windowed"):
+            if self._resize_save_after is not None:
+                self.root.after_cancel(self._resize_save_after)
+            self._resize_save_after = self.root.after(900, self._save_window_size)
+
+    def _save_window_size(self):
+        self._resize_save_after = None
+        if self.settings.display_mode != "windowed":
+            return
+        width, height = self.c.winfo_width(), self.c.winfo_height()
+        if width < MIN_WIDTH or height < MIN_HEIGHT:
+            return
+        if (width, height) != (self.settings.window_width,
+                               self.settings.window_height):
+            self.settings.window_width = width
+            self.settings.window_height = height
+            if self.persist_progress:
+                save_settings(self.settings)
+
+    def toggle_fullscreen(self):
+        if self.settings.display_mode == "windowed":
+            self._save_window_size()
+        self.settings.display_mode = ("windowed" if self.settings.display_mode
+                                      == "fullscreen" else "fullscreen")
+        self._apply_display_mode()
+        self.apply_settings()
+
+    def toggle_borderless(self):
+        if self.settings.display_mode == "windowed":
+            self._save_window_size()
+        self.settings.display_mode = ("windowed" if self.settings.display_mode
+                                      == "borderless" else "borderless")
+        self._apply_display_mode()
+        self.apply_settings()
+
+    def _screen_event(self, event):
+        x, y = self.c.game_point(event)
+        return SimpleNamespace(x=x, y=y)
+
+    def _screen_pointer_enter(self, event):
+        if self.c.is_game_point(event):
+            self.c.configure(cursor="none")
+            self._on_pointer_enter(self._screen_event(event))
+        else:
+            self._on_pointer_leave(event)
+
+    def _screen_motion(self, event):
+        if self.c.is_game_point(event):
+            self.c.configure(cursor="none")
+            self.on_motion(self._screen_event(event))
+        else:
+            self._on_pointer_leave(event)
+
+    def _screen_mouse_down(self, event):
+        if self.c.is_game_point(event):
+            self.on_mouse_down(self._screen_event(event))
+        else:
+            self.mouse_down = False
+
+    def _screen_mouse_up(self, event):
+        self.on_mouse_up(self._screen_event(event))
 
     # --------------------------------------------------- OS checkpoint recovery
     def _discover_checkpoint(self):
@@ -1038,6 +1156,23 @@ class Game(VisualMixin):
             if self.opts.fps:
                 return
             self.settings.show_fps = not self.settings.show_fps
+        elif index == 4:
+            if self.settings.display_mode == "windowed":
+                self._save_window_size()
+            i = DISPLAY_MODES.index(self.settings.display_mode)
+            self.settings.display_mode = DISPLAY_MODES[(i + direction) % len(DISPLAY_MODES)]
+            self._apply_display_mode()
+        elif index == 5:
+            old = (self.settings.window_width, self.settings.window_height)
+            position = min(range(len(self._window_presets)),
+                           key=lambda i: abs(self._window_presets[i][0] - old[0])
+                           + abs(self._window_presets[i][1] - old[1]))
+            width, height = self._window_presets[
+                (position + direction) % len(self._window_presets)]
+            self.settings.window_width = width
+            self.settings.window_height = height
+            if self.settings.display_mode == "windowed":
+                self._apply_display_mode()
         else:
             return
         self.apply_settings()
@@ -1073,7 +1208,7 @@ class Game(VisualMixin):
             self._draw_settings()
             return
 
-        count = len(ACTION_ORDER) if self.settings_page == "controls" else 4
+        count = len(ACTION_ORDER) if self.settings_page == "controls" else 6
         if key in ("up", "w"):
             self.settings_selected = (self.settings_selected - 1) % count
             self._draw_settings()
@@ -1097,7 +1232,15 @@ class Game(VisualMixin):
 
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
-        self._handle_key(ev.keysym.lower())
+        key = ev.keysym.lower()
+        if self.rebinding_action is None:
+            if key == "f11":
+                self.toggle_fullscreen()
+                return
+            if key in ("return", "kp_enter") and (getattr(ev, "state", 0) & 0x0008):
+                self.toggle_borderless()
+                return
+        self._handle_key(key)
 
     def _handle_key(self, key, *, pointer=False):
         if self.checkpoint_prompt_open:
@@ -1285,7 +1428,7 @@ class Game(VisualMixin):
                         self.settings_notice = "새로 사용할 키를 누르세요. Esc는 취소."
                         self._draw_settings()
                     else:
-                        direction = -1 if idx == 0 and ev.x < W / 2 else 1
+                        direction = -1 if idx in (0, 4, 5) and ev.x < W / 2 else 1
                         self.change_setting(idx, direction)
                     break
             return
@@ -2904,7 +3047,16 @@ class Game(VisualMixin):
                 self.acc = 0.0
             self.fps = self.fps * 0.92 + (1.0 / max(raw, 1e-4)) * 0.08
             if steps:
+                begin_render = time.perf_counter()
                 self.render()
+                elapsed_ms = (time.perf_counter() - begin_render) * 1000
+                self.render_samples.append(elapsed_ms)
+                self.render_ms = sum(self.render_samples) / len(self.render_samples)
+                ordered = sorted(self.render_samples)
+                self.render_p95_ms = ordered[max(0, math.ceil(len(ordered) * 0.95) - 1)]
+                if self.frames % 60 == 0:
+                    self.canvas_items = len(self.c.find_all())
+                    self.memory_mib = resident_memory_mib()
         except tk.TclError:
             # 창이 이미 닫혔거나 캔버스가 삭제된 경우다. 루프를 다시 예약하면
             # 영영 멈춰 버리므로 창이 살아 있는지만 확인하고 종료한다.

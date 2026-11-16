@@ -21,7 +21,7 @@ The `Windows standalone build` GitHub Actions workflow runs on pull requests aff
 3. Launches the executable with `--version` and a 360-frame `--selftest` using `Start-Process -Wait -PassThru` to inspect exit codes.
 4. Uploads `NeonVoid-windows-x64.zip` as a downloadable Actions artifact (retained for 14 days).
 
-The CI bundle launch test validates startup and automated simulation. It **does not validate sound playback, real keyboard layouts, display scaling, graphics quality or Windows SmartScreen behavior**. A real Windows manual playtest is required before distribution to players.
+The CI bundle launch test validates startup and automated simulation. GUI CI additionally exercises variable client sizes, borderless/fullscreen toggles, font/shape scaling, pointer hit tests, frame-time observation and Windows/Linux process RSS. It **does not validate sound playback, real keyboard layouts, display scaling, graphics quality or Windows SmartScreen behavior**. A real Windows manual playtest is required before distribution to players.
 
 ## Save location and updates
 
