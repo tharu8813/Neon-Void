@@ -35,7 +35,7 @@ def main():
             assert game.database_open
             game.render()
             assert game.c.find_withtag("dbui")
-            game._handle_database_key("Return")
+            game.on_key(SimpleNamespace(keysym="Return"))
             assert game.starting_software_id is None
             assert not game.database_open
 
@@ -82,7 +82,7 @@ def main():
             assert game.c.find_withtag("extractui")
             software_id = game.extraction_options[0]
             assert software_id in completed_run_software
-            game._handle_extraction_key("Return")
+            game.on_key(SimpleNamespace(keysym="Return"))
             assert not game.extraction_open
             assert game.state == "hub" and game.world.room == "base"
             assert game.profile.extracted_runs == 1
@@ -105,8 +105,8 @@ def main():
             # Starting software is chosen at the base terminal, one copy only.
             game.p.x, game.p.y = 820, 610
             game.interact_hub()
-            game._handle_database_key("Down")
-            game._handle_database_key("Return")
+            game.on_key(SimpleNamespace(keysym="Down"))
+            game.on_key(SimpleNamespace(keysym="Return"))
             assert game.starting_software_id == software_id
             game.p.x, game.p.y = 1580, 780
             game.interact_hub()
