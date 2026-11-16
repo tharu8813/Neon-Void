@@ -105,7 +105,7 @@ static func _populate_staging(stage: String, source: String, state: Dictionary,
         return {"ok": false, "reason": "manifest_write_failed"}
     var initial: Dictionary = Store.initialize_staging(stage, state)
     if not initial.ok or initial.revision != 1:
-        return {"ok": false, "reason": "converted_payload_invalid"}
+        return {"ok": false, "reason": "converted_payload_invalid:" + str(initial.get("reason", "revision"))}
     # Catch a source modified while the import was running: never advertise an
     # outdated migration as the latest state.
     for name in originals:
