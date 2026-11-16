@@ -35,7 +35,7 @@ EXPECTED_FIELDS = frozenset((
 PLAYER_FIELDS = frozenset((
     "hp", "mana", "charges", "fire_cd", "pulse_cd", "guard_cd", "guard_t",
 ))
-SCENES = frozenset(("hub", "play", "upgrade"))
+SCENES = frozenset(("hub", "play", "upgrade", "dead"))
 
 
 class CheckpointCorruptError(ValueError):
@@ -137,7 +137,7 @@ def validate_checkpoint(data: object) -> dict:
     stats = base_stats_for_level(level)
     maxhp = stats["maxhp"] + 20 * data["software_levels"].get("hull", 0)
     maxmana = stats["maxmana"] + 25 * data["software_levels"].get("mana", 0)
-    _number(player["hp"], "hp", 0.001, maxhp)
+    _number(player["hp"], "hp", 0 if data["scene"] == "dead" else 0.001, maxhp)
     _number(player["mana"], "mana", 0, maxmana)
     max_charges = 1 + data["software_levels"].get("dash2", 0)
     _integer(player["charges"], "dash charges", 0, max_charges)
