@@ -154,7 +154,9 @@ func _test() -> void:
     require(int(state.state["profile.json"].completed_runs) == 1,
         "death recorded exactly once in versioned profile")
     require(int(state.state["save.json"].runs) == 3,
-        "extraction, manual abandon and death each produce one history entry")
+        "extraction, manual abandon and death each produce one history entry (actual %d, archived %d, abandoned %d, dead %d)" % [
+        int(state.state["save.json"].runs), int(state.state["profile.json"].extracted_runs),
+        int(state.state["profile.json"].abandoned_runs), int(state.state["profile.json"].completed_runs)])
     require(game.call("start_new_run"), "new OS can deploy after real death closure")
     require(game.call("abandon_checkpoint"), "final run safely cleaned")
     game.get_parent().remove_child(game)
