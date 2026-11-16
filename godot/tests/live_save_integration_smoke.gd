@@ -113,6 +113,41 @@ func _test() -> void:
     require(str(state.state["settings.json"].bindings.dash) == "z", "rebound dash saved without overwriting game progress")
     require(str(game.get_node("InputController").bindings.dash) == "z", "B input map updated after safe save")
     require(game.call("abandon_checkpoint"), "explicit abandon closes run and clears checkpoint")
+    require(game.call("start_new_run"), "create fresh third OS for safety regression")
+    game.get("campaign").apply_infection(80.0)
+    require(game.call("purify"), "safe hub purification applies")
+    state = Store.read(slot)
+    require(state.get("ok", false) and int(state.state["os_checkpoint.json"].purify_uses) == 2,
+        "purification use committed before UI acknowledges it")
+    require(is_equal_approx(float(state.state["os_checkpoint.json"].infection.player_infection), 48.0),
+        "saved hub infection matches purified campaign")
+    var valid_slot: String = str(game.get("save_slot"))
+    game.set("save_slot", rootdir.path_join("unreachable-slot"))
+    var used_before: int = int(game.get("purify_uses"))
+    var infection_before: float = float(game.get("campaign").infection)
+    require(not game.call("purify"), "unwritable slot rejects purification")
+    require(int(game.get("purify_uses")) == used_before and
+        is_equal_approx(float(game.get("campaign").infection), infection_before),
+        "failed save restores charge and infection without loss")
+    game.set("save_slot", valid_slot)
+    game.call("_resume_gameplay")
+    require(game.call("enter_sector", "CPU"), "enter unconfirmed fourth OS wave")
+    game.call("retreat_to_hub")
+    require(str(game.get("mode")) == "hub", "retreat after unconfirmed wave returns hub")
+    state = Store.read(slot)
+    require(state.get("ok", false) and state.state["os_checkpoint.json"].scene == "hub",
+        "retreat saves hub location before updating live world")
+    require(int(state.state["os_checkpoint.json"].campaign.completed_waves.CPU) == 0,
+        "unfinished wave never saved as cleared")
+    var failed_id: String = str(game.get("campaign").run_id)
+    require(game.call("_close_failed_run", "dead"), "death closes OS and cleans checkpoint")
+    state = Store.read(slot)
+    require(state.get("ok", false) and state.state["os_checkpoint.json"] == null,
+        "dead OS has no resumable checkpoint")
+    require(str(state.state["antivirus_db.json"].closed_runs.get(failed_id, "")) == "dead",
+        "death receipt is durable")
+    require(game.call("start_new_run"), "new OS can deploy after real death closure")
+    require(game.call("abandon_checkpoint"), "final run safely cleaned")
     game.get_parent().remove_child(game)
     game.free()
     if failures == 0:
