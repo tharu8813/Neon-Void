@@ -1214,7 +1214,13 @@ class Game(VisualMixin):
             return
 
         count = len(ACTION_ORDER) if self.settings_page == "controls" else 6
-        if key in ("up", "w"):
+        if key == "home":
+            self.settings_selected = 0
+            self._draw_settings()
+        elif key == "end":
+            self.settings_selected = count - 1
+            self._draw_settings()
+        elif key in ("up", "w"):
             self.settings_selected = (self.settings_selected - 1) % count
             self._draw_settings()
         elif key in ("down", "s"):
