@@ -87,6 +87,9 @@ def main():
             assert game.state == "hub" and game.world.room == "base"
             assert game.profile.extracted_runs == 1
             assert game.profile_tracker.active is False
+            assert game.extraction_fx_t > 0
+            game.render()
+            assert game.c.find_withtag("extraction-vfx")
             archived = game.database_store.load()
             assert archived.software_archive == {software_id: 1}
             assert archived.processed_extractions == {run_id: software_id}
@@ -119,14 +122,22 @@ def main():
             assert game.levels == {software_id: 1}
             assert UP_BY_ID[software_id][4] >= 1
 
-            # Abandoning the second OS does not remove earned XP and cannot extract.
+            # Integrity collapse forces emergency extraction, not player death.
             second_run = game.campaign.run_id
-            game.return_to_base(abandon=True)
+            game.p.x, game.p.y = GATES["cpu"]
+            game.interact_hub()
+            assert game.state == "play"
+            game.infection.os_integrity = 0.0
+            game.step(1 / 60)
+            assert game.state == "hub" and game.world.room == "base"
+            assert game.campaign is None
+            assert game.p.hp > 0
             after = game.database_store.load()
             assert after.xp == archived.xp
             assert after.closed_runs[second_run] == "abandoned"
             assert after.software_archive == {software_id: 1}
-            print("[gui-extraction] CLEAN, 29 XP receipts, one software, level and next OS passed")
+            assert game.profile.extracted_runs == 1
+            print("[gui-extraction] CLEAN, 29 XP receipts, one software, level, OS collapse and next OS passed")
     finally:
         root.destroy()
 
