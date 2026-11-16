@@ -43,7 +43,7 @@ func _process(delta: float) -> void:
 	position = get_viewport().get_mouse_position() - Vector2(48, 48)
 	if not reduced_motion:
 		_phase += delta * 1.6
-	_tick += delta
+		_tick += delta
 		if _tick < 0.025:
 			return
 		_tick = 0.0
