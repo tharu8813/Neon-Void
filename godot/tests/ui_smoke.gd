@@ -63,7 +63,8 @@ func _check() -> void:
 	var chosen: Array[int] = []
 	shell.software_card_requested.connect(func(index: int) -> void:
 		chosen.append(index))
-	shell.show_reward_cards(["power", "rapid", "bonus"], {})
+	var sample_offers: Array[String] = ["power", "rapid", "bonus"]
+	shell.show_reward_cards(sample_offers, {})
 	shell._offer._on_pick(1)
 	if chosen != [1] or cursor.aim_enabled:
 		_fail("reward event/cursor isolation")
