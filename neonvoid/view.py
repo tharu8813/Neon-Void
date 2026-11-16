@@ -1436,9 +1436,13 @@ class VisualMixin:
 
         if self._hub_room != world.room:
             self._hub_room = world.room
-        for item in self._hub_items:
-            c.itemconfigure(item, state="normal")
-        self._hub_visible = True
+        # Re-enable the pooled hub only on scene entry. Re-enabling every
+        # item on each frame causes hundreds of redundant Tcl calls and
+        # briefly unhides objects that this frame will immediately hide.
+        if not self._hub_visible:
+            for item in self._hub_items:
+                c.itemconfigure(item, state="normal")
+            self._hub_visible = True
 
         # --- 배경 / 그리드 -------------------------------------------------
         c.itemconfigure(self.hub_bg,
