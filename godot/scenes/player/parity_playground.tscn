@@ -1,0 +1,34 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/player/parity_playground.gd" id="1_preview"]
+[ext_resource type="Script" path="res://scripts/input/legacy_input.gd" id="2_input"]
+[ext_resource type="Script" path="res://scripts/input/legacy_cursor.gd" id="3_cursor"]
+[ext_resource type="PackedScene" path="res://scenes/player/legacy_player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/camera/legacy_camera.tscn" id="5_camera"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_arena"]
+size = Vector2(12.8, 7.2)
+
+[node name="ParityPlayground" type="Node3D"]
+script = ExtResource("1_preview")
+
+[node name="ArenaFloor" type="MeshInstance3D" parent="."]
+position = Vector3(6.4, 0, 3.6)
+mesh = SubResource("PlaneMesh_arena")
+
+[node name="InputController" type="Node" parent="."]
+script = ExtResource("2_input")
+
+[node name="LegacyPlayer" parent="." instance=ExtResource("4_player")]
+
+[node name="LegacyCamera" parent="." instance=ExtResource("5_camera")]
+
+[node name="CursorLayer" type="CanvasLayer" parent="."]
+layer = 20
+
+[node name="Crosshair" type="Control" parent="CursorLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("3_cursor")

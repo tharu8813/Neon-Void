@@ -1,0 +1,144 @@
+extends SceneTree
+const Catalog = preload("res://scripts/sectors/sector_catalog.gd")
+const Campaign = preload("res://scripts/sectors/sector_campaign.gd")
+var failures: int = 0
+
+func _initialize() -> void:
+    call_deferred("_run")
+
+func check(ok: bool, message: String) -> void:
+    if not ok:
+        failures += 1
+        printerr("P5 FAIL: " + message)
+
+func kinds(plan: Dictionary) -> String:
+    var result: PackedStringArray = []
+    for entry in plan["spawns"]:
+        result.append(str(entry["kind"]))
+    return ",".join(result)
+
+func _run() -> void:
+    var lab_scene: PackedScene = load("res://scenes/sectors/sector_lab.tscn") as PackedScene
+    check(lab_scene != null, "3D sector lab scene loads")
+    if lab_scene != null:
+        var lab: Node = lab_scene.instantiate()
+        check(lab is Node3D, "3D sector lab root is Node3D")
+        root.add_child(lab)
+        check(bool(lab.call("enter_sector_lab", "CPU")), "3D physical lab enters CPU")
+        lab.call("retreat_lab")
+        check(str(lab.get("mode")) == "hub", "3D physical lab returns to hub")
+        lab.queue_free()
+    check(Catalog.IDS.size() == 4, "four sectors")
+    check(Catalog.plan_wave("cpu", 0).is_empty(), "invalid index")
+    check(Catalog.plan_wave("NOT_A_SECTOR", 1).is_empty(), "invalid sector")
+    # These are independently derived from Python content.sectors.plan_sector_wave().
+    # Golden fixtures are the original Python random.Random / SHA256 planner,
+    # not produced by this Godot implementation. Check all 20 seed-42 plans.
+    var golden42: Dictionary = {
+        "CPU": [
+            "overheater,overheater,overheater,overheater,overheater,overheater,overheater,overheater",
+            "overheater,overheater,rusher,rusher,rusher,overheater,rusher,rusher,overheater",
+            "overheater,trojan,rusher,trojan,overheater,trojan,trojan,rusher,rusher,overheater",
+            "packet_swarm,overheater,packet_swarm,trojan,overheater,overheater,trojan,overheater,overheater,packet_swarm,trojan,trojan,overheater,overheater",
+            "overseer,overheater,rusher,overheater"
+        ],
+        "MEMORY": [
+            "worm,worm,worm,worm,worm,worm",
+            "splitter,splitter,worm,splitter,worm,splitter,worm",
+            "worm,splitter,worm,worm,splitter,trojan,worm,worm,worm",
+            "trojan,worm,splitter,splitter,trojan,rootkit,rootkit,splitter,worm",
+            "replicator,trojan,trojan,trojan"
+        ],
+        "STORAGE": [
+            "ransomware,ransomware,ransomware,ransomware",
+            "ransomware,ransomware,guardian,ransomware",
+            "rootkit,rootkit,ransomware,ransomware,guardian,ransomware",
+            "ransomware,rootkit,trojan,rootkit,trojan,guardian,ransomware",
+            "encryptor,ransomware,ransomware,ransomware"
+        ],
+        "NETWORK": [
+            "packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm",
+            "packet_swarm,trojan,trojan,packet_swarm,packet_swarm,trojan,trojan,trojan,trojan,trojan,packet_swarm",
+            "trojan,rootkit,rootkit,packet_swarm,trojan,rootkit,rootkit,packet_swarm,trojan,rootkit,packet_swarm,packet_swarm",
+            "trojan,rootkit,worm,rootkit,rootkit,overheater,overheater,packet_swarm,overheater,rootkit,overheater,overheater,worm,overheater,packet_swarm,packet_swarm",
+            "zero_day,packet_swarm,packet_swarm,trojan"
+        ]
+    }
+    for sid in Catalog.IDS:
+        for wave_index in range(1, 6):
+            var result: Dictionary = Catalog.plan_wave(sid, wave_index, 42)
+            check(kinds(result) == golden42[sid][wave_index - 1], "seed42 20-wave golden parity %s %d" % [sid, wave_index])
+            check(result["boss_kind"] == (str(Catalog.SECTORS[sid]["boss"]) if wave_index == 5 else ""), "boss kind / wave gate %s %d" % [sid, wave_index])
+    check(kinds(Catalog.plan_wave("CPU", 2, 42)) == "overheater,overheater,rusher,rusher,rusher,overheater,rusher,rusher,overheater", "CPU seed42 wave2 MT parity")
+    check(kinds(Catalog.plan_wave("MEMORY", 4, 42)) == "trojan,worm,splitter,splitter,trojan,rootkit,rootkit,splitter,worm", "MEMORY seed42 wave4 MT parity")
+    check(kinds(Catalog.plan_wave("STORAGE", 5, 42)) == "encryptor,ransomware,ransomware,ransomware", "STORAGE seed42 boss")
+    check(kinds(Catalog.plan_wave("NETWORK", 4, 42)) == "trojan,rootkit,worm,rootkit,rootkit,overheater,overheater,packet_swarm,overheater,rootkit,overheater,overheater,worm,overheater,packet_swarm,packet_swarm", "NETWORK seed42 wave4")
+    check(kinds(Catalog.plan_wave("NETWORK", 5, 0)) == "zero_day,trojan,trojan,rootkit", "seed0 boss support selection")
+    check(kinds(Catalog.plan_wave("MEMORY", 4, 42)) == kinds(Catalog.plan_wave("MEMORY", 4, 42)), "independent replay")
+
+    var run = Campaign.new("os-seed-42", 42)
+    check(run.enter_sector("cpu"), "enter CPU")
+    var wave: Dictionary = run.start_wave()
+    check(wave["wave_index"] == 1, "first wave")
+    check(not run.confirm_wave(1, 0, false), "cannot clear living hostiles")
+    check(not run.confirm_wave(0, 1, false), "cannot clear pending spawns")
+    check(run.confirm_wave(0, 0, false), "first wave verified")
+    check(not run.confirm_wave(0, 0, false), "duplicate wave denied")
+    check(int(run.progress["CPU"]) == 1, "confirmed progress preserved")
+    wave = run.start_wave()
+    var replay: String = kinds(wave)
+    run.retreat()
+    check(int(run.progress["CPU"]) == 1, "retreat never deletes complete wave")
+    check(run.enter_sector("CPU"), "reenter after retreat")
+    wave = run.start_wave()
+    check(wave["wave_index"] == 2 and kinds(wave) == replay, "retry same unfinished wave")
+    run.retreat()
+
+    var clean_events: Array = []
+    run.os_cleaned.connect(func(): clean_events.append("os_cleaned"))
+    var visit_order: Array[String] = ["NETWORK", "STORAGE", "MEMORY", "CPU"]
+    for sid in visit_order:
+        check(run.enter_sector(sid), "enter " + sid)
+        while int(run.progress[sid]) < 5:
+            wave = run.start_wave()
+            var is_boss: bool = int(wave["wave_index"]) == 5
+            if is_boss:
+                check(not run.confirm_wave(0, 0, false), "boss required " + sid)
+            check(run.confirm_wave(0, 0, is_boss), "clear " + sid)
+            check(not run.confirm_wave(0, 0, is_boss), "no duplicate event " + sid)
+        check(run.is_sector_clean(sid), "sector clean " + sid)
+        run.retreat()
+    check(run.is_os_clean(), "all four sectors clean in arbitrary order")
+    check(clean_events.size() == 1, "OS cleaned event exactly once")
+    check(not run.start_wave().size(), "no wave outside a sector")
+
+    var cp: Dictionary = run.checkpoint()
+    var restored = Campaign.from_checkpoint(cp)
+    check(restored != null, "valid checkpoint")
+    if restored != null:
+        check(restored.is_os_clean(), "checkpoint preserves all cleared sectors")
+        check(restored.active_wave == 0 and restored.active_sector.is_empty(), "checkpoint excludes active encounter")
+    var malformed: Dictionary = cp.duplicate(true)
+    malformed["completed_waves"]["NETWORK"] = 6
+    check(Campaign.from_checkpoint(malformed) == null, "future/malformed wave fails closed")
+    var status = Campaign.new("infection-test", 42)
+    status.infection = 49.9
+    status.tick_infection(1.0)
+    check(is_equal_approx(status.integrity, 100.0), "no exposure in hub")
+    status.apply_infection(0.2)
+    status.tick_infection(1.0)
+    check(is_equal_approx(status.integrity, 99.7), "spreading pressure")
+    status.infection = 74.9
+    status.apply_infection(0.2)
+    status.tick_infection(1.0)
+    check(is_equal_approx(status.integrity, 98.7), "critical pressure additive")
+    status.purify(90.0)
+    check(status.infection_stage() == 0, "purification lowers stage")
+    var before: float = status.integrity
+    status.tick_infection(60.0, true)
+    check(is_equal_approx(status.integrity, before), "paused tick frozen")
+    if failures == 0:
+        print("P5 HEADLESS SECTOR PASS (seed 0/42, 4x5, retreat, boss, receipts, infection)")
+    else:
+        printerr("P5 HEADLESS SECTOR FAILURES: %d" % failures)
+    quit(1 if failures > 0 else 0)

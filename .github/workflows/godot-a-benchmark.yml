@@ -1,0 +1,38 @@
+name: Godot P10 benchmark math
+
+on:
+  pull_request:
+    paths:
+      - 'godot/benchmarks/**'
+      - 'godot/tests/p10_benchmark_smoke.gd'
+      - '.github/workflows/godot-a-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_TAG: '4.7.2-stable'
+
+jobs:
+  visual-smoke:
+    name: P10 measurement arithmetic (headless only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v${GODOT_TAG}_linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64"
+          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Import and test frame interval statistics/benchmark scene
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$NEON_GODOT" --headless --path godot --editor --import --quit
+          "$NEON_GODOT" --headless --path godot --script res://tests/p10_benchmark_smoke.gd

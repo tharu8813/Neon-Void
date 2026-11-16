@@ -1,0 +1,468 @@
+{
+  "format": 1,
+  "source": "neonvoid/content/upgrades.py",
+  "entries": [
+    {
+      "id": "rapid",
+      "name": "과열 방출",
+      "description": "연사 속도 +18%",
+      "tier": 0,
+      "max_stack": 6,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "rate",
+          "op": "mul",
+          "value": 1.18
+        }
+      ]
+    },
+    {
+      "id": "power",
+      "name": "과충전 탄두",
+      "description": "탄환 피해 +4",
+      "tier": 0,
+      "max_stack": 8,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "dmg",
+          "op": "add",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "id": "pierce",
+      "name": "관통 코어",
+      "description": "탄환이 적 1체를 더 관통",
+      "tier": 0,
+      "max_stack": 3,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "pierce",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "split",
+      "name": "분열 사격",
+      "description": "탄환이 갈라져 2발 추가",
+      "tier": 0,
+      "max_stack": 3,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "split",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "homing",
+      "name": "유도 코일",
+      "description": "탄환이 적을 추적",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "homing",
+          "op": "add",
+          "value": 2.6
+        }
+      ]
+    },
+    {
+      "id": "boom",
+      "name": "폭발 탄두",
+      "description": "명중 시 주변에 폭발 피해",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "explode",
+          "op": "add",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "id": "crit",
+      "name": "치명타 회로",
+      "description": "치명타 확률 +8%p",
+      "tier": 0,
+      "max_stack": 5,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "crit",
+          "op": "add",
+          "value": 0.08
+        }
+      ]
+    },
+    {
+      "id": "vamp",
+      "name": "흡혈 장치",
+      "description": "적 처치 시 체력 +0.7",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "lifesteal",
+          "op": "add",
+          "value": 0.7
+        }
+      ]
+    },
+    {
+      "id": "thorn",
+      "name": "가시 갑옷",
+      "description": "접촉한 적에게 피해 반사",
+      "tier": 0,
+      "max_stack": 3,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "thorns",
+          "op": "add",
+          "value": 14
+        }
+      ]
+    },
+    {
+      "id": "dash2",
+      "name": "대시 충전",
+      "description": "대시 횟수 +1",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "dash_max",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "dashb",
+      "name": "대시 폭발",
+      "description": "대시 중 주변 적에게 피해",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "dash_blast",
+          "op": "add",
+          "value": 30
+        }
+      ]
+    },
+    {
+      "id": "slow",
+      "name": "시간 왜곡",
+      "description": "처치 시 시간이 느려짐",
+      "tier": 2,
+      "max_stack": 3,
+      "weight": 0.13,
+      "effects": [
+        {
+          "stat": "slow",
+          "op": "add",
+          "value": 0.075
+        }
+      ]
+    },
+    {
+      "id": "magnet",
+      "name": "자력 수집",
+      "description": "파편 수집 범위 +90",
+      "tier": 0,
+      "max_stack": 3,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "magnet",
+          "op": "add",
+          "value": 90
+        }
+      ]
+    },
+    {
+      "id": "drone",
+      "name": "위성 드론",
+      "description": "궤도 드론이 자동 사격",
+      "tier": 2,
+      "max_stack": 3,
+      "weight": 0.13,
+      "effects": [
+        {
+          "stat": "drone",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "name": "연쇄 방전",
+      "description": "명중 시 근처 적에게 방전",
+      "tier": 2,
+      "max_stack": 2,
+      "weight": 0.13,
+      "effects": [
+        {
+          "stat": "chain",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "rear",
+      "name": "후방 포탑",
+      "description": "후방으로 추가 사격",
+      "tier": 1,
+      "max_stack": 1,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "rear",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "hull",
+      "name": "외골격",
+      "description": "최대 체력 +20 (즉시 회복)",
+      "tier": 0,
+      "max_stack": 4,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "maxhp",
+          "op": "add",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "id": "ricochet",
+      "name": "도탄 장치",
+      "description": "탄환이 벽에서 1회 튕김",
+      "tier": 1,
+      "max_stack": 2,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "ricochet",
+          "op": "add",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "armor",
+      "name": "장갑 소프트웨어",
+      "description": "방어력 +5",
+      "tier": 0,
+      "max_stack": 5,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "armor",
+          "op": "add",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "id": "breach",
+      "name": "관통 연산",
+      "description": "방어구 관통력 +4",
+      "tier": 0,
+      "max_stack": 5,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "armor_pen",
+          "op": "add",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "id": "mana",
+      "name": "마나 확장팩",
+      "description": "최대 마나 +25, 마나 25 회복",
+      "tier": 0,
+      "max_stack": 4,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "maxmana",
+          "op": "add",
+          "value": 25
+        }
+      ]
+    },
+    {
+      "id": "regen",
+      "name": "마나 순환기",
+      "description": "초당 마나 회복 +2",
+      "tier": 0,
+      "max_stack": 5,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "mana_regen",
+          "op": "add",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "burn",
+      "name": "점화 프로토콜",
+      "description": "탄환에 화상 확률과 중첩 지속 피해 추가",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "burn_chance",
+          "op": "cap_add",
+          "value": 0.18,
+          "cap": 0.75
+        },
+        {
+          "stat": "burn_dps",
+          "op": "add",
+          "value": 2.5
+        }
+      ]
+    },
+    {
+      "id": "toxin",
+      "name": "부식 프로토콜",
+      "description": "탄환에 중독 확률과 중첩 지속 피해 추가",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "toxin_chance",
+          "op": "cap_add",
+          "value": 0.16,
+          "cap": 0.75
+        },
+        {
+          "stat": "toxin_dps",
+          "op": "add",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "leech",
+      "name": "에너지 환원",
+      "description": "탄환 적중마다 체력 +0.45",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "life_on_hit",
+          "op": "add",
+          "value": 0.45
+        }
+      ]
+    },
+    {
+      "id": "focus",
+      "name": "충격파 증폭",
+      "description": "충격파 피해 +25%",
+      "tier": 1,
+      "max_stack": 4,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "skill_power",
+          "op": "mul",
+          "value": 1.25
+        }
+      ]
+    },
+    {
+      "id": "cool",
+      "name": "스킬 가속기",
+      "description": "스킬 재사용 대기시간 9% 감소",
+      "tier": 1,
+      "max_stack": 4,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "skill_cooldown",
+          "op": "mul",
+          "value": 0.91
+        }
+      ]
+    },
+    {
+      "id": "eco",
+      "name": "마나 최적화",
+      "description": "스킬 마나 소모 10% 감소",
+      "tier": 0,
+      "max_stack": 4,
+      "weight": 1,
+      "effects": [
+        {
+          "stat": "skill_efficiency",
+          "op": "mul",
+          "value": 0.9
+        }
+      ]
+    },
+    {
+      "id": "sustain",
+      "name": "자가 복구",
+      "description": "초당 체력 회복 +0.5",
+      "tier": 1,
+      "max_stack": 4,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "hp_regen",
+          "op": "add",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "id": "duration",
+      "name": "지속 증폭",
+      "description": "보호막과 지속 피해 효과가 더 오래 유지",
+      "tier": 1,
+      "max_stack": 3,
+      "weight": 0.42,
+      "effects": [
+        {
+          "stat": "effect_duration",
+          "op": "add",
+          "value": 0.2
+        }
+      ]
+    }
+  ]
+}
