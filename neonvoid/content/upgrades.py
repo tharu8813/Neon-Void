@@ -1,11 +1,11 @@
-"""Upgrades and their gameplay effects."""
+"""Software modules and their gameplay effects (legacy API names retained)."""
 
 from __future__ import annotations
 
 
 
 # ----------------------------------------------------------------------------
-# 업그레이드
+# 소프트웨어
 # ----------------------------------------------------------------------------
 # (id, 이름, 설명, 등급, 최대 중첩)
 UPGRADES = [
@@ -27,6 +27,18 @@ UPGRADES = [
     ("rear", "후방 포탑", "후방으로 추가 사격", 1, 1),
     ("hull", "외골격", "최대 체력 +20 (즉시 회복)", 0, 4),
     ("ricochet", "도탄 장치", "탄환이 벽에서 1회 튕김", 1, 2),
+    ("armor", "장갑 소프트웨어", "방어력 +5", 0, 5),
+    ("breach", "관통 연산", "방어구 관통력 +4", 0, 5),
+    ("mana", "마나 확장팩", "최대 마나 +25, 마나 25 회복", 0, 4),
+    ("regen", "마나 순환기", "초당 마나 회복 +2", 0, 5),
+    ("burn", "점화 프로토콜", "탄환 적중 시 18% 화상, 지속 피해 중첩", 1, 3),
+    ("toxin", "부식 프로토콜", "탄환 적중 시 16% 중독, 지속 피해 중첩", 1, 3),
+    ("leech", "에너지 환원", "탄환 적중마다 체력 +0.45", 1, 3),
+    ("focus", "충격파 증폭", "Q 스킬 피해 +25%", 1, 4),
+    ("cool", "스킬 가속기", "스킬 재사용 대기시간 9% 감소", 1, 4),
+    ("eco", "마나 최적화", "스킬 마나 소모 10% 감소", 0, 4),
+    ("sustain", "자가 복구", "초당 체력 회복 +0.5", 1, 4),
+    ("duration", "지속 증폭", "화상/중독/보호막 지속시간 +20%", 1, 3),
 ]
 UP_BY_ID = {u[0]: u for u in UPGRADES}
 UP_WEIGHT = {0: 1.0, 1: 0.42, 2: 0.13}
@@ -73,3 +85,30 @@ def apply_upgrade(g, uid):
         g.p.hp = min(g.p.maxhp, g.p.hp + 20.0)
     elif uid == "ricochet":
         st["ricochet"] += 1
+    elif uid == "armor":
+        st["armor"] += 5.0
+    elif uid == "breach":
+        st["armor_pen"] += 4.0
+    elif uid == "mana":
+        g.p.maxmana += 25.0
+        g.p.mana = min(g.p.maxmana, g.p.mana + 25.0)
+    elif uid == "regen":
+        st["mana_regen"] += 2.0
+    elif uid == "burn":
+        st["burn_chance"] = min(0.75, st["burn_chance"] + 0.18)
+        st["burn_dps"] += 2.5
+    elif uid == "toxin":
+        st["toxin_chance"] = min(0.75, st["toxin_chance"] + 0.16)
+        st["toxin_dps"] += 2.0
+    elif uid == "leech":
+        st["life_on_hit"] += 0.45
+    elif uid == "focus":
+        st["skill_power"] *= 1.25
+    elif uid == "cool":
+        st["skill_cooldown"] *= 0.91
+    elif uid == "eco":
+        st["skill_efficiency"] *= 0.9
+    elif uid == "sustain":
+        st["hp_regen"] += 0.5
+    elif uid == "duration":
+        st["effect_duration"] += 0.2
