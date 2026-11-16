@@ -928,7 +928,11 @@ class VisualMixin:
                             f"기본 방어력 {p.st['armor']:.1f}"))
         if self.levels:
             installed = sorted(self.levels, key=lambda uid: (-self.levels[uid], uid))
-            for index, uid in enumerate(installed):
+            page_size = 27
+            page_count = max(1, (len(installed) + page_size - 1) // page_size)
+            self.loadout_page = min(max(0, getattr(self, "loadout_page", 0)), page_count - 1)
+            start = self.loadout_page * page_size
+            for index, uid in enumerate(installed[start:start + page_size]):
                 row, col = divmod(index, 3)
                 x, y = 101 + col * 363, 147 + row * 48
                 _, name, description, rarity, cap = UP_BY_ID[uid]
@@ -945,6 +949,15 @@ class VisualMixin:
                           fill=C_TEXT, font=F_MID, tags=layer)
             c.create_text(W / 2, 358, text="웨이브 보상으로 패시브 효과와 능력치를 추가할 수 있습니다.",
                           fill="#a3bbd2", font=F_UI, tags=layer)
+        if self.levels and page_count > 1:
+            c.create_text(104, H - 69,
+                          text=f"{self.loadout_page + 1} / {page_count} 페이지  ·  "
+                               "← → / Page Up·Down으로 이동",
+                          anchor="w", fill=C_DIM, font=F_UI, tags=layer)
+            self._menu_button(layer, "prior", 101, H - 55, 238, H - 20,
+                              "이전", "PgUp")
+            self._menu_button(layer, "next", 250, H - 55, 387, H - 20,
+                              "다음", "PgDn")
         back = "카드 선택으로 돌아가기" if self.state == "upgrade" else "일시정지로 돌아가기"
         self._menu_button(layer, "escape", W - 367, H - 87, W - 101, H - 50,
                           back, "ESC", primary=True)
