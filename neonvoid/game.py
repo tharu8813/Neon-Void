@@ -353,12 +353,16 @@ class Game(VisualMixin):
                 save_settings(self.settings)
 
     def toggle_fullscreen(self):
+        if self.settings.display_mode == "windowed":
+            self._save_window_size()
         self.settings.display_mode = ("windowed" if self.settings.display_mode
                                       == "fullscreen" else "fullscreen")
         self._apply_display_mode()
         self.apply_settings()
 
     def toggle_borderless(self):
+        if self.settings.display_mode == "windowed":
+            self._save_window_size()
         self.settings.display_mode = ("windowed" if self.settings.display_mode
                                       == "borderless" else "borderless")
         self._apply_display_mode()
@@ -1153,6 +1157,8 @@ class Game(VisualMixin):
                 return
             self.settings.show_fps = not self.settings.show_fps
         elif index == 4:
+            if self.settings.display_mode == "windowed":
+                self._save_window_size()
             i = DISPLAY_MODES.index(self.settings.display_mode)
             self.settings.display_mode = DISPLAY_MODES[(i + direction) % len(DISPLAY_MODES)]
             self._apply_display_mode()
