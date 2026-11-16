@@ -77,6 +77,13 @@ func _run() -> void:
     if loaded.ok:
         expect(loaded.state["antivirus_db.json"].xp == 0, "DB is XP authority")
         expect(loaded.state["profile.json"].total_score == 0, "profile not mixed with XP")
+    var ui_settings: Dictionary = state["settings.json"].duplicate(true)
+    ui_settings.show_fps = true
+    expect(Store.persist_document(slot, "settings.json", ui_settings).applied,
+        "D settings UI can write through guarded API")
+    expect(not Store.persist_document(slot, "antivirus_db.json", {}).applied,
+        "UI cannot bypass XP receipt authority")
+    expect(Store.read(slot).state["settings.json"].show_fps, "changed settings durable")
     for name in Migration.FILES:
         var source_copy: Dictionary = Store._read_bytes(legacy.path_join(name))
         var backup: Dictionary = Store._read_bytes(slot.path_join("legacy_originals").path_join(name))
@@ -126,6 +133,22 @@ func _run() -> void:
     expect(Progression.persist_close_run(slot, "dead-run", "dead").applied, "close failed run")
     expect(not Progression.persist_event(slot, "dead-run", "wave_cleared", "cpu_core", 1).applied,
         "closed run cannot earn XP")
+    var primary_backup: String = slot.path_join("state.json.bak")
+    var preserved_backup: String = slot.path_join("state.json.bak.test-preserved")
+    expect(DirAccess.rename_absolute(primary_backup, preserved_backup) == OK,
+        "preserve pre-existing synthetic backup before failure injection")
+    expect(DirAccess.make_dir_absolute(primary_backup) == OK,
+        "inject unwritable backup destination")
+    var before_write_failure: Dictionary = Store.read(slot)
+    var blocked_write: Dictionary = Progression.persist_event(slot, "disk-failure-run",
+        "wave_cleared", "cpu_core", 1)
+    expect(not blocked_write.applied and blocked_write.reason == "backup_failed",
+        "failed backup cannot grant permanent XP")
+    expect(Store.read(slot).revision == before_write_failure.revision,
+        "write failure leaves primary unmodified")
+    DirAccess.remove_absolute(primary_backup)
+    expect(DirAccess.rename_absolute(preserved_backup, primary_backup) == OK,
+        "restore synthetic previous snapshot after failure test")
     var before: Dictionary = Store.read(slot)
     var invalid: Dictionary = Store.transact(slot, func(payload):
         payload["antivirus_db.json"].xp = 777777
