@@ -110,7 +110,7 @@ static func _settings(obj: Dictionary) -> bool:
     var version: Variant = obj.get("schema_version", 1)
     if not _integer(version, 1, 5):
         return false
-    if not _number(obj.get("volume", 0.9), 0.0, MAX_SAFE_INT):
+    if not _number(obj.get("volume", 0.9), -INF, INF):
         return false
     for key in ["muted", "show_fps", "reduced_effects"]:
         if typeof(obj.get(key, false)) != TYPE_BOOL:
@@ -159,7 +159,7 @@ static func _database(obj: Dictionary) -> bool:
         return false
     var total := 0.0
     for key in receipts:
-        if not _id(key, 256, true) or not key.contains(":") or not _id(key.get_slice(":", 0), 128):
+        if not _id(key, 192, true) or not key.contains(":") or not _id(key.get_slice(":", 0), 128):
             return false
         if not _integer(receipts[key], 1):
             return false
@@ -251,3 +251,58 @@ static func _checkpoint(obj: Dictionary) -> bool:
         if not _integer(obj[key], 0, 1000000000000):
             return false
     return float(obj["run_kills"]) <= float(obj["kills"])
+
+## Convert supported historical forms to the current Godot-facing Python
+## schema without altering the original object or its source bytes.
+static func convert(filename: String, obj: Dictionary) -> Dictionary:
+    if not validate(filename, obj).ok:
+        return {"ok": false, "reason": "invalid_source"}
+    if filename == "save.json":
+        return {"ok": true, "value": {"best_score": int(obj.get("best_score", 0)),
+            "best_wave": int(obj.get("best_wave", 0)), "runs": int(obj.get("runs", 0))}}
+    if filename == "profile.json":
+        var normalized := {"schema_version": 2}
+        for key in ["total_kills", "boss_kills", "total_score", "completed_runs", "abandoned_runs", "extracted_runs", "best_combo"]:
+            normalized[key] = int(obj.get(key, 0))
+        normalized["recent_runs"] = []
+        for run in obj.get("recent_runs", []):
+            var record := {"status": run.get("status", "dead"),
+                "duration_seconds": float(run.get("duration_seconds", 0.0))}
+            for key in ["score", "wave", "kills", "boss_kills", "best_combo"]:
+                record[key] = int(run.get(key, 0))
+            normalized["recent_runs"].append(record)
+        return {"ok": true, "value": normalized}
+    if filename == "settings.json":
+        var version: int = int(obj.get("schema_version", 1))
+        var controls: Dictionary = DEFAULT_KEYS.duplicate(true)
+        if version >= 2:
+            controls = {}
+            for i in (6 if version == 2 else (8 if version == 3 else 9)):
+                var action: String = BINDINGS[i]
+                controls[action] = str(obj.bindings[action]).to_lower().strip_edges()
+            if version == 2:
+                for action in ["skill_pulse", "skill_guard"]:
+                    var preferred := "q" if action == "skill_pulse" else "e"
+                    for key in [preferred, "f", "g", "h", "j", "k", "l", "z", "x", "c"]:
+                        if not controls.values().has(key):
+                            controls[action] = key
+                            break
+                    if not controls.has(action):
+                        return {"ok": false, "reason": "no_free_legacy_skill_binding"}
+            if version < 4:
+                for key in ["f", "g", "h", "j", "k", "l", "z", "x", "c", "v", "b"]:
+                    if not controls.values().has(key):
+                        controls["interact"] = key
+                        break
+                if not controls.has("interact"):
+                    return {"ok": false, "reason": "no_free_interact_binding"}
+        if not _keys_valid(controls, 9):
+            return {"ok": false, "reason": "normalized_bindings_invalid"}
+        return {"ok": true, "value": {
+            "schema_version": 5, "volume": clampf(float(obj.get("volume", 0.9)), 0.0, 1.0),
+            "muted": obj.get("muted", false), "show_fps": obj.get("show_fps", false),
+            "reduced_effects": obj.get("reduced_effects", false),
+            "display_mode": obj.get("display_mode", "windowed"),
+            "window_width": int(obj.get("window_width", 1280)),
+            "window_height": int(obj.get("window_height", 720)), "bindings": controls}}
+    return {"ok": true, "value": obj.duplicate(true)}
