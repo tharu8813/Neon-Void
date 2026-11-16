@@ -10,6 +10,7 @@ import hashlib
 import random
 
 from .stages import StageDefinition, WavePlan, plan_wave, validate_stage
+from .upgrades import UP_BY_ID
 from ..events import EventBus
 
 SECTOR_IDS = ("CPU", "MEMORY", "STORAGE", "NETWORK")
@@ -136,6 +137,24 @@ SECTORS: dict[str, SectorDefinition] = {
         software_focus=("homing", "drone", "rear", "sustain", "mana"),
     ),
 }
+
+
+# Fixed boss-module priority prevents rerolling on CLEAN re-entry.
+BOSS_SIGNATURE_SOFTWARE = {
+    "CPU": ("dashb", "rapid", "power"),
+    "MEMORY": ("boom", "chain", "split"),
+    "STORAGE": ("breach", "pierce", "armor"),
+    "NETWORK": ("homing", "drone", "rear"),
+}
+
+
+def select_boss_signature(sector_id: str, levels: dict[str, int]) -> str | None:
+    """Choose the first not-maxed thematic module without touching RNG."""
+    sector = get_sector(sector_id)
+    for uid in BOSS_SIGNATURE_SOFTWARE[sector.sector_id]:
+        if levels.get(uid, 0) < UP_BY_ID[uid][4]:
+            return uid
+    return None
 
 
 SECTOR_SOFTWARE_FOCUS_MULTIPLIER = 1.8
