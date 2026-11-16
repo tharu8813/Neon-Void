@@ -35,6 +35,23 @@ def main():
         assert math.isclose(game.c.viewport.to_game(*game.c.viewport.to_screen(640, 360))[0],
                             640.0)
 
+        # Ultrawide letterboxing must not let black-bar clicks activate menus.
+        game.c.set_viewport_size(2560, 1080)
+        assert game.c.viewport.left > 0
+        assert math.isclose(game.c.viewport.top, 0)
+        game.render()
+        real_mouse(game, 760, 620)
+        assert game.settings_open
+        game._screen_motion(SimpleNamespace(x=5, y=540))
+        assert not game.cursor_on
+        game._screen_mouse_down(SimpleNamespace(x=5, y=540))
+        assert game.settings_open and not game.mouse_down
+        # Logical menu clicks still work after horizontal letterboxing.
+        real_mouse(game, 760, 236)
+        assert game.settings_selected == 0
+        game.close_settings()
+        assert not game.settings_open and game.state == "title"
+
         # 4:3 and tall layout keep logical 1280x720 centered (black bars).
         game.c.set_viewport_size(960, 700)
         assert game.c.viewport.top > 0
