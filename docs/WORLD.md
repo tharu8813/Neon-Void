@@ -42,3 +42,17 @@ Real viruses now have geometric artwork and bounded pattern execution. Replicati
 The B campaign emits `sector_entered`, `wave_cleared`, `sector_cleared`, `os_cleaned`; per-sector progress cannot be duplicated. The A3 phase connects these events to C's persistent database XP/level receipts, OS CLEAN extraction terminal and re-deployment. **A2 does not yet award XP, save OS checkpoints, or extract software.**
 
 Additional GUI validation: `python -m tests.gui_sectors_smoke` traverses all four sectors in a deliberately non-linear order and verifies 20 separate waves, bosses, infection accumulation, campaign/world progression and OS CLEAN.
+
+## A3: durable antivirus database, CLEAN and extraction
+
+The full OS loop uses B's `SectorCampaign` and C's `AntivirusDatabaseStore` (separate `antivirus_db.json`) without modifying either team's modules. Campaign events are validated in this order: five independently completed waves, wave-5 confirmed boss kill, sector-clean award, all-four-sector OS-clean award. The permanent DB records every receipt using a unique OS run ID; replay of an event is a no-op. `sync_campaign_rewards` retries previously confirmed achievements before extraction if a transient write earlier failed. Failed/corrupt DBs **do not allow extraction**, and the game does not advertise reward success before disk commit.
+
+Interact with the **ANTIVIRUS DATABASE** terminal (F) in the outer hub to select zero or one archived starting module. Deploying creates a new run ID, applies fixed level-1 stats plus permanent level bonuses to a new Player, then installs only one selected software copy. The active Player is not retroactively buffed if XP levels the DB during an OS.
+
+After all four sectors have clean wave-5 boss receipts, the OS hub's **SYSTEM STATUS** becomes the extraction terminal. It is never auto-triggered. Select one eligible currently equipped software from the UI and press Enter. Only after a successful transactional `commit_extraction_once` can the player return to the outer hub; the ProfileTracker records an `extracted` run (profile schema v2 transparently reads schema v1). Subsequent OS deployment resets temporary software and sector progress but retains XP, level and archived modules.
+
+The DB is fail-closed on corruption and has an independent backup and atomic write strategy. See `docs/ANTIVIRUS_DATABASE.md` for exact return conditions. A user can permanently run out of extraction-eligible software when all owned software IDs are already archived to their per-module caps; the terminal explains `archive_full`. Later progression-balancing work must address this endgame behavior without silently bypassing the 1-copy contract.
+
+The game-world per-sector checkpoint is **session-only**. Unexpected exits lose unfinished OS state, but already persisted XP stays earned. Proper crash recovery and persistent sector checkpoints are a separate deliverable. Running unit/GUI CI does not replace manual Windows visual/audio/DPI playtesting.
+
+Additional Windows/Linux Tk integration: `python -m tests.gui_extraction_smoke` executes all four sectors, obtains 29 unique reward receipts, extracts precisely one software, checks the durable DB, and deploys a second OS with level bonuses and one archived starting module.

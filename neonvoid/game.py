@@ -29,6 +29,12 @@ from .content.sectors import SectorCampaign, get_sector, SECTOR_IDS as CAMPAIGN_
 from .content.virus_catalog import (PATTERNS, VirusRuntime, MAX_LIVE_ENEMIES)
 from .infection import InfectionState
 from uuid import uuid4
+from .metaprogression import (AntivirusDatabase, award_progress_once,
+                              close_run_once, base_stats_for_level, xp_progress)
+from .database_storage import (AntivirusDatabaseStore, DatabaseCorruptError,
+                               DatabaseStorageError)
+from .extraction import (prepare_extraction, commit_extraction_once,
+                         select_starting_software, starting_software_levels)
 
 class Game(VisualMixin):
     def __init__(self, root, opts):
@@ -83,6 +89,26 @@ class Game(VisualMixin):
         self.boss_defeated = False
         self.infection = InfectionState()
         self.purify_uses = 3
+        self.database_store = None if self.auto else AntivirusDatabaseStore()
+        self.database_error = None
+        try:
+            self.database = (self.database_store.load() if self.database_store
+                             else AntivirusDatabase())
+        except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+            self.database_error = f"{type(exc).__name__}: {exc}"
+            self.database_store = None
+            # Fail closed: gameplay can still run, but permanent rewards are
+            # disabled until the corrupt DB is manually repaired or restored.
+            self.database = AntivirusDatabase()
+        self.starting_software_id = None
+        self.database_open = False
+        self.database_selected = 0
+        self.extraction_open = False
+        self.extraction_options = ()
+        self.extraction_selected = 0
+        self.events.subscribe("wave_cleared", self._on_sector_progress)
+        self.events.subscribe("sector_cleared", self._on_sector_progress)
+        self.events.subscribe("os_cleaned", self._on_sector_progress)
         self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
         self.world_notice_t = 4.0
 
@@ -205,11 +231,213 @@ class Game(VisualMixin):
         if not self.auto:
             self.loop()
 
+    # --------------------------------------------------- 영구 백신 DB / 보상
+    _DB_SECTOR_IDS = {
+        "CPU": "cpu_core",
+        "MEMORY": "memory_sector",
+        "STORAGE": "storage_vault",
+        "NETWORK": "network_grid",
+    }
+
+    def _reward_db(self, run_id, event, sector_id=None, wave_index=None):
+        """Persist exactly-once sector rewards; never claim success on I/O error."""
+        if self.database_error is not None:
+            return None
+        try:
+            arguments = dict(run_id=run_id, event=event,
+                             sector_id=sector_id, wave_index=wave_index)
+            if self.database_store is None:
+                updated, result = award_progress_once(self.database, **arguments)
+            else:
+                updated, result = self.database_store.award_progress_once(**arguments)
+        except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
+            self.database_error = f"{type(exc).__name__}: {exc}"
+            self.announce_world("백신 DB 보상 기록 오류 · 데이터베이스를 확인하세요", 5)
+            return None
+        if result.applied:
+            self.database = updated
+            self.events.emit("database_xp_awarded", run_id=run_id,
+                             event=event, amount=result.amount)
+            if result.level_after > result.level_before:
+                self.events.emit("database_leveled", run_id=run_id,
+                                 level=result.level_after)
+                self.announce_world(
+                    f"백신 데이터베이스 LEVEL {result.level_after} · 다음 배포부터 능력치 상승",
+                    4)
+        elif result.reason == "save_failed":
+            self.announce_world("경험치 저장 실패 · 재시도 시 복구할 수 있습니다", 5)
+        return result
+
+    def _on_sector_progress(self, event):
+        """B's campaign events are the verified prerequisite chain for C."""
+        if self.campaign is None or event.payload.get("run_id") != self.campaign.run_id:
+            return
+        sector = event.payload.get("sector_id")
+        db_sector = self._DB_SECTOR_IDS.get(sector)
+        if event.name == "wave_cleared" and db_sector:
+            wave_index = event.payload["wave_index"]
+            self._reward_db(self.campaign.run_id, "wave_cleared",
+                            sector_id=db_sector, wave_index=wave_index)
+            if wave_index == 5 and event.payload.get("boss_kind"):
+                self._reward_db(self.campaign.run_id, "boss_killed",
+                                sector_id=db_sector)
+        elif event.name == "sector_cleared" and db_sector:
+            self._reward_db(self.campaign.run_id, "sector_cleared",
+                            sector_id=db_sector)
+        elif event.name == "os_cleaned":
+            self._reward_db(self.campaign.run_id, "os_cleaned")
+
+    def sync_campaign_rewards(self):
+        """Retry only previously confirmed progress when an earlier save failed.
+
+        The persistent idempotency receipts prevent replay from duplicating XP.
+        Unfinished waves cannot be awarded by this reconciliation step.
+        """
+        if self.campaign is None or self.database_error is not None:
+            return
+        for sector, state in self.campaign.progress.items():
+            db_sector = self._DB_SECTOR_IDS[sector]
+            for wave in range(1, state.completed_waves + 1):
+                self._reward_db(self.campaign.run_id, "wave_cleared",
+                                sector_id=db_sector, wave_index=wave)
+            if state.is_clean:
+                self._reward_db(self.campaign.run_id, "boss_killed",
+                                sector_id=db_sector)
+                self._reward_db(self.campaign.run_id, "sector_cleared",
+                                sector_id=db_sector)
+        if self.campaign.os_clean:
+            self._reward_db(self.campaign.run_id, "os_cleaned")
+
+    def _close_database_run(self, status):
+        if self.campaign is None or self.database_error is not None:
+            return
+        try:
+            if self.database_store is None:
+                updated, result = close_run_once(
+                    self.database, run_id=self.campaign.run_id, status=status)
+            else:
+                updated, result = self.database_store.close_run_once(
+                    run_id=self.campaign.run_id, status=status)
+            if result.applied:
+                self.database = updated
+        except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+            self.database_error = f"{type(exc).__name__}: {exc}"
+
+    def _database_options(self):
+        return (None,) + tuple(sorted(self.database.software_archive))
+
+    def open_database_terminal(self):
+        self.database_open = True
+        self.database_selected = 0
+        self.keys.clear()
+        self._draw_database_terminal()
+
+    def _handle_database_key(self, key):
+        if key in ("escape", self.settings.bindings["interact"], "o"):
+            self.database_open = False
+            self.c.delete("dbui")
+            self.keys.clear()
+            return
+        options = self._database_options()
+        if key in ("up", "w"):
+            self.database_selected = (self.database_selected - 1) % len(options)
+        elif key in ("down", "s"):
+            self.database_selected = (self.database_selected + 1) % len(options)
+        elif key in ("return", "kp_enter", "space"):
+            chosen = options[self.database_selected]
+            try:
+                self.starting_software_id = select_starting_software(
+                    self.database, chosen)
+                self.announce_world(
+                    f"다음 배포 소프트웨어: {UP_BY_ID[chosen][1] if chosen else '기본 장비'}")
+            except ValueError:
+                self.announce_world("영구 보관되지 않은 소프트웨어입니다")
+            self.database_open = False
+            self.c.delete("dbui")
+            self.keys.clear()
+            return
+        self._draw_database_terminal()
+
+    def open_extraction_terminal(self):
+        """Only the in-world OS CLEAN terminal can offer a single extraction."""
+        if not self.world.os_clean or self.campaign is None:
+            self.announce_world("모든 시스템 구역을 정화한 후 철수할 수 있습니다")
+            return
+        self.sync_campaign_rewards()
+        if self.database_error is not None:
+            self.announce_world("백신 DB 손상/저장 오류 · 철수를 완료할 수 없습니다", 5)
+            return
+        try:
+            fresh = self.database_store.load() if self.database_store else self.database
+            offer = prepare_extraction(
+                fresh, run_id=self.campaign.run_id,
+                clean_sector_ids=self._DB_SECTOR_IDS.values(),
+                software_levels=dict(self.levels))
+        except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
+            self.announce_world(f"철수 검증 실패: {type(exc).__name__}", 5)
+            return
+        if not offer.allowed:
+            self.announce_world(f"철수 불가: {offer.reason}", 5)
+            return
+        self.database = fresh
+        self.extraction_options = offer.eligible_software
+        self.extraction_selected = 0
+        self.extraction_open = True
+        self.keys.clear()
+        self._draw_extraction_terminal()
+
+    def _handle_extraction_key(self, key):
+        if key == "escape" or key == self.settings.bindings["interact"]:
+            self.extraction_open = False
+            self.c.delete("extractui")
+            self.keys.clear()
+            return
+        if key in ("up", "w"):
+            self.extraction_selected = (self.extraction_selected - 1) % len(self.extraction_options)
+        elif key in ("down", "s"):
+            self.extraction_selected = (self.extraction_selected + 1) % len(self.extraction_options)
+        elif key in ("return", "kp_enter", "space"):
+            software_id = self.extraction_options[self.extraction_selected]
+            run_id = self.campaign.run_id
+            kwargs = dict(
+                run_id=run_id, clean_sector_ids=self._DB_SECTOR_IDS.values(),
+                software_levels=dict(self.levels),
+                selected_software_id=software_id,
+            )
+            try:
+                if self.database_store is None:
+                    updated, result = commit_extraction_once(self.database, **kwargs)
+                else:
+                    updated, result = self.database_store.commit_extraction_once(**kwargs)
+            except (DatabaseCorruptError, DatabaseStorageError, OSError, ValueError) as exc:
+                self.announce_world(f"영구 보관 저장 오류: {type(exc).__name__}", 5)
+                return
+            if not result.applied:
+                self.announce_world(f"철수 저장 거부: {result.reason}", 5)
+                return
+            # The game may leave the OS ONLY after the durable receipt exists.
+            self.database = updated
+            self.extraction_open = False
+            self.c.delete("extractui")
+            self.keys.clear()
+            self.events.emit("extraction_committed", run_id=run_id,
+                             software=software_id, level=self.database.antivirus_level)
+            self.events.emit(
+                "run_extracted", score=self.score, wave=self.wave,
+                duration_frames=self.frames - self.run_start_frame)
+            self.return_to_base()
+            self.announce_world(
+                f"OS CLEAN · 백신 철수 완료 · {UP_BY_ID[software_id][1]} 영구 보관",
+                6)
+            return
+        self._draw_extraction_terminal()
+
     # ---------------------------------------------------------- 실행 기록
     def _abandon_active_run(self):
         if self.profile_tracker.active:
             self.events.emit("run_abandoned", score=self.score, wave=self.wave,
                              duration_frames=self.frames - self.run_start_frame)
+            self._close_database_run("abandoned")
 
     def close_game(self):
         """Record a quit from an active run, then destroy the window."""
@@ -321,6 +549,12 @@ class Game(VisualMixin):
     # ------------------------------------------------------------------ 입력
     def on_key(self, ev):
         key = ev.keysym.lower()
+        if self.extraction_open:
+            self._handle_extraction_key(key)
+            return
+        if self.database_open:
+            self._handle_database_key(key)
+            return
         if self.settings_open:
             self._handle_settings_key(key)
             return
@@ -552,6 +786,10 @@ class Game(VisualMixin):
         if abandon:
             self._abandon_active_run()
         self.world.reset_to_base()
+        self.database_open = False
+        self.extraction_open = False
+        self.c.delete("dbui")
+        self.c.delete("extractui")
         self.campaign = None
         self.current_encounter = None
         self.virus_runtime.reset_wave()
@@ -585,7 +823,27 @@ class Game(VisualMixin):
             return
         if self.world.room == "base":
             if node.id == "deploy":
+                if self.database_store is not None and self.database_error is None:
+                    try:
+                        self.database = self.database_store.load()
+                    except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                        self.database_error = f"{type(exc).__name__}: {exc}"
+                        self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 4)
+                        return
+                try:
+                    starting = starting_software_levels(
+                        self.database, self.starting_software_id)
+                except ValueError:
+                    self.starting_software_id = None
+                    starting = {}
+                base = base_stats_for_level(self.database.antivirus_level)
                 self.new_game(start_combat=False)
+                self.p.maxhp = self.p.hp = base["maxhp"]
+                self.p.st["dmg"] = base["dmg"]
+                self.p.st["armor"] = base["armor"]
+                self.p.maxmana = self.p.mana = base["maxmana"]
+                for uid in starting:
+                    apply_upgrade(self, uid)
                 self.world.deploy()
                 run_id = uuid4().hex
                 seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
@@ -596,12 +854,14 @@ class Game(VisualMixin):
                 self.p.x, self.p.y = START
                 self.keys.clear()
                 self.events.emit("os_deployed")
-                self.announce_world("OS 배포 완료 · 네 구역의 게이트가 활성화됐습니다")
+                self.announce_world(
+                    f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
+                    f"시작 소프트웨어 {next(iter(starting), '기본 무장')}",
+                    4)
             elif node.id == "settings":
                 self.open_settings()
             elif node.id == "database":
-                self.announce_world(
-                    "백신 데이터베이스: 영구 XP/소프트웨어 API는 #12에서 통합 예정")
+                self.open_database_terminal()
             else:
                 self.announce_world("진단 준비 · 실전 전투는 OS 배포 후 시작할 수 있습니다")
             return
@@ -620,10 +880,11 @@ class Game(VisualMixin):
                     f"· 남은 사용 {self.purify_uses}회")
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
-            self.announce_world(
-                f"OS STATUS · 정화 {done}/4 · "
-                ("CLEAN: 철수 시스템 연결 준비 중" if self.world.os_clean
-                 else "네 구역을 모두 정화하세요"))
+            if self.world.os_clean:
+                self.open_extraction_terminal()
+            else:
+                self.announce_world(
+                    f"OS STATUS · 정화 {done}/4 · 네 구역을 모두 정화하세요")
 
     def enter_sector(self, sector_id):
         self.world.hub_position = (self.p.x, self.p.y)
@@ -1068,7 +1329,8 @@ class Game(VisualMixin):
         if self.world_notice_t > 0:
             self.world_notice_t -= dt
         if self.state == "hub":
-            if not self.paused and not self.settings_open:
+            if not self.paused and not self.settings_open and not (
+                    self.database_open or self.extraction_open):
                 self.step_hub(dt)
             self._step_fx(dts)
             return
@@ -1744,6 +2006,7 @@ class Game(VisualMixin):
         self.events.emit("run_ended", score=self.score, wave=self.wave,
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
+        self._close_database_run("dead")
 
         c = self.c
         c.delete("scr")

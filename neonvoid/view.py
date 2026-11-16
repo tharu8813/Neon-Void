@@ -8,6 +8,7 @@ from .content.enemies import E_PARAMS
 from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID
 from .combat import effective_armor, skill_cost
+from .metaprogression import xp_progress
 from .world.session import (WORLD_W, WORLD_H, SECTOR_NAMES, AVAILABLE_SECTORS,
                             CPU_EXIT, START, PILLARS, camera_for)
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
@@ -810,6 +811,8 @@ class VisualMixin:
         self._render_screen_fx()
         c.tag_raise("ovl")
         c.tag_raise("cfg")
+        c.tag_raise("dbui")
+        c.tag_raise("extractui")
         self.draw_cursor()
         c.tag_raise("cursor")
 
@@ -910,7 +913,10 @@ class VisualMixin:
                        "OPERATING SYSTEM  /  INFECTED"),
                       fill="#72ecf8", font=F_MID, tags="hub-world")
         c.create_text(28, 56, anchor="w",
-                      text=("백신 준비 · 배포 게이트로 이동하세요" if base else
+                      text=(f"백신 Lv.{self.database.antivirus_level} · "
+                            f"XP {self.database.xp:,} · "
+                            f"영구 소프트웨어 {len(self.database.software_archive)}종"
+                            if base else
                             f"정화 {len(world.sector_clean)}/4 · "
                             f"감염 {self.infection.infection:.0f}% · "
                             f"OS 무결성 {self.infection.os_integrity:.0f}%"),
@@ -955,6 +961,96 @@ class VisualMixin:
             c.create_text(160, y+112,
                           text=f"[{self.settings.bindings['interact'].upper()}] 복귀",
                           fill="#d4fbff", font=F_UI, tags="sector-gate")
+
+    # ---------------------------------------------- 인월드 데이터베이스 단말기
+    def _draw_database_terminal(self):
+        c = self.c
+        c.delete("dbui")
+        if not self.database_open:
+            return
+        c.create_rectangle(0, 0, W, H, fill="#010610", stipple="gray75",
+                           outline="", tags="dbui")
+        c.create_rectangle(244, 72, W-244, H-69, fill="#071926",
+                           outline="#3382a0", width=2, tags="dbui")
+        c.create_text(W/2, 119, text="ANTIVIRUS DATABASE",
+                      fill="#81e9f6", font=F_HUGE, tags="dbui")
+        level = self.database.antivirus_level
+        current, required = xp_progress(self.database)
+        xp_label = "MAX LEVEL" if required == 0 else (
+            f"XP {current:,} / {required:,} · 누적 {self.database.xp:,}")
+        c.create_text(W/2, 166, text=f"LEVEL {level}  ·  {xp_label}",
+                      fill="#ffd17f", font=F_MID, tags="dbui")
+        c.create_text(W/2, 205,
+                      text="영구 보관 소프트웨어 · 다음 OS에 1종만 시작 장착",
+                      fill="#96b8ca", font=F_UI, tags="dbui")
+        options = self._database_options()
+        sel = self.database_selected
+        first = max(0, min(sel-3, len(options)-7))
+        end = min(len(options), first+7)
+        for index in range(first, end):
+            uid = options[index]
+            y = 239 + (index-first)*46
+            selected = index == sel
+            c.create_rectangle(326, y-15, W-326, y+22,
+                               fill="#154050" if selected else "#0c2431",
+                               outline="#5dd9e5" if selected else "#244b5c",
+                               width=2 if selected else 1, tags="dbui")
+            label = ("기본 장비로 시작" if uid is None else
+                     f"{UP_BY_ID[uid][1]}  ·  보관 {self.database.software_archive[uid]}개")
+            c.create_text(W/2, y+3, text=label,
+                          fill="#e7ffff" if selected else "#accad6",
+                          font=F_UI, tags="dbui")
+        c.create_text(W/2, 585,
+                      text=f"{sel+1} / {len(options)}  ·  위/아래 선택  ·  Enter 적용",
+                      fill="#ffd17f", font=F_UI, tags="dbui")
+        c.create_text(W/2, 616, text="ESC / 상호작용 키 · 돌아가기",
+                      fill="#8faebc", font=F_UI, tags="dbui")
+        if self.database_error is not None:
+            c.create_text(W/2, 642, text="데이터베이스 읽기 오류 · 영구 저장 비활성",
+                          fill="#ff6b82", font=F_UI, tags="dbui")
+        c.tag_raise("dbui")
+
+    def _draw_extraction_terminal(self):
+        c = self.c
+        c.delete("extractui")
+        if not self.extraction_open:
+            return
+        c.create_rectangle(0, 0, W, H, fill="#010610", stipple="gray75",
+                           outline="", tags="extractui")
+        c.create_rectangle(237, 65, W-237, H-64, fill="#0b2026",
+                           outline="#56d6b2", width=3, tags="extractui")
+        c.create_text(W/2, 111, text="OS STATUS: CLEAN",
+                      fill="#81f5cb", font=F_HUGE, tags="extractui")
+        c.create_text(W/2, 164, text="ALL SECTORS PURIFIED  ·  ANTIVIRUS EXTRACTION",
+                      fill="#95d8da", font=F_UI, tags="extractui")
+        c.create_text(W/2, 203,
+                      text="운영체제 철수 전에 영구 보존할 소프트웨어 1개를 선택하세요.",
+                      fill="#e1f8f1", font=F_UI, tags="extractui")
+        options = self.extraction_options
+        sel = self.extraction_selected
+        first = max(0, min(sel-3, len(options)-7))
+        end = min(len(options), first+7)
+        for index in range(first, end):
+            uid = options[index]
+            y = 241 + (index-first)*44
+            selected = index == sel
+            c.create_rectangle(312, y-14, W-312, y+21,
+                               fill="#185044" if selected else "#0b302d",
+                               outline="#70f0ce" if selected else "#285c55",
+                               width=2 if selected else 1, tags="extractui")
+            c.create_text(W/2, y+4,
+                          text=UP_BY_ID[uid][1],
+                          fill="#ffffff" if selected else "#9ccabe",
+                          font=F_UI, tags="extractui")
+        c.create_text(W/2, 575,
+                      text=f"{sel+1} / {len(options)}  ·  ↑↓ 선택  ·  Enter 철수 확정",
+                      fill="#ffd17f", font=F_UI, tags="extractui")
+        c.create_text(W/2, 609,
+                      text="선택한 모듈 1개만 영구 보존 · 나머지 런 소프트웨어 초기화",
+                      fill="#b5d4cc", font=F_UI, tags="extractui")
+        c.create_text(W/2, 635, text="ESC · 아직 철수하지 않기",
+                      fill="#89aead", font=F_UI, tags="extractui")
+        c.tag_raise("extractui")
 
     def _animate_pause(self):
         appear = clamp(self.pause_t / 0.24, 0, 1)
