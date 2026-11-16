@@ -182,7 +182,7 @@ player_infection = status.player_infection
 needs_purification = status.needs_purification
 ```
 
-All numeric inputs must be finite/nonnegative. Values clamp to [0,100].
+All numeric inputs must be finite/nonnegative. Values clamp to [0,100], including **direct writes** to `player_infection` and `os_integrity`. Missing or nonfinite snapshot fields fail with `ValueError` instead of silently poisoning the next simulation tick. Missing/invalid `SectorCampaign.from_checkpoint()` metadata likewise fails with `ValueError`.
 `apply_infection(amount, paused=False)`, `purify(amount, paused=False)`,
 `repair_integrity(amount, paused=False)` return the actual applied amount.
 `tick(dt, exposure_per_second=0, purification_per_second=0, paused=False)`

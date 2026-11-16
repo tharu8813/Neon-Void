@@ -153,6 +153,30 @@ class CampaignTests(unittest.TestCase):
             SectorCampaign.from_checkpoint(snapshot)
 
 
+    def test_malformed_checkpoint_is_rejected_consistently(self):
+        campaign = SectorCampaign("run-validate", seed=21)
+        snapshot = campaign.checkpoint()
+        invalid = [
+            None, {}, {"completed_waves": snapshot["completed_waves"]},
+            {"run_id": "", "seed": 21,
+             "completed_waves": snapshot["completed_waves"]},
+            {"run_id": "run-validate", "seed": True,
+             "completed_waves": snapshot["completed_waves"]},
+            {"run_id": "run-validate", "seed": "21",
+             "completed_waves": snapshot["completed_waves"]},
+            {"run_id": "run-validate", "seed": 21,
+             "completed_waves": []},
+            {"run_id": "run-validate", "seed": 21,
+             "completed_waves": {"CPU": 5}},
+        ]
+        for data in invalid:
+            with self.subTest(data=str(data)[:70]):
+                with self.assertRaises(ValueError):
+                    SectorCampaign.from_checkpoint(data)
+        self.assertEqual(SectorCampaign.from_checkpoint(snapshot).checkpoint(),
+                         snapshot)
+
+
 class VirusBehaviorTests(unittest.TestCase):
     def test_catalog_coverage_and_nonblocking_actions(self):
         for sid in SECTOR_IDS:

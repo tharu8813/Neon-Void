@@ -73,6 +73,38 @@ class InfectionTests(unittest.TestCase):
         self.assertEqual(state.snapshot(), {"player_infection": 0,
                                             "os_integrity": 100})
 
+    def test_direct_assignment_keeps_public_state_valid(self):
+        state = InfectionState()
+        state.player_infection = 150
+        state.os_integrity = 1000
+        self.assertEqual(state.snapshot(), {"player_infection": 100,
+                                            "os_integrity": 100})
+        state.player_infection = 0
+        state.os_integrity = 0
+        self.assertEqual(state.stage, InfectionStage.NORMAL)
+        self.assertEqual(state.tick(0).os_integrity, 0)
+        for name in ("player_infection", "os_integrity"):
+            for invalid in (-1, float("nan"), float("inf"), True, "100",
+                            10**500):
+                with self.subTest(name=name, invalid=str(invalid)[:30]):
+                    before = state.snapshot()
+                    with self.assertRaises(ValueError):
+                        setattr(state, name, invalid)
+                    self.assertEqual(state.snapshot(), before)
+
+    def test_malformed_snapshot_has_consistent_error_and_no_state_change(self):
+        for snapshot in ({}, {"player_infection": 20},
+                         {"os_integrity": 90},
+                         {"player_infection": float("nan"), "os_integrity": 90},
+                         {"player_infection": 25, "os_integrity": 10**500}):
+            with self.subTest(snapshot=str(snapshot)[:70]):
+                with self.assertRaises(ValueError):
+                    InfectionState.from_snapshot(snapshot)
+        clamped = InfectionState.from_snapshot(
+            {"player_infection": 500, "os_integrity": 500})
+        self.assertEqual(clamped.snapshot(), {"player_infection": 100,
+                                             "os_integrity": 100})
+
     def test_serialization_and_invalid_inputs(self):
         state = InfectionState(24.5, 83.0)
         self.assertEqual(InfectionState.from_snapshot(state.snapshot()), state)

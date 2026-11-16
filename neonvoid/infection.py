@@ -28,9 +28,15 @@ class InfectionStage(IntEnum):
 
 
 def _amount(value: float, name: str) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+    if type(value) not in (int, float):
         raise ValueError(f"{name} must be finite and nonnegative")
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and nonnegative") from exc
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"{name} must be finite and nonnegative")
+    return number
 
 
 def _bounded(value: float, maximum: float) -> float:
@@ -64,6 +70,17 @@ class InfectionTick:
 class InfectionState:
     player_infection: float = 0.0
     os_integrity: float = 100.0
+
+    def __setattr__(self, name: str, value: float) -> None:
+        """Enforce 0..100 even when an integration assigns a public field.
+
+        The world/UI is allowed to read or restore these attributes, but a
+        malformed save or a plugin must not poison a later tick or snapshot.
+        """
+        if name in ("player_infection", "os_integrity"):
+            value = _bounded(_amount(value, name), MAX_INFECTION if name ==
+                             "player_infection" else MAX_INTEGRITY)
+        object.__setattr__(self, name, value)
 
     def __post_init__(self) -> None:
         self.player_infection = _bounded(_amount(self.player_infection, "player_infection"),
@@ -148,7 +165,9 @@ class InfectionState:
 
     @classmethod
     def from_snapshot(cls, value: dict[str, float]) -> "InfectionState":
-        if not isinstance(value, dict):
+        if (not isinstance(value, dict)
+                or "player_infection" not in value
+                or "os_integrity" not in value):
             raise ValueError("Invalid infection snapshot")
         return cls(player_infection=value["player_infection"],
                    os_integrity=value["os_integrity"])
