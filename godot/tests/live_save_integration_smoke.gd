@@ -97,6 +97,11 @@ func _test() -> void:
             "one permanent software archived")
         require(state.state["antivirus_db.json"].processed_extractions.size() == 1,
             "extraction idempotency receipt exists")
+        require(int(state.state["profile.json"].extracted_runs) == 1
+            and state.state["profile.json"].recent_runs[0].status == "extracted",
+            "run profile and extraction receipt committed together")
+        require(int(state.state["save.json"].runs) == 1 and int(state.state["save.json"].best_wave) == 5,
+            "historical score and best wave committed with archive")
     require(str(game.get("mode")) == "title", "ready for next OS after extraction")
     if not equipped.is_empty():
         var archived_choice: String = str(equipped.keys()[0])
@@ -146,6 +151,10 @@ func _test() -> void:
         "dead OS has no resumable checkpoint")
     require(str(state.state["antivirus_db.json"].closed_runs.get(failed_id, "")) == "dead",
         "death receipt is durable")
+    require(int(state.state["profile.json"].completed_runs) == 1,
+        "death recorded exactly once in versioned profile")
+    require(int(state.state["save.json"].runs) == 3,
+        "extraction, manual abandon and death each produce one history entry")
     require(game.call("start_new_run"), "new OS can deploy after real death closure")
     require(game.call("abandon_checkpoint"), "final run safely cleaned")
     game.get_parent().remove_child(game)
