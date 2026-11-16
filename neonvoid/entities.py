@@ -51,7 +51,7 @@ class Player:
 class Enemy:
     __slots__ = ("kind", "x", "y", "vx", "vy", "hp", "maxhp", "r",
                  "t", "cd", "state", "ang", "flash", "score", "spd", "dmg",
-                 "armor", "statuses", "guard_t")
+                 "armor", "statuses", "guard_t", "vulnerable_t")
 
     def __init__(self):
         self.kind = "drifter"
@@ -70,6 +70,7 @@ class Enemy:
         self.armor = 0.0
         self.statuses = []
         self.guard_t = 0.0
+        self.vulnerable_t = 0.0
 
 
 class Bullet:

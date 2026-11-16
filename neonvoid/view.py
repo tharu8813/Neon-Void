@@ -2182,6 +2182,8 @@ class VisualMixin:
                 col = C_RUSH if any(s.kind == "burn" for s in e.statuses) else C_HP
             if e.flash > 0.35:
                 col = "#ffffff"
+            elif e.vulnerable_t > 0:
+                col = "#89ffd1"
             x = e.x + ox
             y = e.y + oy
             r = e.r
@@ -2219,6 +2221,8 @@ class VisualMixin:
                 self.pool_ring.draw(x, y, r*0.43, "", outline="#bad6e4")
                 if e.guard_t > 0:
                     self.pool_ring.draw(x, y, r + 7, "", outline=C_GOLD)
+            if e.vulnerable_t > 0:
+                self.pool_ring.draw(x, y, r + 10, "", outline="#89ffd1")
 
         for q in self.particles:
             t = q.life / q.maxlife

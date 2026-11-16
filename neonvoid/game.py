@@ -2048,6 +2048,10 @@ class Game(VisualMixin):
             return 0.0
         pen = self.p.st["armor_pen"] if armor_pen is None else armor_pen
         armor = e.armor + (12.0 if e.guard_t > 0 else 0.0)
+        # STORAGE: surviving a telegraphed encryption pulse exposes its core.
+        # Players can dash beyond the radius then punish the short window.
+        if e.kind in ("ransomware", "encryptor") and e.vulnerable_t > 0:
+            armor = max(0.0, armor - 24.0)
         actual = dmg if dot else mitigate_damage(dmg, armor, pen)
         e.hp -= actual
         if not dot:
@@ -2101,8 +2105,14 @@ class Game(VisualMixin):
         if st["slow"] > 0:
             self.slow = min(0.6, self.slow + st["slow"])
 
+        # Release the dead enemy slot before adding child enemies. Otherwise a
+        # splitter killed at the 64-enemy cap temporarily creates 66 enemies.
+        if e in self.enemies:
+            self.enemies.remove(e)
         if e.kind == "splitter":
-            for _ in range(2):
+            cap = MAX_LIVE_ENEMIES if self.current_encounter is not None else 88
+            available = max(0, cap - len(self.enemies))
+            for _ in range(min(2, available)):
                 m = self.make_enemy("mini", e.x + rnd(-14, 14), e.y + rnd(-14, 14))
                 m.vx = rnd(-120, 120)
                 m.vy = rnd(-120, 120)
@@ -2111,8 +2121,6 @@ class Game(VisualMixin):
             if self.rng.random() < 0.55:
                 self.shards.append(Shard(e.x, e.y, int(e.score * 0.6)))
 
-        if e in self.enemies:
-            self.enemies.remove(e)
         if e.kind in PATTERNS:
             self.virus_runtime.forget(str(id(e)))
         self.events.emit("enemy_killed", kind=e.kind, boss=is_boss,
@@ -2445,6 +2453,7 @@ class Game(VisualMixin):
             if e.kind in ("shooter", "splitter") or e.kind in PATTERNS:
                 e.t += dt
             e.guard_t = max(0.0, e.guard_t - dt)
+            e.vulnerable_t = max(0.0, e.vulnerable_t - dt)
             dx = p.x - e.x
             dy = p.y - e.y
             d = math.hypot(dx, dy) or 1.0
@@ -2562,7 +2571,8 @@ class Game(VisualMixin):
                     self.virus_pending.append((action.telegraph_seconds, enemy, action))
                     self.ring(enemy.x, enemy.y, 12, self._enemy_color(enemy),
                               160, max(0.25, action.telegraph_seconds))
-                    self.pop_text(enemy.x, enemy.y-enemy.r-16, "!", C_GOLD)
+                    warning = "복제 준비" if action.behavior == "replicate" else "!"
+                    self.pop_text(enemy.x, enemy.y-enemy.r-16, warning, C_GOLD)
                 else:
                     self._execute_virus_action(enemy, action)
 
@@ -2595,6 +2605,10 @@ class Game(VisualMixin):
             self.ring(enemy.x, enemy.y, 20, C_BAD, 340, 0.45)
             if math.hypot(enemy.x - self.p.x, enemy.y - self.p.y) < ENCRYPTION_PULSE_RADIUS:
                 self.hurt_player(action.power, infection_amount=action.infection_on_hit)
+            if enemy.kind in ("ransomware", "encryptor"):
+                enemy.vulnerable_t = 2.25
+                self.pop_text(enemy.x, enemy.y - enemy.r - 18,
+                              "암호화 해제 · 약점 노출", C_PLAYER)
             return
         if behavior in ("feint_volley", "armor_piercing_volley", "quick_volley"):
             self.enemy_shoot(
