@@ -6,6 +6,10 @@ const Campaign = preload("res://scripts/sectors/sector_campaign.gd")
 const Software = preload("res://scripts/software/software_system.gd")
 const PlayerBridge = preload("res://scripts/combat/player_bridge.gd")
 const SectorCatalog = preload("res://scripts/sectors/sector_catalog.gd")
+const SaveBridge = preload("res://scripts/integration/save_bridge.gd")
+const SaveStore = preload("res://scripts/persistence/save_store.gd")
+const Progression = preload("res://scripts/progression/antivirus_progression.gd")
+const CheckpointRules = preload("res://scripts/progression/checkpoint_rules.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 const ARENA_SPAWN: Vector2 = Vector2(195.0, 360.0)
@@ -43,6 +47,15 @@ var run_kills: int = 0
 var run_boss_kills: int = 0
 var run_id_counter: int = 0
 var last_error: String = ""
+@export var persistence_enabled: bool = true
+var save_slot: String = ""
+var saved_state: Dictionary = {}
+var checkpoint_revision: int = 0
+var deployed_level: int = 1
+var run_frames: int = 0
+var _pending_wave: bool = false
+var _pending_boss: bool = false
+var _pending_offers: Array[String] = []
 
 func _ready() -> void:
     assert(camera_3d.projection == Camera3D.PROJECTION_ORTHOGONAL)
@@ -68,6 +81,18 @@ func _ready() -> void:
     ui.connect("resume_requested", _resume_gameplay)
     ui.connect("binding_change_requested", _on_binding_change)
     ui.connect("setting_change_requested", _on_setting_change)
+    # Headless scene imports and smoke tests must never initialize real user data.
+    if DisplayServer.get_name() == "headless":
+        persistence_enabled = false
+    if persistence_enabled:
+        save_slot = SaveBridge.safe_slot_path()
+        var boot: Dictionary = SaveBridge.ensure_slot(save_slot)
+        if boot.get("ok", false):
+            saved_state = boot["state"]
+            var cp: Variant = saved_state.get("os_checkpoint.json")
+            checkpoint_revision = int(cp.revision) if cp != null else 0
+        else:
+            last_error = "저장 슬롯 접근 실패. 원본은 변경되지 않았습니다: " + str(boot.get("reason", "unknown"))
     _make_hub_markers()
     _set_world(false)
     _update_visuals()
@@ -75,31 +100,62 @@ func _ready() -> void:
     ui.call("set_gameplay_active", false)
     ui.call("open_menu", "title")
     controls.call("set_enabled", false)
+    if not last_error.is_empty():
+        ui.call("show_error", last_error)
 
 func start_new_run() -> bool:
     if mode != "title" and mode != "dead":
         return false
+    if persistence_enabled:
+        if not last_error.is_empty():
+            ui.call("show_error", last_error)
+            return false
+        var current: Dictionary = SaveStore.read(save_slot)
+        if not current.get("ok", false):
+            ui.call("show_error", "저장 슬롯 확인에 실패해 배포를 중단했습니다.")
+            return false
+        saved_state = current["state"]
+        if saved_state.get("os_checkpoint.json") != null:
+            ui.call("show_error", "기존 OS 진행이 남아 있습니다. 먼저 이어하기 또는 명시적 폐기를 선택하세요.")
+            return false
+        deployed_level = int(saved_state["antivirus_db.json"]["antivirus_level"])
+    else:
+        deployed_level = 1
     run_id_counter += 1
     campaign = Campaign.new("godot_preview_%d_%d" % [Time.get_unix_time_from_system(), run_id_counter], 42)
     sim = Combat.new(42)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("wave_ready", _on_wave_ready)
-    software.reset()
+    software.reset(_deployed_base())
+    _pending_wave = false
+    _pending_offers.clear()
     purify_uses = 3
     score = 0
     run_kills = 0
     run_boss_kills = 0
+    run_frames = 0
     hub_position = HUB_SPAWN
     mode = "hub"
     actor.set("hub_mode", true)
     actor.set("simulation_enabled", true)
     actor.call("set_logical_position", HUB_SPAWN)
     actor.set("velocity_px", Vector2.ZERO)
-    actor.set("hp", 100.0)
-    actor.set("mana", 100.0)
+    actor.set("hp", software.maxhp)
+    actor.set("mana", software.maxmana)
     _apply_stats()
     _set_world(false)
+    if persistence_enabled:
+        var first: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim, software,
+            "hub", hub_position, [], purify_uses, score, run_kills,
+            run_boss_kills, deployed_level, run_frames)
+        var initial: Dictionary = SaveBridge.persist_checkpoint(save_slot, first, 0)
+        if not initial.get("applied", false) or not _reload_save():
+            mode = "title"
+            actor.set("simulation_enabled", false)
+            _pause_gameplay()
+            ui.call("show_error", "OS 최초 체크포인트 저장 실패. 배포를 취소했습니다.")
+            return false
     _resume_gameplay()
     _update_visuals()
     _update_hud()
@@ -169,6 +225,7 @@ func _physics_process(delta: float) -> void:
         elif campaign.failed:
             ui.call("show_error", "OS 무결성이 0이 되었습니다. 안전한 철수 처리가 필요합니다.")
             _pause_gameplay()
+    run_frames += 1
     _update_visuals()
     hud_frames += 1
     if hud_frames >= 6:
@@ -423,3 +480,18 @@ func _update_visuals() -> void:
             locations.append(bullet["pos"])
             tints.append(Color(1.0, 0.43, 0.23))
     projectiles.call("set_projectiles", locations, tints)
+
+func _deployed_base() -> Dictionary:
+    var base: Dictionary = Progression.base_stats_for_level(deployed_level)
+    return {"maxhp": float(base.get("maxhp", 100.0)),
+        "maxmana": float(base.get("maxmana", 100.0)),
+        "stats": {"dmg": float(base.get("dmg", 10.0)), "armor": float(base.get("armor", 4.0))}}
+
+func _reload_save() -> bool:
+    var fresh: Dictionary = SaveStore.read(save_slot)
+    if not fresh.get("ok", false):
+        return false
+    saved_state = fresh["state"]
+    var cp: Variant = saved_state.get("os_checkpoint.json")
+    checkpoint_revision = int(cp.revision) if cp != null else 0
+    return true
