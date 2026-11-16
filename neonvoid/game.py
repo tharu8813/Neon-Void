@@ -397,7 +397,7 @@ class Game(VisualMixin):
 
     def _open_checkpoint_prompt(self):
         self.checkpoint_prompt_open = True
-        self.checkpoint_choice = 0
+        self.checkpoint_choice = 0 if self.checkpoint_pending is not None else 1
         self.keys.clear()
         self._draw_checkpoint_prompt()
 
@@ -933,20 +933,37 @@ class Game(VisualMixin):
         return True
 
     def close_game(self):
-        """Ask before closing without a durable failed/abandoned run receipt."""
-        closed = (self._close_database_run("dead") if
-                  self.campaign is not None and self.state == "dead" else
-                  self._abandon_active_run())
-        if not closed and not self.auto:
-            from tkinter import messagebox
-            if not messagebox.askyesno(
-                "NEON VOID · 저장 실패",
-                "운영체제 종료 기록을 백신 데이터베이스에 저장하지 못했습니다. "
-                "다시 시도하려면 '아니오'를 누르세요. "
-                "저장되지 않은 종료 기록을 포기하고 종료할까요?",
-                parent=self.root,
-            ):
-                return
+        """Ordinary quit SUSPENDS an OS; explicit abandon/death closes its DB."""
+        if (self.campaign is not None and self.state in ("hub", "play", "upgrade")
+                and self.checkpoint_store is not None):
+            if not self._persist_checkpoint():
+                from tkinter import messagebox
+                if not messagebox.askyesno(
+                    "NEON VOID · OS 저장 실패",
+                    "진행 중인 운영체제를 저장하지 못했습니다.\n"
+                    "아니오: 게임으로 돌아가 저장 재시도\n"
+                    "예: 이번 OS를 포기하고 종료 (확정 XP 유지)",
+                    parent=self.root,
+                ):
+                    return
+                if not self._abandon_active_run():
+                    self.show_message("포기 기록 저장도 실패했습니다 · 다시 시도하세요")
+                    return
+                self._clear_checkpoint()
+        else:
+            closed = (self._close_database_run("dead") if
+                      self.campaign is not None and self.state == "dead" else
+                      self._abandon_active_run())
+            if not closed and not self.auto:
+                from tkinter import messagebox
+                if not messagebox.askyesno(
+                    "NEON VOID · 저장 실패",
+                    "운영체제 종료 기록을 백신 데이터베이스에 저장하지 못했습니다. "
+                    "다시 시도하려면 '아니오'를 누르세요. "
+                    "저장되지 않은 종료 기록을 포기하고 종료할까요?",
+                    parent=self.root,
+                ):
+                    return
         try:
             self.audio.close()
         except Exception:
