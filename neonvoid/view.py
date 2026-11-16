@@ -49,6 +49,12 @@ class VisualMixin:
 
     PROFILE_PAGE_SIZE = 7
 
+    @staticmethod
+    def _boss_hud_labels(kind, phase, windup):
+        """Separate boss identity from an urgent attack warning."""
+        return (f"{kind.upper()}  ·  PHASE {phase}",
+                f"주의: {windup}" if windup else "")
+
     def _hud_pop_y(self, amount, distance):
         """Pop feedback is stationary when reduced effects are enabled."""
         return 26 if self.settings.reduced_effects else 26 - distance * amount
@@ -363,6 +369,9 @@ class VisualMixin:
                                           fill=C_BOSS, outline="")
         self.boss_txt = c.create_text(W / 2, 62, text="OVERSEER", fill=C_BOSS,
                                       font=F_MID, anchor="center")
+        self.boss_warning_txt = c.create_text(
+            W / 2, 113, text="", fill=C_GOLD, font=F_HUD, anchor="center",
+            state="hidden")
         self.hud = [self.hp_bg, self.hp_chip, self.hp_fg, self.hp_txt,
                     self.mana_bg, self.mana_fg, self.mana_txt,
                     self.stats_bg, self.stats_title, self.stats_left,
@@ -376,7 +385,8 @@ class VisualMixin:
                     self.infection_hint, self.infection_detail]
         self.hud += self.dash_pip_bgs
         self.hud += self.dash_pips
-        self.hud += [self.boss_bg, self.boss_fg, self.boss_txt]
+        self.hud += [self.boss_bg, self.boss_fg, self.boss_txt,
+                     self.boss_warning_txt]
         self._show_hud(False)
 
         self.banner_item = c.create_text(W / 2, H / 2 - 150, text="",
@@ -634,18 +644,19 @@ class VisualMixin:
                             pulse > 0.85 else "#ff8cf6")
             phase = (max(1, self.boss.state) if self.boss.kind == "boss"
                      else boss_phase(r))
-            label = f"{self.boss.kind.upper()}  ·  PHASE {phase}"
             windup = next((BOSS_WINDUPS[action.behavior]
                            for _, source, action in self.virus_pending
                            if source is self.boss and action.behavior in BOSS_WINDUPS),
                           None)
-            if windup:
-                label += f"  ·  {windup}"
-            c.itemconfigure(self.boss_txt, text=label, fill=C_GOLD if windup else C_BOSS)
+            label, warning = self._boss_hud_labels(self.boss.kind, phase, windup)
+            c.itemconfigure(self.boss_txt, text=label, fill=C_BOSS)
+            c.itemconfigure(self.boss_warning_txt, text=warning,
+                            state="normal" if warning else "hidden")
             for it in (self.boss_bg, self.boss_fg, self.boss_txt):
                 c.itemconfigure(it, state="normal")
         else:
-            for it in (self.boss_bg, self.boss_fg, self.boss_txt):
+            for it in (self.boss_bg, self.boss_fg, self.boss_txt,
+                       self.boss_warning_txt):
                 c.itemconfigure(it, state="hidden")
 
     # ----------------------------------------------------------------- 타이틀

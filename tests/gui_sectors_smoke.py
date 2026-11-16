@@ -100,7 +100,7 @@ def main():
                         radius = ENCRYPTION_PULSE_RADIUS
                         assert game.c.coords(warning) == [640 - radius, 360 - radius,
                                                           640 + radius, 360 + radius]
-                        assert "원 밖으로 이동" in game.c.itemcget(game.boss_txt, "text")
+                        assert "원 밖으로 이동" in game.c.itemcget(game.boss_warning_txt, "text")
                         with patch.object(game, "hurt_player") as hurt:
                             game.p.x, game.p.y = boss.x + radius, boss.y
                             game._execute_virus_action(boss, action)
