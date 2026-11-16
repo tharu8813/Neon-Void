@@ -26,6 +26,7 @@ from .settings import Settings, load_settings, save_settings
 from .storage import load_save, write_save
 from .view import VisualMixin
 from .display import ScaledCanvas
+from .performance import resident_memory_mib
 from .settings import DISPLAY_MODES, MIN_WIDTH, MIN_HEIGHT
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
@@ -85,6 +86,7 @@ class Game(VisualMixin):
         self.render_ms = 0.0
         self.render_p95_ms = 0.0
         self.canvas_items = 0
+        self.memory_mib = None
         self.c = ScaledCanvas(root)
         self.c.pack(fill="both", expand=True)
         self.c.bind("<Configure>", self._on_canvas_resize)
@@ -3048,6 +3050,7 @@ class Game(VisualMixin):
                 self.render_p95_ms = ordered[max(0, math.ceil(len(ordered) * 0.95) - 1)]
                 if self.frames % 60 == 0:
                     self.canvas_items = len(self.c.find_all())
+                    self.memory_mib = resident_memory_mib()
         except tk.TclError:
             # 창이 이미 닫혔거나 캔버스가 삭제된 경우다. 루프를 다시 예약하면
             # 영영 멈춰 버리므로 창이 살아 있는지만 확인하고 종료한다.

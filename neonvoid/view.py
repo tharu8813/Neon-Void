@@ -1102,6 +1102,9 @@ class VisualMixin:
             c.itemconfigure(item, text=(
                 f"{self.fps:5.1f} fps · render {self.render_ms:4.1f}ms "
                 f"p95 {self.render_p95_ms:4.1f}ms · canvas {self.canvas_items:,}"
+                f" · RSS {self.memory_mib:.0f} MiB" if self.memory_mib is not None else
+                f"{self.fps:5.1f} fps · render {self.render_ms:4.1f}ms · "
+                f"p95 {self.render_p95_ms:4.1f}ms · canvas {self.canvas_items:,}"
             ), state="normal")
         elif getattr(self, "_fps_item", None):
             c.itemconfigure(self._fps_item, state="hidden")
