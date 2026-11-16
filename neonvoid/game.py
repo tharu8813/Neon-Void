@@ -111,6 +111,7 @@ class Game(VisualMixin):
         self.events.subscribe("os_cleaned", self._on_sector_progress)
         self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
         self.world_notice_t = 4.0
+        self.extraction_fx_t = 0.0
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
@@ -426,6 +427,9 @@ class Game(VisualMixin):
                 "run_extracted", score=self.score, wave=self.wave,
                 duration_frames=self.frames - self.run_start_frame)
             self.return_to_base()
+            self.extraction_fx_t = 2.5
+            self.screen_flash(0.38, C_HP)
+            self.screen_sweep(1.2, C_HP)
             self.announce_world(
                 f"OS CLEAN · 백신 철수 완료 · {UP_BY_ID[software_id][1]} 영구 보관",
                 6)
@@ -714,6 +718,7 @@ class Game(VisualMixin):
     def new_game(self, *, start_combat=True):
         self._abandon_active_run()
         self.run_start_frame = self.frames
+        self.extraction_fx_t = 0.0
         c = self.c
         c.delete("scr")
         c.delete("ovl")
@@ -1328,6 +1333,8 @@ class Game(VisualMixin):
 
         if self.world_notice_t > 0:
             self.world_notice_t -= dt
+        if self.extraction_fx_t > 0:
+            self.extraction_fx_t = max(0.0, self.extraction_fx_t - dt)
         if self.state == "hub":
             if not self.paused and not self.settings_open and not (
                     self.database_open or self.extraction_open):
@@ -1363,6 +1370,17 @@ class Game(VisualMixin):
             self.infection.tick(
                 dts, exposure_per_second=
                 self.current_encounter.definition.exposure_per_second)
+            if self.infection.os_integrity <= 0:
+                # OS collapse ends this deployment, not the player's life.
+                # No extracted module is granted, but persisted XP survives.
+                self.return_to_base(abandon=True)
+                self.screen_flash(0.42, C_BAD)
+                self.screen_sweep(0.95, C_BAD)
+                self.announce_world(
+                    "OS INTEGRITY 0% · 비상 철수 · 확정 XP 유지 / 소프트웨어 추출 없음",
+                    6)
+                self.events.emit("os_integrity_failed")
+                return
         self.step_statuses(dts)
         self.build_grid()
         self.step_bullets(dts)
