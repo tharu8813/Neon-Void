@@ -49,6 +49,10 @@ class VisualMixin:
 
     PROFILE_PAGE_SIZE = 7
 
+    def _hud_pop_y(self, amount, distance):
+        """Pop feedback is stationary when reduced effects are enabled."""
+        return 26 if self.settings.reduced_effects else 26 - distance * amount
+
     def _hud_software_summary(self, max_chars=49):
         """Keep the bottom-left software label within its HUD budget."""
         if not self.levels:
@@ -519,12 +523,12 @@ class VisualMixin:
 
         # 웨이브 팝
         c.itemconfigure(self.wave_txt, text=f"WAVE {self.wave}")
-        c.coords(self.wave_txt, W - 24, 26 - (0.0 if self.settings.reduced_effects else 9.0 * self.wave_pop))
+        c.coords(self.wave_txt, W - 24, self._hud_pop_y(self.wave_pop, 9.0))
         c.itemconfigure(self.wave_txt,
                         fill="#ffffff" if not self.settings.reduced_effects and self.wave_pop > 0.45 else C_TEXT)
 
         if self.combo > 1:
-            c.coords(self.combo_txt, W / 2, 26 - (0.0 if self.settings.reduced_effects else 8.0 * self.combo_pop))
+            c.coords(self.combo_txt, W / 2, self._hud_pop_y(self.combo_pop, 8.0))
             c.itemconfigure(self.combo_txt,
                             text=f"x{self.combo_mult():.1f}  {self.combo} COMBO",
                             fill="#ffffff" if not self.settings.reduced_effects and self.combo_pop > 0.35 else C_GOLD,
