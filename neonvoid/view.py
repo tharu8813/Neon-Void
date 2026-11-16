@@ -9,7 +9,7 @@ from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID
 from .combat import effective_armor, skill_cost
 from .world.session import (WORLD_W, WORLD_H, SECTOR_NAMES, AVAILABLE_SECTORS,
-                            CPU_EXIT, START, camera_for)
+                            CPU_EXIT, START, PILLARS, camera_for)
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
 class VisualMixin:
@@ -815,8 +815,7 @@ class VisualMixin:
                           width=2, dash=(12, 13), tags="hub-world")
 
         # Structures in the hub have matching collision rectangles.
-        for x0, y0, x1, y1 in __import__(
-                "neonvoid.world.session", fromlist=["PILLARS"]).PILLARS:
+        for x0, y0, x1, y1 in PILLARS:
             c.create_rectangle(x0-cx, y0-cy, x1-cx, y1-cy,
                                fill="#15384c", outline="#3f7185", width=2,
                                tags="hub-world")
