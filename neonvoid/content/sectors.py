@@ -271,7 +271,11 @@ class SectorCampaign:
     @classmethod
     def from_checkpoint(cls, data: dict[str, object],
                         *, events: EventBus | None = None) -> "SectorCampaign":
-        if not isinstance(data, dict) or not isinstance(data.get("completed_waves"), dict):
+        if (not isinstance(data, dict)
+                or not isinstance(data.get("run_id"), str)
+                or not data["run_id"]
+                or type(data.get("seed")) is not int
+                or not isinstance(data.get("completed_waves"), dict)):
             raise ValueError("Invalid sector checkpoint")
         campaign = cls(data["run_id"], seed=data["seed"], events=events)
         completed = data["completed_waves"]
