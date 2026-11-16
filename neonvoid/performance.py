@@ -50,3 +50,33 @@ def resident_memory_mib() -> float | None:
     except (OSError, ValueError, IndexError, AttributeError):
         pass
     return None
+
+
+class RenderedFrameRate:
+    """Count actual render submissions instead of Tk timer callbacks.
+
+    The 60 Hz simulation and UI timers may be called at different rates.
+    Only a submitted render is counted. This does not measure the monitor's
+    presented frames, which Tk Canvas cannot report.
+    """
+
+    def __init__(self, interval: float = 0.5):
+        if interval <= 0:
+            raise ValueError("interval must be positive")
+        self.interval = interval
+        self.started_at: float | None = None
+        self.count = 0
+
+    def submitted(self, now: float) -> float | None:
+        if self.started_at is None:
+            self.started_at = now
+            self.count = 0
+            return None
+        self.count += 1
+        elapsed = now - self.started_at
+        if elapsed < self.interval:
+            return None
+        rate = self.count / elapsed if elapsed > 0 else 0.0
+        self.count = 0
+        self.started_at = now
+        return rate
