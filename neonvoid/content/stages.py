@@ -1,9 +1,9 @@
 """Declarative arena definitions and deterministic wave planning.
 
-This module preserves the original game's spawn budget and RNG call order.
-New stage content should be added here before introducing a stage selector UI.
+The original `void` stage's budget, spawn timings and RNG call order are
+intentionally unchanged. Sector stage definitions are resolved lazily so that
+the classic arena does not depend on the new OS campaign.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +28,7 @@ class StageDefinition:
     )
     boss_kind: str = "boss"
     boss_supports: tuple[str, ...] = ("drifter", "shooter")
+    fallback_kind: str = "drifter"
 
 
 STAGES: dict[str, StageDefinition] = {
@@ -49,7 +50,7 @@ class WavePlan:
 
 
 def validate_stage(stage: StageDefinition) -> None:
-    """Reject invalid catalog definitions before they reach active gameplay."""
+    """Reject invalid definitions before they reach active gameplay."""
     if not stage.id or not stage.name:
         raise ValueError("Stage id and name are required")
     if type(stage.boss_interval) is not int or stage.boss_interval < 1:
@@ -61,8 +62,10 @@ def validate_stage(stage: StageDefinition) -> None:
         raise ValueError("Unknown stage boss kind")
     if not stage.boss_supports or any(kind not in E_PARAMS for kind in stage.boss_supports):
         raise ValueError("Invalid boss support pool")
-    if not stage.enemy_unlocks or stage.enemy_unlocks[0] != (1, "drifter"):
-        raise ValueError("First unlock must be the drifter at wave 1")
+    if stage.fallback_kind not in SPAWN_COST:
+        raise ValueError("Fallback enemy requires a spawn cost")
+    if not stage.enemy_unlocks or stage.enemy_unlocks[0] != (1, stage.fallback_kind):
+        raise ValueError("First unlock must be the fallback enemy at wave 1")
     previous = 0
     seen = set()
     for threshold, kind in stage.enemy_unlocks:
@@ -74,17 +77,22 @@ def validate_stage(stage: StageDefinition) -> None:
 
 
 def get_stage(stage_id: str = DEFAULT_STAGE_ID) -> StageDefinition:
-    try:
+    if stage_id in STAGES:
         stage = STAGES[stage_id]
-    except KeyError as exc:
-        raise ValueError(f"Unknown stage: {stage_id}") from exc
+    else:
+        # Import on demand to keep the original arena catalog standalone.
+        from .sectors import get_sector
+        try:
+            stage = get_sector(stage_id).stage
+        except ValueError as exc:
+            raise ValueError(f"Unknown stage: {stage_id}") from exc
     validate_stage(stage)
     return stage
 
 
 def plan_wave(wave: int, rng: random.Random,
               stage: StageDefinition | None = None) -> WavePlan:
-    """Return an immutable wave plan using the same RNG decisions as legacy logic."""
+    """Return an immutable wave plan, preserving legacy RNG decisions."""
     if type(wave) is not int or wave < 1:
         raise ValueError("Wave must be a positive integer")
     if stage is None:
@@ -109,9 +117,9 @@ def plan_wave(wave: int, rng: random.Random,
         guard += 1
         kind = rng.choice(pool)
         cost = SPAWN_COST[kind]
-        if cost > budget and kind != "drifter":
-            kind = "drifter"
-            cost = 1.0
+        if cost > budget and kind != stage.fallback_kind:
+            kind = stage.fallback_kind
+            cost = SPAWN_COST[kind]
         budget -= cost
         spawns.append((at, kind))
         at += max(0.22, 0.62 - wave * 0.015)
