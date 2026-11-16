@@ -627,7 +627,8 @@ class VisualMixin:
         c.create_rectangle(x0, y0, x1, y1, width=2 if primary else 1,
                            outline=C_PLAYER if primary else "#31536b",
                            fill="#10313d" if primary else "#0a1826",
-                           tags=(layer, "menu-button", f"action:{key}"))
+                           tags=(layer, "menu-button", f"action:{key}",
+                                 "menu-primary" if primary else "menu-secondary"))
         c.create_text(x0 + 17, (y0 + y1) / 2, text=label, anchor="w",
                       fill=C_TEXT, font=F_HUD, tags=layer)
         c.create_text(x1 - 16, (y0 + y1) / 2, text=shortcut, anchor="e",
@@ -661,7 +662,7 @@ class VisualMixin:
         active = None if (getattr(self, "checkpoint_prompt_open", False)
                           or getattr(self, "rebinding_action", None)) else self._menu_action_at(x, y)
         for button, key in self._menu_buttons():
-            primary = self.c.itemcget(button, "width") == "2.0"
+            primary = "menu-primary" in self.c.gettags(button)
             hovered = key == active
             self.c.itemconfigure(
                 button,
