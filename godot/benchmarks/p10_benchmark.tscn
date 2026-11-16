@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://benchmarks/frame_probe.gd" id="2_probe"]
+
+[node name="P10Benchmark" type="Node"]
+[node name="ExistingGodotScene" parent="." instance=ExtResource("1_main")]
+[node name="FrameProbe" type="Node" parent="."]
+script = ExtResource("2_probe")
