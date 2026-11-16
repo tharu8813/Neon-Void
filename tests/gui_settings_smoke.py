@@ -28,6 +28,20 @@ def main():
         click(game, 760, 620)
         assert game.settings_open
         assert len(game.settings_hits) == 6
+        # A secondary menu button must remain a secondary button after a
+        # hover and subsequent frame render, even if the cursor vanishes.
+        back_button = next(item for item, action in game._menu_buttons()
+                           if action == "escape")
+        x0, y0, x1, y1 = game.c.coords(back_button)
+        game.cursor_on = True
+        game.mx, game.my = (x0 + x1) / 2, (y0 + y1) / 2
+        game.render()
+        assert game.c.itemcget(back_button, "fill") == "#185064"
+        assert float(game.c.itemcget(back_button, "width")) == 2
+        game.cursor_on = False
+        game.render()
+        assert game.c.itemcget(back_button, "fill") == "#0a1826"
+        assert float(game.c.itemcget(back_button, "width")) == 1
         game._tick_ui(0.3)
         game.render()
         assert game.c.coords(game.settings_rule)[2] > 1000
