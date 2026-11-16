@@ -30,3 +30,15 @@ python neon_void.py --selftest 3600 --no-sound --god --seed 42
 ```
 
 Windows and Linux CI run these tests (Linux GUI via Xvfb). They cannot verify subjective gameplay, hardware audio or real monitor DPI: manual Windows testing is still required.
+
+## A2 integration: all sectors and infection (implemented in PR A2)
+
+The four sector gates use the B-owned catalog rather than the legacy default stage. The visible world and B campaign are synchronized through `WorldSession` (lowercase geographical IDs) and `SectorCampaign` (uppercase B IDs). Each wave uses a stable sector/seed-specific spawn plan and verifies the final boss was actually killed before clearing wave 5.
+
+Real viruses now have geometric artwork and bounded pattern execution. Replication, projectiles, overheat charge, armor pulse, encryption area pulse, boss barrages and armor penetration are wired into the 60Hz game simulation. Contact/projectile attacks only add infection when actually hitting the player; damage-over-time cannot recursively proc infection.
+
+`InfectionState` grows from sector-specific exposure and confirmed hits. It drains OS integrity at high stages but **never modifies move speed, aim, dash, visibility, or skill availability**. The OS junction has a purification station with three uses per deployment, each reducing infection by up to 32% and restoring up to 9% integrity. The HUD shows infection and OS integrity.
+
+The B campaign emits `sector_entered`, `wave_cleared`, `sector_cleared`, `os_cleaned`; per-sector progress cannot be duplicated. The A3 phase connects these events to C's persistent database XP/level receipts, OS CLEAN extraction terminal and re-deployment. **A2 does not yet award XP, save OS checkpoints, or extract software.**
+
+Additional GUI validation: `python -m tests.gui_sectors_smoke` traverses all four sectors in a deliberately non-linear order and verifies 20 separate waves, bosses, infection accumulation, campaign/world progression and OS CLEAN.
