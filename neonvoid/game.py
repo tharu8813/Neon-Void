@@ -1267,6 +1267,12 @@ class Game(VisualMixin):
             self._handle_settings_key(key)
             return
         if self.loadout_open:
+            if key in ("left", "prior", "page_up", "pageup", "right", "next", "page_down", "pagedown"):
+                count = max(1, (len(self.levels) + 26) // 27)
+                delta = -1 if key in ("left", "prior", "page_up", "pageup") else 1
+                self.loadout_page = max(0, min(count - 1, getattr(self, "loadout_page", 0) + delta))
+                self._draw_loadout()
+                return
             if key == "escape":
                 self.loadout_open = False
                 self.c.delete("loadoutui")
