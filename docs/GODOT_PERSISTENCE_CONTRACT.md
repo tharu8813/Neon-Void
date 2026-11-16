@@ -98,7 +98,7 @@ Public persistent APIs:
 - `Checkpoint.persist_confirmed_wave(slot, snapshot, expected_cp_revision, run_id, sector_id, wave_index)`
 - `Checkpoint.clear_after_run(slot, expected_cp_revision)`
 - `Checkpoint.resume(loaded_state)`
-- `Store.read(slot)`, `Store.persist_document(slot, name, value)` for `save.json`, `settings.json` or `profile.json` only; `Store.recover_from_backup(slot, true)`
+- `Store.read(slot)`, `Store.persist_document(slot, name, value, expected_revision)` for `save.json`, `settings.json` or `profile.json` only (stale UI snapshots return `revision_conflict`); `Store.recover_from_backup(slot, true)`
 
 Reward reasons include `granted`, `duplicate`, `run_closed`,
 `prerequisites_missing`, `sectors_not_clean`,
