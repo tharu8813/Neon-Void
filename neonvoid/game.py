@@ -786,6 +786,10 @@ class Game(VisualMixin):
         if abandon:
             self._abandon_active_run()
         self.world.reset_to_base()
+        self.database_open = False
+        self.extraction_open = False
+        self.c.delete("dbui")
+        self.c.delete("extractui")
         self.campaign = None
         self.current_encounter = None
         self.virus_runtime.reset_wave()
@@ -819,7 +823,27 @@ class Game(VisualMixin):
             return
         if self.world.room == "base":
             if node.id == "deploy":
+                if self.database_store is not None and self.database_error is None:
+                    try:
+                        self.database = self.database_store.load()
+                    except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                        self.database_error = f"{type(exc).__name__}: {exc}"
+                        self.announce_world("백신 DB 읽기 오류 · 보상 저장 불가", 4)
+                        return
+                try:
+                    starting = starting_software_levels(
+                        self.database, self.starting_software_id)
+                except ValueError:
+                    self.starting_software_id = None
+                    starting = {}
+                base = base_stats_for_level(self.database.antivirus_level)
                 self.new_game(start_combat=False)
+                self.p.maxhp = self.p.hp = base["maxhp"]
+                self.p.st["dmg"] = base["dmg"]
+                self.p.st["armor"] = base["armor"]
+                self.p.maxmana = self.p.mana = base["maxmana"]
+                for uid in starting:
+                    apply_upgrade(self, uid)
                 self.world.deploy()
                 run_id = uuid4().hex
                 seed = self.opts.seed if self.opts.seed is not None else self.rng.randrange(2**31)
@@ -830,12 +854,14 @@ class Game(VisualMixin):
                 self.p.x, self.p.y = START
                 self.keys.clear()
                 self.events.emit("os_deployed")
-                self.announce_world("OS 배포 완료 · 네 구역의 게이트가 활성화됐습니다")
+                self.announce_world(
+                    f"백신 Lv.{self.database.antivirus_level} 배포 완료 · "
+                    f"시작 소프트웨어 {next(iter(starting), '기본 무장')}",
+                    4)
             elif node.id == "settings":
                 self.open_settings()
             elif node.id == "database":
-                self.announce_world(
-                    "백신 데이터베이스: 영구 XP/소프트웨어 API는 #12에서 통합 예정")
+                self.open_database_terminal()
             else:
                 self.announce_world("진단 준비 · 실전 전투는 OS 배포 후 시작할 수 있습니다")
             return
@@ -854,10 +880,11 @@ class Game(VisualMixin):
                     f"· 남은 사용 {self.purify_uses}회")
         elif node.id == "status":
             done = sum(x in self.world.sector_clean for x in SECTOR_NAMES)
-            self.announce_world(
-                f"OS STATUS · 정화 {done}/4 · "
-                ("CLEAN: 철수 시스템 연결 준비 중" if self.world.os_clean
-                 else "네 구역을 모두 정화하세요"))
+            if self.world.os_clean:
+                self.open_extraction_terminal()
+            else:
+                self.announce_world(
+                    f"OS STATUS · 정화 {done}/4 · 네 구역을 모두 정화하세요")
 
     def enter_sector(self, sector_id):
         self.world.hub_position = (self.p.x, self.p.y)
