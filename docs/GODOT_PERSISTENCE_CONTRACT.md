@@ -30,9 +30,7 @@ target in the import dialog. Imported backups live under
 `slot-v1/legacy_originals/<original filename>`; `migration_manifest.json`
 records schema versions, source location, exact byte counts and SHA-256 for
 each present original. The five converted documents live in a single
-`slot-v1/state.json` envelope, checksum-covered and revisioned. Missing
-optional legacy documents are explicitly recorded as absent and given safe
-in-memory defaults. No silently corrupt file is treated as absent.
+`slot-v1/state.json` envelope, checksum-covered and revisioned. Supported older settings v1–v3 are normalized to settings v5 with the\noriginal Python binding-migration priorities, and profile v1 to profile v2;\noriginal bytes remain in the backup. Missing optional legacy documents are\nexplicitly recorded as absent and given safe in-memory defaults. No silently corrupt file is treated as absent.
 
 ## Explicit import protocol
 
@@ -101,7 +99,7 @@ Public persistent APIs:
 - `Checkpoint.persist_confirmed_wave(slot, snapshot, expected_cp_revision, run_id, sector_id, wave_index)`
 - `Checkpoint.clear_after_run(slot, expected_cp_revision)`
 - `Checkpoint.resume(loaded_state)`
-- `Store.read(slot)`, `Store.recover_from_backup(slot, true)`
+- `Store.read(slot)`, `Store.persist_document(slot, name, value)` for `save.json`, `settings.json` or `profile.json` only; `Store.recover_from_backup(slot, true)`
 
 Reward reasons include `granted`, `duplicate`, `run_closed`,
 `prerequisites_missing`, `sectors_not_clean`,
@@ -143,8 +141,7 @@ DB or checkpoint JSON directly.
 
 `godot --headless --path godot --script res://tests/persistence_smoke.gd`
 runs synthetic import fixtures under a newly generated
-`user://p8-test-*` directory and checks import refusal, original-byte
-immutability, backups, XP receipts, extraction, revision conflicts,
+`user://p8-test-*` directory and checks import refusal, original-byte\nimmutability, normalized v2 settings/profile migration, guarded settings UI\nwrites, backup write failure (no success receipt), backups, XP receipts, extraction, revision conflicts,
 prior-snapshot recovery and future-schema rejection. It deletes only its
 own synthetic fixture directory. No real user saves are ever opened.
 
