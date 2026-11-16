@@ -17,13 +17,6 @@ from .world.session import (WORLD_W, WORLD_H, SECTOR_NAMES, AVAILABLE_SECTORS,
                             BASE_NODES, OS_NODES)
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
-SECTOR_THREATS = {
-    "cpu": "빠른 근접 돌격",
-    "memory": "증식하는 웜",
-    "storage": "중장갑과 암호화",
-    "network": "고속 무리와 탄막",
-}
-
 BOSS_WINDUPS = {
     "overload_barrage": "방사형 탄막 예고",
     "encryption_pulse": "암호화 폭발 예고 · 원 밖으로 이동",
@@ -1059,7 +1052,7 @@ class VisualMixin:
                 detail = f"왼쪽 출구에서 [{key}]로 OS 허브 복귀"
                 if self.sector_clear_heal > 0:
                     detail += f"  ·  체력 +{self.sector_clear_heal:.1f}"
-            elif self.world.active_sector == "cpu" and self.wave == 1:
+            elif getattr(self, "wave_combat_help", False):
                 dash = self.settings.bindings["dash"].upper()
                 detail = f"마우스로 조준하면 자동 사격  ·  [{dash}] / Shift로 회피"
             elif self.banner_upgrade:
@@ -1578,20 +1571,17 @@ class VisualMixin:
         if near != self.hub_prompt_node:
             self.hub_prompt_node = near
             self.hub_prompt_at = self.ui_t
-        route_hint = ""
-        if not base:
-            if not any(world.sector_waves.values()):
-                route_hint = ("첫 구역 추천  ·  위쪽 CPU CORE  ·  "
-                              f"위험 {SECTORS['CPU'].danger}/5")
-            elif world.sector_clean == {"cpu"}:
-                route_hint = ("다음 구역 추천  ·  오른쪽 MEMORY SECTOR  ·  "
-                              f"위험 {SECTORS['MEMORY'].danger}/5")
+        route_hint = ("자유 진입 · 게이트별 위험과 소프트웨어 경향을 비교하세요"
+                      if not base and not world.os_clean else "")
         if near:
             prompt = f"[{action_key}]  {near.label}  ·  상호작용"
-            if near.id in SECTOR_THREATS:
-                state = ("정화 완료" if near.id in world.sector_clean else
-                         SECTOR_THREATS[near.id])
-                prompt = f"[{action_key}]  {near.label}  ·  {state}"
+            if near.id in SECTOR_NAMES:
+                spec = SECTORS[near.id.upper()]
+                if near.id in world.sector_clean:
+                    prompt = f"[{action_key}] {near.label} · 정화 완료"
+                else:
+                    prompt = (f"[{action_key}] {near.label} · 위험 {spec.danger}/5"
+                              f"\n{spec.tactics_hint} · {spec.reward_hint} 카드 확률 ↑")
             elif near.id == "status":
                 if world.os_clean:
                     prompt = f"[{action_key}]  OS 철수 및 소프트웨어 보관"
@@ -1611,9 +1601,13 @@ class VisualMixin:
             progress = (1.0 if reduced else
                         clamp((self.ui_t - self.hub_prompt_at) / 0.2, 0, 1))
             offset = 12 * (1 - progress) ** 3
-            c.coords(self.hub_prompt_bg, W / 2 - 270, H - 95 + offset,
-                     W / 2 + 270, H - 49 + offset)
-            c.coords(self.hub_prompt, W / 2, H - 72 + offset)
+            expanded = "\n" in prompt
+            c.coords(self.hub_prompt_bg, W / 2 - 320 if expanded else W / 2 - 270,
+                     H - (114 if expanded else 95) + offset,
+                     W / 2 + 320 if expanded else W / 2 + 270,
+                     H - (39 if expanded else 49) + offset)
+            c.coords(self.hub_prompt, W / 2,
+                     H - (77 if expanded else 72) + offset)
             c.itemconfigure(self.hub_prompt_bg, state="normal", outline="#4a90a8")
             c.itemconfigure(self.hub_prompt, state="normal", text=prompt, fill="#c6f8ff")
         else:

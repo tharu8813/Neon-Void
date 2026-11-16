@@ -5,9 +5,10 @@ import random
 import unittest
 
 from neonvoid.content.enemies import E_PARAMS, SPAWN_COST
+from neonvoid.content.upgrades import UP_BY_ID
 from neonvoid.content.sectors import (
     FINAL_WAVE, SECTOR_IDS, SECTORS, SectorCampaign, get_sector,
-    plan_sector_wave,
+    plan_sector_wave, sector_software_multiplier,
 )
 from neonvoid.content.stages import get_stage, plan_wave
 from neonvoid.content.virus_catalog import (
@@ -32,6 +33,21 @@ class SectorContentTests(unittest.TestCase):
             self.assertIs(get_stage(sid), sector.stage)
             self.assertEqual([w.wave_index for w in sector.waves], [1, 2, 3, 4, 5])
             self.assertEqual(sector.clear_condition, "five_waves_and_boss")
+
+    def test_sector_tactical_hints_and_software_bias_are_valid(self):
+        focus_sets = []
+        for sid in SECTOR_IDS:
+            spec = get_sector(sid)
+            self.assertTrue(spec.tactics_hint)
+            self.assertTrue(spec.reward_hint)
+            self.assertTrue(spec.software_focus)
+            self.assertTrue(set(spec.software_focus) <= set(UP_BY_ID))
+            focus_sets.append(spec.software_focus)
+            for uid in spec.software_focus:
+                self.assertGreater(sector_software_multiplier(sid.lower(), uid), 1.0)
+        self.assertEqual(len(set(focus_sets)), 4)
+        self.assertEqual(sector_software_multiplier(None, "power"), 1.0)
+        self.assertEqual(sector_software_multiplier("MEMORY", "power"), 1.0)
 
     def test_twenty_independent_plans_and_boss_cadence(self):
         for sid in SECTOR_IDS:

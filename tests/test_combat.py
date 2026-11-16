@@ -89,6 +89,19 @@ class CombatTests(unittest.TestCase):
         self.assertLess(skill_cost(35, g.p.st["skill_efficiency"]), 35)
         self.assertLess(skill_cooldown(7, g.p.st["skill_cooldown"]), 7)
 
+    def test_sector_software_rolls_are_biased_not_forced(self):
+        focus = {"boom", "chain", "split", "focus", "burn"}
+        counts = {}
+        for sector in ("cpu", "memory"):
+            g = SimpleNamespace(p=Player(), levels={}, rng=random.Random(910),
+                                world=SimpleNamespace(active_sector=sector))
+            counts[sector] = sum(uid in focus
+                                 for _ in range(400)
+                                 for uid, *_rest in Game.roll_upgrades(g, 3))
+        self.assertGreater(counts["memory"], counts["cpu"])
+        self.assertGreater(counts["cpu"], 0)
+        self.assertLess(counts["memory"], 1200)
+
     def test_enemy_catalog_has_armor(self):
         self.assertTrue(all("armor" in params and params["armor"] >= 0
                             for params in E_PARAMS.values()))
