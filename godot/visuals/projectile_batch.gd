@@ -39,8 +39,7 @@ func set_projectiles(logical_positions: PackedVector2Array, tints: PackedColorAr
     for i in range(count):
         # Standalone --script tests do not expose autoload global identifiers.
         # Read the source-of-truth scale directly from the P1 script resource.
-        var scale: float = FrozenMapping.WORLD_UNITS_PER_PIXEL
-        var p: Vector3 = Vector3(logical_positions[i].x * scale, elevation, logical_positions[i].y * scale)
+        var p: Vector3 = logical_to_mesh_position(logical_positions[i])
         multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
         var tint: Color = tints[i] if i < tints.size() else Color(0.35, 0.92, 1.0)
         multimesh.set_instance_color(i, tint)
@@ -49,3 +48,8 @@ func set_projectiles(logical_positions: PackedVector2Array, tints: PackedColorAr
 func clear_projectiles() -> void:
     if multimesh != null:
         multimesh.visible_instance_count = 0
+
+func logical_to_mesh_position(logical_point: Vector2) -> Vector3:
+    ## Pure mapping; GPU-side transform buffers are not read back in headless CI.
+    var scale: float = FrozenMapping.WORLD_UNITS_PER_PIXEL
+    return Vector3(logical_point.x * scale, elevation, logical_point.y * scale)
