@@ -92,9 +92,13 @@ func _run() -> void:
         expect(loaded.state["profile.json"].total_score == 0, "profile not mixed with XP")
     var ui_settings: Dictionary = state["settings.json"].duplicate(true)
     ui_settings.show_fps = true
-    expect(Store.persist_document(slot, "settings.json", ui_settings).applied,
+    var settings_revision: int = int(Store.read(slot).revision)
+    expect(Store.persist_document(slot, "settings.json", ui_settings, settings_revision).applied,
         "D settings UI can write through guarded API")
-    expect(not Store.persist_document(slot, "antivirus_db.json", {}).applied,
+    var stale: Dictionary = Store.persist_document(slot, "settings.json", ui_settings, settings_revision)
+    expect(not stale.applied and stale.reason == "revision_conflict",
+        "stale settings UI cannot overwrite newer data")
+    expect(not Store.persist_document(slot, "antivirus_db.json", {}, settings_revision + 1).applied,
         "UI cannot bypass XP receipt authority")
     expect(Store.read(slot).state["settings.json"].show_fps, "changed settings durable")
     for name in Migration.FILES:
