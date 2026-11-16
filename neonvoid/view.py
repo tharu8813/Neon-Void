@@ -49,6 +49,28 @@ class VisualMixin:
 
     PROFILE_PAGE_SIZE = 7
 
+    def _hud_software_summary(self, max_chars=49):
+        """Keep the bottom-left software label within its HUD budget."""
+        if not self.levels:
+            return ""
+        entries = [f"{UP_BY_ID[uid][1]} x{lv}" for uid, lv in
+                   sorted(self.levels.items(), key=lambda kv: (-kv[1], kv[0]))]
+        prefix = "소프트웨어: "
+        shown = []
+        for index, entry in enumerate(entries):
+            candidate = " · ".join((*shown, entry))
+            remaining = len(entries) - index - 1
+            suffix = f" · 외 {remaining}종 [TAB]" if remaining else ""
+            if len(prefix + candidate + suffix) > max_chars:
+                break
+            shown.append(entry)
+        hidden = len(entries) - len(shown)
+        if not shown:
+            return f"소프트웨어 {len(entries)}종 [TAB]"
+        suffix = f" · 외 {hidden}종 [TAB]" if hidden else ""
+        return prefix + " · ".join(shown) + suffix
+
+
     # ------------------------------------------------------------------ 배경
     def _build_background(self):
         c = self.c
@@ -537,13 +559,7 @@ class VisualMixin:
             else:
                 c.itemconfigure(fg, state="hidden")
 
-        if self.levels:
-            parts = []
-            for uid, lv in sorted(self.levels.items(), key=lambda kv: -kv[1]):
-                parts.append(f"{UP_BY_ID[uid][1]} x{lv}")
-            c.itemconfigure(self.upg_txt, text="소프트웨어: " + " · ".join(parts[:7]))
-        else:
-            c.itemconfigure(self.upg_txt, text="")
+        c.itemconfigure(self.upg_txt, text=self._hud_software_summary())
 
         if self.world.active_sector is not None:
             infection = self.infection
