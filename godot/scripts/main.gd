@@ -140,7 +140,19 @@ func start_new_run() -> bool:
     else:
         deployed_level = 1
     run_id_counter += 1
-    campaign = Campaign.new("godot_preview_%d_%d" % [Time.get_unix_time_from_system(), run_id_counter], 42)
+    # Unix seconds + a process-local counter is NOT unique after restart.
+    # A secure 96-bit token prevents a new OS reusing an already-closed run ID
+    # and accidentally skipping profile history or duplicating reward receipts.
+    var run_token: PackedByteArray = Crypto.new().generate_random_bytes(12)
+    if run_token.size() != 12:
+        ui.call("show_error", "안전한 OS 실행 ID를 생성하지 못했습니다.")
+        return false
+    var unique_run_id: String = "godot_%d_%s" % [
+        int(Time.get_unix_time_from_system()), run_token.hex_encode()]
+    if persistence_enabled and saved_state["antivirus_db.json"]["closed_runs"].has(unique_run_id):
+        ui.call("show_error", "OS 실행 ID 충돌로 새 배포를 중단했습니다.")
+        return false
+    campaign = Campaign.new(unique_run_id, 42)
     sim = Combat.new(42)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
