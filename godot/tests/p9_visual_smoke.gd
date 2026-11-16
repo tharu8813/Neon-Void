@@ -25,7 +25,9 @@ func _check() -> void:
     if batch != null and batch.multimesh != null:
         batch.call("set_projectiles", PackedVector2Array([Vector2(640, 360), Vector2(700, 280)]))
         check(batch.multimesh.visible_instance_count == 2, "two snapshot positions")
-        check(batch.multimesh.get_instance_transform(0).origin.distance_to(Vector3(6.4, 0.13, 3.6)) < 0.0001, "legacy XZ mapping")
+        var origin: Vector3 = batch.multimesh.get_instance_transform(0).origin
+        var expected: Vector3 = Vector3(6.4, 0.13, 3.6)
+        check(origin.distance_to(expected) < 0.0001, "legacy XZ mapping actual=" + str(origin) + " expected=" + str(expected))
         var points: PackedVector2Array = PackedVector2Array()
         for i in range(2050):
             points.append(Vector2(640, 360))
