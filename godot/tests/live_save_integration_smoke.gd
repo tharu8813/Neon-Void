@@ -50,6 +50,7 @@ func _test() -> void:
         return
     var game: Node = instance_game()
     require(game.call("start_new_run"), "new OS creates a durable first checkpoint")
+    var first_run_id: String = str(game.get("campaign").run_id)
     var state: Dictionary = Store.read(slot)
     require(state.get("ok", false) and state.state["os_checkpoint.json"] != null, "deployment stored")
     require(game.call("enter_sector", "CPU"), "enter first sector")
@@ -107,6 +108,8 @@ func _test() -> void:
         var archived_choice: String = str(equipped.keys()[0])
         require(game.call("select_archived_software", archived_choice), "select archived starting software")
     require(game.call("start_new_run"), "new OS deployment after safe extraction")
+    require(str(game.get("campaign").run_id) != first_run_id,
+        "different process instance cannot reuse a finished OS run ID")
     if not equipped.is_empty():
         require(int(game.get("software").levels.get(str(equipped.keys()[0]), 0)) == 1,
             "archived software equipped in the next OS")
