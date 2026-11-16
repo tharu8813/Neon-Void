@@ -30,6 +30,12 @@ class LoadoutPagingTests(unittest.TestCase):
 
     def test_page_navigation_with_no_installed_software(self):
         game = Game.__new__(Game)
+        game.checkpoint_prompt_open = False
+        game.salvage_open = False
+        game.extraction_open = False
+        game.database_open = False
+        game.profile_open = False
+        game.settings_open = False
         game.loadout_open = True
         game.levels = {}
         game.loadout_page = 0
