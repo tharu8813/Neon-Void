@@ -64,9 +64,9 @@ jobs:
           set -euo pipefail
           "$NEON_GODOT" --version
           "$NEON_GODOT" --headless --path godot --editor --import --quit
-          "$NEON_GODOT" --headless --path godot --script res://tests/port_smoke.gd
-          "$NEON_GODOT" --headless --path godot --script res://tests/persistence_smoke.gd
-          "$NEON_GODOT" --headless --path godot --quit-after 3
+          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/port_smoke.gd
+          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/persistence_smoke.gd
+          timeout 90 "$NEON_GODOT" --headless --path godot --quit-after 3
       - name: Windows editor import, static parse, persistence smoke, scene boot
         if: runner.os == 'Windows'
         shell: pwsh
@@ -75,8 +75,14 @@ jobs:
           # Godot's Windows editor is GUI-subsystem; '&' can return before it exits.
           # Use Start-Process -Wait and assert the actual exit code on EVERY check.
           function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
-            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
-            if ($p.ExitCode -ne 0) { throw "Process failed: $binary $arguments (exit $($p.ExitCode))" }
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru
+            try {
+              if (-not $p.WaitForExit(90000)) {
+                $p.Kill($true)
+                throw "Godot process timed out: $binary $arguments"
+              }
+              if ($p.ExitCode -ne 0) { throw "Process failed: $binary $arguments (exit $($p.ExitCode))" }
+            } finally { $p.Dispose() }
           }
           Invoke-CheckedProcess $env:NEON_GODOT '--version'
           Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --editor --import --quit'
