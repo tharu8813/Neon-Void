@@ -13,16 +13,20 @@ from neonvoid.extraction import (
     select_starting_software, starting_software_levels,
 )
 from neonvoid.metaprogression import (
-    AntivirusDatabase, REQUIRED_SECTOR_IDS, close_run_once,
+    AntivirusDatabase, REQUIRED_SECTOR_IDS, close_run_once, grant_xp_once,
 )
 
 
 def _clean_run(store: storage.AntivirusDatabaseStore, run_id: str):
     for sector in REQUIRED_SECTOR_IDS:
-        for event, wave in (("wave_cleared", 5), ("boss_killed", None),
-                            ("sector_cleared", None)):
+        for wave in range(1, 6):
             _, result = store.award_progress_once(
-                run_id=run_id, event=event, sector_id=sector, wave_index=wave)
+                run_id=run_id, event="wave_cleared",
+                sector_id=sector, wave_index=wave)
+            assert result.applied, (run_id, sector, wave, result)
+        for event in ("boss_killed", "sector_cleared"):
+            _, result = store.award_progress_once(
+                run_id=run_id, event=event, sector_id=sector)
             assert result.applied, (run_id, sector, event, result)
     _, result = store.award_progress_once(run_id=run_id, event="os_cleaned")
     assert result.applied, result
@@ -51,10 +55,12 @@ class ExtractionTests(unittest.TestCase):
         self.assertFalse(result.applied)
         self.assertFalse(self.path.exists())
         for sector in self.sectors:
-            for event, wave in (("wave_cleared", 5), ("boss_killed", None),
-                                ("sector_cleared", None)):
-                self.store.award_progress_once(run_id="os", event=event,
+            for wave in range(1, 6):
+                self.store.award_progress_once(run_id="os", event="wave_cleared",
                                               sector_id=sector, wave_index=wave)
+            for event in ("boss_killed", "sector_cleared"):
+                self.store.award_progress_once(run_id="os", event=event,
+                                              sector_id=sector)
         db, result = self._commit()
         self.assertEqual(result.reason, "sectors_not_clean")
         self.store.award_progress_once(run_id="os", event="os_cleaned")
@@ -66,6 +72,30 @@ class ExtractionTests(unittest.TestCase):
                                    software_levels={"rapid": 2})
         self.assertTrue(offer.allowed)
         self.assertEqual(offer.eligible_software, ("rapid",))
+
+    def test_partial_wave_receipts_cannot_forge_extraction(self):
+        # Low-level custom XP receipts are not evidence of a complete campaign.
+        db = AntivirusDatabase()
+        for sector in self.sectors:
+            for event_id in (f"{sector}:wave:5", f"{sector}:boss_killed",
+                             f"{sector}:sector_cleared"):
+                db, reward = grant_xp_once(db, run_id="partial",
+                                           event_id=event_id, amount=20)
+                self.assertTrue(reward.applied)
+        db, _ = grant_xp_once(db, run_id="partial", event_id="os_cleaned", amount=200)
+        offer = prepare_extraction(db, run_id="partial",
+                                   clean_sector_ids=self.sectors,
+                                   software_levels={"rapid": 1})
+        self.assertEqual(offer.reason, "sectors_not_clean")
+        unchanged, result = commit_extraction_once(
+            db, run_id="partial", clean_sector_ids=self.sectors,
+            software_levels={"rapid": 1}, selected_software_id="rapid")
+        self.assertIs(unchanged, db)
+        self.assertEqual(result.reason, "sectors_not_clean")
+        with self.assertRaises(ValueError):
+            prepare_extraction(db, run_id="partial",
+                               clean_sector_ids=[["cpu_core"], *self.sectors],
+                               software_levels={"rapid": 1})
 
     def test_success_extracts_only_one_copy_not_run_stack(self):
         _clean_run(self.store, "os")
