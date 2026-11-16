@@ -192,7 +192,7 @@ static func _recover_locked(slot_path: String) -> Dictionary:
         return {"ok": false, "reason": "restore_failed"}
     return {"ok": true, "reason": "restored", "revision": valid.revision}
 
-static func persist_document(slot_path: String, filename: String, document: Dictionary) -> Dictionary:
+static func persist_document(slot_path: String, filename: String, document: Dictionary, expected_revision: int) -> Dictionary:
     ## UI-safe settings / statistics writer. Database and checkpoints can
     ## ONLY be changed by receipt / revision guarded progression APIs.
     if not filename in ["save.json", "settings.json", "profile.json"]:
@@ -201,6 +201,9 @@ static func persist_document(slot_path: String, filename: String, document: Dict
     if not converted.ok:
         return {"applied": false, "reason": "invalid_document"}
     return transact(slot_path, func(state):
+        var current: Dictionary = read(slot_path)
+        if not current.ok or current.revision != expected_revision:
+            return {"ok": false, "reason": "revision_conflict"}
         if JSON.stringify(state[filename], "", true, true) == JSON.stringify(converted.value, "", true, true):
             return {"ok": true, "changed": false, "reason": "unchanged"}
         var updated: Dictionary = state.duplicate(true)
