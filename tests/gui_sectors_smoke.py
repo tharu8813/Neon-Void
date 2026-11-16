@@ -68,11 +68,21 @@ def main():
                 game.render()
                 assert "무결성 감소 중" in game.c.itemcget(game.infection_hint, "text")
                 assert "−0.3%/s" in game.c.itemcget(game.infection_detail, "text")
+                assert "주의" in game.c.itemcget(game.infection_text, "text")
+                assert game.c.itemcget(game.infection_fill, "fill") == "#e5a34e"
                 game.infection.player_infection = 75
                 game.settings.reduced_effects = True
                 game.render()
                 assert "[G]" in game.c.itemcget(game.infection_hint, "text")
                 assert game.c.itemcget(game.infection_bg, "outline") == "#ff7082"
+                assert "위험" in game.c.itemcget(game.infection_text, "text")
+                previous_integrity = game.infection.os_integrity
+                game.infection.player_infection = 8
+                game.infection.os_integrity = 20
+                game.render()
+                assert "위험" in game.c.itemcget(game.infection_text, "text")
+                assert game.c.itemcget(game.infection_fill, "fill") == "#ff5872"
+                game.infection.os_integrity = previous_integrity
                 game.infection.player_infection = infection_before
                 game.settings.reduced_effects = False
             for wave in range(1, 6):

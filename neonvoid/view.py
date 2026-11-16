@@ -50,6 +50,17 @@ class VisualMixin:
     PROFILE_PAGE_SIZE = 7
 
     @staticmethod
+    def _infection_hud_severity(infection):
+        """Use words as well as colors to communicate OS and infection danger."""
+        if (infection.stage >= InfectionStage.CRITICAL
+                or infection.os_integrity <= 25):
+            return "위험", "#ff5872", "#ff7082", "#1d0c16"
+        if (infection.stage >= InfectionStage.DETECTED
+                or infection.os_integrity <= 50):
+            return "주의", "#e5a34e", "#b8824f", "#1b1718"
+        return "안정", "#55cba8", "#384457", "#0b1526"
+
+    @staticmethod
     def _boss_hud_labels(kind, phase, windup):
         """Separate boss identity from an urgent attack warning."""
         return (f"{kind.upper()}  ·  PHASE {phase}",
@@ -580,18 +591,19 @@ class VisualMixin:
             percentage = max(0.0, min(1.0, infection.infection / 100.0))
             c.coords(self.infection_fill, W-416, 134,
                      W-416 + 387*percentage, 144)
-            color = ("#ff5872" if infection.stage >= InfectionStage.CRITICAL else
-                     "#e5a34e" if infection.needs_purification else
-                     "#55cba8")
+            severity, color, outline, background = self._infection_hud_severity(
+                infection)
             c.itemconfigure(self.infection_fill, fill=color)
             c.itemconfigure(self.infection_text,
-                            text=f"INFECTION {infection.infection:.0f}%  ·  "
-                                 f"OS {infection.os_integrity:.0f}%")
+                            text=f"{severity} · 감염 {infection.infection:.0f}%"
+                                 f" · OS {infection.os_integrity:.0f}%",
+                            fill=color)
             safe = self.world.active_sector in self.world.sector_clean
-            critical = (infection.stage >= InfectionStage.CRITICAL
-                        or infection.os_integrity <= 25)
+            critical = severity == "위험"
             if safe:
-                hint = "정화 완료 · 구역 내 감염 압력 없음"
+                hint = ("정화 완료 · OS 무결성 위험 · 허브 복구 권장"
+                        if infection.os_integrity <= 25 else
+                        "정화 완료 · 구역 내 감염 압력 없음")
             elif critical:
                 key = self.settings.bindings["interact"].upper()
                 hint = f"위험 · 왼쪽 출구에서 [{key}]로 복귀"
@@ -600,7 +612,7 @@ class VisualMixin:
             else:
                 hint = f"감염 {SPREADING_AT:.0f}%부터 무결성 감소"
             c.itemconfigure(self.infection_hint, text=hint,
-                            fill=C_BAD if critical and not safe else C_TEXT)
+                            fill=C_BAD if critical else C_TEXT)
             if safe:
                 detail = "정화 완료 · OS 감염 압력 없음"
             else:
@@ -614,12 +626,8 @@ class VisualMixin:
                     detail = (f"현속 −{pressure:.1f}%/s · 소진 약 {seconds:.0f}s"
                               f" · 클리어 정화 {purge:.0f}%p")
             c.itemconfigure(self.infection_detail, text=detail)
-            if critical and not safe:
-                c.itemconfigure(self.infection_bg,
-                                outline="#ff7082", fill="#1d0c16")
-            else:
-                c.itemconfigure(self.infection_bg, outline="#384457",
-                                fill="#0b1526")
+            c.itemconfigure(self.infection_bg,
+                            outline=outline, fill=background)
             for obj in (self.infection_bg, self.infection_fill,
                         self.infection_text, self.infection_hint,
                         self.infection_detail):
