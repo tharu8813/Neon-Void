@@ -26,7 +26,7 @@ class ReducedEffectsHudTests(unittest.TestCase):
         view.settings = SimpleNamespace(reduced_effects=True)
         view.ui_t = 0
         view._skill_bar(1, 2, 10, 110, 3, 6, C_PLAYER)
-        view.c.coords.assert_called_with(2, 678, 682, 60, 682)
+        view.c.coords.assert_called_with(2, 10, 678, 60, 682)
 
 
 if __name__ == "__main__":
