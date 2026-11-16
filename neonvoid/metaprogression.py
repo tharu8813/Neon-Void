@@ -221,14 +221,23 @@ def award_progress_once(
             if type(wave_index) is not int or not 1 <= wave_index <= 5:
                 raise ValueError("wave_index must be an integer from 1 to 5")
             event_id = f"{sector_id}:wave:{wave_index}"
+            # A resumed/incorrect event must not skip earlier first-clears.
+            required = {
+                f"{run_id}:{sector_id}:wave:{previous}"
+                for previous in range(1, wave_index)
+            }
         else:
             if wave_index is not None:
                 raise ValueError("wave_index is only for wave_cleared")
             event_id = f"{sector_id}:{event}"
-        required = set()
-        if event == "sector_cleared":
-            required = {f"{run_id}:{sector_id}:wave:5",
-                        f"{run_id}:{sector_id}:boss_killed"}
+            required = set()
+            if event in ("boss_killed", "sector_cleared"):
+                required = {
+                    f"{run_id}:{sector_id}:wave:{wave}"
+                    for wave in range(1, 6)
+                }
+            if event == "sector_cleared":
+                required.add(f"{run_id}:{sector_id}:boss_killed")
     # Idempotent retry must return duplicate before unmet-prerequisite checks.
     if f"{run_id}:{event_id}" in db.awarded_xp_ids:
         return grant_xp_once(db, run_id=run_id, event_id=event_id,

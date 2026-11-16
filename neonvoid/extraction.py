@@ -54,15 +54,19 @@ def _fully_cleaned(db: AntivirusDatabase, run_id: str,
                    clean_sector_ids: Collection[str]) -> bool:
     if isinstance(clean_sector_ids, (str, bytes)) or not isinstance(clean_sector_ids, Collection):
         raise ValueError("clean_sector_ids must be a collection of sector IDs")
-    sector_set = set(clean_sector_ids)
-    if not all(isinstance(s, str) for s in sector_set):
+    if not all(isinstance(sector, str) for sector in clean_sector_ids):
         raise ValueError("sector IDs must be strings")
-    if not REQUIRED_SECTOR_IDS.issubset(sector_set):
+    if not REQUIRED_SECTOR_IDS.issubset(set(clean_sector_ids)):
         return False
     receipts = db.awarded_xp_ids
     return (
-        all(f"{run_id}:{sector}:sector_cleared" in receipts
-            for sector in REQUIRED_SECTOR_IDS)
+        all(
+            all(f"{run_id}:{sector}:wave:{wave}" in receipts
+                for wave in range(1, 6))
+            and f"{run_id}:{sector}:boss_killed" in receipts
+            and f"{run_id}:{sector}:sector_cleared" in receipts
+            for sector in REQUIRED_SECTOR_IDS
+        )
         and f"{run_id}:os_cleaned" in receipts
     )
 

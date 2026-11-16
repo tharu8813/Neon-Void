@@ -73,6 +73,14 @@ class ProgressionTests(unittest.TestCase):
         db = AntivirusDatabase()
         db, res = award_progress_once(db, run_id="os", event="os_cleaned")
         self.assertEqual(res.reason, "prerequisites_missing")
+        for event, wave in (("wave_cleared", 2), ("wave_cleared", 5),
+                            ("boss_killed", None), ("sector_cleared", None)):
+            unchanged, denied = award_progress_once(
+                db, run_id="os", sector_id="cpu_core",
+                event=event, wave_index=wave)
+            self.assertIs(unchanged, db)
+            self.assertEqual(denied.reason, "prerequisites_missing")
+        self.assertEqual(db.xp, 0)
         for sector in REQUIRED_SECTOR_IDS:
             db, res = award_progress_once(db, run_id="os", event="sector_cleared", sector_id=sector)
             self.assertFalse(res.applied)
@@ -80,6 +88,17 @@ class ProgressionTests(unittest.TestCase):
                 db, res = award_progress_once(db, run_id="os", event="wave_cleared",
                                                sector_id=sector, wave_index=wave)
                 self.assertTrue(res.applied)
+                if wave == 1:
+                    unchanged, denied = award_progress_once(
+                        db, run_id="os", event="wave_cleared",
+                        sector_id=sector, wave_index=3)
+                    self.assertIs(unchanged, db)
+                    self.assertEqual(denied.reason, "prerequisites_missing")
+                if wave == 4:
+                    unchanged, denied = award_progress_once(
+                        db, run_id="os", event="boss_killed", sector_id=sector)
+                    self.assertIs(unchanged, db)
+                    self.assertEqual(denied.reason, "prerequisites_missing")
             db, res = award_progress_once(db, run_id="os", event="boss_killed", sector_id=sector)
             self.assertTrue(res.applied)
             db, res = award_progress_once(db, run_id="os", event="sector_cleared", sector_id=sector)
@@ -213,6 +232,23 @@ class StorageTests(unittest.TestCase):
             outcomes = list(pool.map(award, range(12)))
         self.assertEqual(sum(outcome.applied for outcome in outcomes), 1)
         self.assertEqual(self.store.load().xp, 25)
+
+    def test_failed_run_closure_is_retriable_without_losing_xp(self):
+        before, _ = self.store.grant_xp_once(
+            run_id="crash", event_id="earned", amount=37)
+        with patch.object(storage.os, "replace", side_effect=OSError("disk full")):
+            with self.assertLogs("neonvoid.database_storage", "WARNING"):
+                unchanged, outcome = self.store.close_run_once(
+                    run_id="crash", status="dead")
+        self.assertFalse(outcome.applied)
+        self.assertEqual(outcome.reason, "save_failed")
+        self.assertEqual(unchanged, before)
+        self.assertEqual(self.store.load(), before)
+        closed, outcome = self.store.close_run_once(run_id="crash", status="dead")
+        self.assertTrue(outcome.applied)
+        self.assertEqual(closed.xp, 37)
+        _, repeated = self.store.close_run_once(run_id="crash", status="dead")
+        self.assertEqual(repeated.reason, "run_closed")
 
     def test_terminal_run_persists_prior_xp(self):
         db, _ = self.store.grant_xp_once(run_id="dead", event_id="earned", amount=25)

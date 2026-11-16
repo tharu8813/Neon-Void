@@ -126,7 +126,7 @@ Non-success reasons:
 | Reason | Meaning |
 |---|---|
 | `duplicate` | XP event receipt already present, no XP awarded |
-| `prerequisites_missing` | Sector clean needs wave 5 + boss receipts; OS clean needs 4 sector-clean receipts |
+| `prerequisites_missing` | Waves must be awarded in order; boss requires all five wave receipts; sector clean requires five waves + boss; OS clean requires four sectors |
 | `run_closed` | XP denied after death, abandonment or successful extraction; repeated run close |
 | `sectors_not_clean` | At least 1 of the four IDs or their durable clean/OS receipts is absent |
 | `run_failed_or_closed` | Defeat/abandon flag supplied or run has terminal status |
@@ -155,12 +155,12 @@ boss kill 75, sector clean 50, OS clean 200. Different OS instances **must**
 use independent stable run IDs (e.g. `uuid.uuid4().hex`). Never reassign a
 historical run ID to a new OS. For each sector award:
 
-1. `event="wave_cleared", sector_id=..., wave_index=1..5`;
+1. `event="wave_cleared", sector_id=..., wave_index=1..5` **in order** (a wave cannot skip earlier receipts);
 2. `event="boss_killed", sector_id=...` once for its boss;
 3. `event="sector_cleared", sector_id=...` after wave 5 and boss;
 4. after all four sector clean receipts, `event="os_cleaned"` once.
 
-These can be safely retried: no progress receipt is duplicated. Sector
+The extraction validator also verifies **all 29 durable receipts** (four sectors × five waves, boss, sector clean; plus OS clean), even when lower-level generic XP receipts were written directly. A fabricated wave-5/sector-clear-only record cannot authorize an archive copy.\n\nThese can be safely retried: no progress receipt is duplicated. Sector
 re-entry/replayed wave completion does not grant another XP reward. For
 extraction, both current `clean_sector_ids` **and** the stored four sector
 receipts plus OS-clean receipt are required. This makes a caller passing
