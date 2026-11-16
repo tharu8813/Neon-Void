@@ -24,7 +24,10 @@ func seed_from_digest(digest: PackedByteArray) -> void:
     for i in range(4):
         high = (high << 8) | int(digest[i])
         low = (low << 8) | int(digest[i + 4])
-    var words: Array[int] = [low, high] if high > 0 else [low]
+    var words: Array[int] = []
+    words.append(low)
+    if high > 0:
+        words.append(high)
     seed_words(words)
 
 func seed_words(words: Array[int]) -> void:
