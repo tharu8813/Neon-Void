@@ -10,7 +10,8 @@ from __future__ import annotations
 import math
 import string
 
-ACTION_ORDER = ("up", "down", "left", "right", "dash", "pause")
+ACTION_ORDER = ("up", "down", "left", "right", "dash", "pause",
+                "skill_pulse", "skill_guard")
 ACTION_LABELS = {
     "up": "위로 이동",
     "down": "아래로 이동",
@@ -18,6 +19,8 @@ ACTION_LABELS = {
     "right": "오른쪽 이동",
     "dash": "대시",
     "pause": "일시정지",
+    "skill_pulse": "충격파 스킬",
+    "skill_guard": "보호막 스킬",
 }
 DEFAULT_BINDINGS = {
     "up": "w",
@@ -26,13 +29,15 @@ DEFAULT_BINDINGS = {
     "right": "d",
     "dash": "space",
     "pause": "p",
+    "skill_pulse": "q",
+    "skill_guard": "e",
 }
 RESERVED_KEYS = frozenset(("m", "r", "o"))
 ALLOWED_KEYS = (frozenset(string.ascii_lowercase) - RESERVED_KEYS) | frozenset(("space",))
 
 
 def validate_bindings(bindings):
-    """Validate a complete six-action mapping and normalize key names."""
+    """Validate the complete action mapping and normalize key names."""
     if not isinstance(bindings, dict) or set(bindings) != set(ACTION_ORDER):
         raise ValueError("Expected one key binding per action")
     output = {}
@@ -47,6 +52,31 @@ def validate_bindings(bindings):
     if len(set(output.values())) != len(ACTION_ORDER):
         raise ValueError("Each action must use a different key")
     return output
+
+
+def migrate_v2_bindings(bindings):
+    """Preserve six existing bindings and assign nonconflicting new skill keys."""
+    legacy = ACTION_ORDER[:6]
+    if not isinstance(bindings, dict) or set(bindings) != set(legacy):
+        raise ValueError("Invalid old bindings")
+    old = {}
+    for action in legacy:
+        key = bindings[action]
+        if type(key) is not str or key.lower().strip() not in ALLOWED_KEYS:
+            raise ValueError("Invalid legacy key")
+        old[action] = key.lower().strip()
+    if len(set(old.values())) != len(old):
+        raise ValueError("Duplicate legacy key")
+    used = set(old.values())
+    for action, preferred in (("skill_pulse", "q"), ("skill_guard", "e")):
+        for candidate in (preferred, "f", "g", "h", "j", "k", "l", "z", "x", "c"):
+            if candidate not in used:
+                old[action] = candidate
+                used.add(candidate)
+                break
+        else:
+            raise ValueError("No free skill key")
+    return validate_bindings(old)
 
 
 def rebind_action(bindings, action, key):

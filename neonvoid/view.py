@@ -578,7 +578,7 @@ class VisualMixin:
                 (ACTION_LABELS[action], self.settings.bindings[action].upper())
                 for action in ACTION_ORDER
             ]
-            first_y, row_step, row_height = 206, 56, 46
+            first_y, row_step, row_height = 207, 42, 36
         else:
             prefs = self.settings
             items = [
