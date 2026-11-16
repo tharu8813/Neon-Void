@@ -22,6 +22,7 @@ var events: Array[Dictionary] = []
 var wave: int = 1
 var active: bool = false
 var paused: bool = false
+var external_invulnerability_clock: bool = false
 var boss_kind: String = ""
 var boss_defeated: bool = false
 var wave_ready_sent: bool = false
@@ -123,7 +124,9 @@ func step_fixed() -> void:
     if not active or paused:
         return
     frames += 1
-    player["inv"] = maxf(0.0, float(player["inv"]) - DT)
+    # With B player attached, its own P3 simulation already decrements inv.
+    if not external_invulnerability_clock:
+        player["inv"] = maxf(0.0, float(player["inv"]) - DT)
     player["pulse_cd"] = maxf(0.0, float(player["pulse_cd"]) - DT)
     player["guard_cd"] = maxf(0.0, float(player["guard_cd"]) - DT)
     player["guard"] = maxf(0.0, float(player["guard"]) - DT)
