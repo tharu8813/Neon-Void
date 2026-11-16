@@ -72,7 +72,7 @@ def main():
             game.enemies.clear()
             if wave == 5:
                 boss = game.make_enemy(game.current_encounter.boss_kind)
-                game.damage_enemy(boss, boss.hp + 1)
+                game.damage_enemy(boss, boss.hp * 4 + 1)
                 assert game.boss_defeated
             game.check_wave(0.8)
             assert game.world.sector_waves["cpu"] == wave
