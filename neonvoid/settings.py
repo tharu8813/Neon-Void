@@ -14,7 +14,10 @@ from .controls import (DEFAULT_BINDINGS, migrate_v2_bindings,
                        migrate_v3_bindings, validate_bindings)
 from .storage import quarantine_corrupt
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+DISPLAY_MODES = ("windowed", "fullscreen", "borderless")
+MIN_WIDTH, MIN_HEIGHT = 720, 405
+MAX_WIDTH, MAX_HEIGHT = 7680, 4320
 LOG = logging.getLogger(__name__)
 
 
@@ -24,6 +27,9 @@ class Settings:
     muted: bool = False
     show_fps: bool = False
     reduced_effects: bool = False
+    display_mode: str = "windowed"
+    window_width: int = 1280
+    window_height: int = 720
     bindings: dict[str, str] = field(default_factory=lambda: DEFAULT_BINDINGS.copy())
 
 
@@ -31,7 +37,7 @@ def _validated(data: object) -> Settings:
     if not isinstance(data, dict):
         raise ValueError("Settings must be a JSON object")
     version = data.get("schema_version", 1)
-    if type(version) is not int or version not in (1, 2, 3, SCHEMA_VERSION):
+    if type(version) is not int or version not in (1, 2, 3, 4, SCHEMA_VERSION):
         raise ValueError(f"Unsupported settings schema: {version!r}")
     value = data.get("volume", 0.9)
     if type(value) not in (int, float) or not math.isfinite(value):
@@ -42,6 +48,15 @@ def _validated(data: object) -> Settings:
         if type(flag) is not bool:
             raise ValueError(f"Invalid settings boolean: {name}")
         flags[name] = flag
+    mode = data.get("display_mode", "windowed")
+    if mode not in DISPLAY_MODES or type(mode) is not str:
+        raise ValueError("Invalid display mode")
+    width = data.get("window_width", 1280)
+    height = data.get("window_height", 720)
+    if type(width) is not int or not MIN_WIDTH <= width <= MAX_WIDTH:
+        raise ValueError("Invalid window width")
+    if type(height) is not int or not MIN_HEIGHT <= height <= MAX_HEIGHT:
+        raise ValueError("Invalid window height")
     # Preserve version-2 custom controls even if they used Q or E.
     if version == 1:
         bindings = DEFAULT_BINDINGS.copy()
@@ -52,7 +67,8 @@ def _validated(data: object) -> Settings:
     else:
         bindings = validate_bindings(data.get("bindings"))
     return Settings(volume=max(0.0, min(1.0, float(value))),
-                    bindings=bindings, **flags)
+                    display_mode=mode, window_width=width,
+                    window_height=height, bindings=bindings, **flags)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:
