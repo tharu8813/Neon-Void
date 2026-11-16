@@ -191,3 +191,19 @@ static func _recover_locked(slot_path: String) -> Dictionary:
     if not _atomic_write(file, backup.bytes):
         return {"ok": false, "reason": "restore_failed"}
     return {"ok": true, "reason": "restored", "revision": valid.revision}
+
+static func persist_document(slot_path: String, filename: String, document: Dictionary) -> Dictionary:
+    ## UI-safe settings / statistics writer. Database and checkpoints can
+    ## ONLY be changed by receipt / revision guarded progression APIs.
+    if not filename in ["save.json", "settings.json", "profile.json"]:
+        return {"applied": false, "reason": "reserved_document"}
+    var converted: Dictionary = Validator.convert(filename, document)
+    if not converted.ok:
+        return {"applied": false, "reason": "invalid_document"}
+    return transact(slot_path, func(state):
+        if JSON.stringify(state[filename], "", true, true) == JSON.stringify(converted.value, "", true, true):
+            return {"ok": true, "changed": false, "reason": "unchanged"}
+        var updated: Dictionary = state.duplicate(true)
+        updated[filename] = converted.value
+        return {"ok": true, "changed": true, "reason": "document_saved", "state": updated}
+    )
