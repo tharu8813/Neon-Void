@@ -98,7 +98,20 @@ func _test() -> void:
         require(state.state["antivirus_db.json"].processed_extractions.size() == 1,
             "extraction idempotency receipt exists")
     require(str(game.get("mode")) == "title", "ready for next OS after extraction")
+    if not equipped.is_empty():
+        var archived_choice: String = str(equipped.keys()[0])
+        require(game.call("select_archived_software", archived_choice), "select archived starting software")
     require(game.call("start_new_run"), "new OS deployment after safe extraction")
+    if not equipped.is_empty():
+        require(int(game.get("software").levels.get(str(equipped.keys()[0]), 0)) == 1,
+            "archived software equipped in the next OS")
+    game.call("_on_setting_change", "volume", 0.55)
+    game.call("_on_binding_change", "dash", "z")
+    state = Store.read(slot)
+    require(state.get("ok", false) and is_equal_approx(float(state.state["settings.json"].volume), 0.55),
+        "changed volume persisted through E settings transaction")
+    require(str(state.state["settings.json"].bindings.dash) == "z", "rebound dash saved without overwriting game progress")
+    require(str(game.get_node("InputController").bindings.dash) == "z", "B input map updated after safe save")
     require(game.call("abandon_checkpoint"), "explicit abandon closes run and clears checkpoint")
     game.get_parent().remove_child(game)
     game.free()
