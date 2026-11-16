@@ -8,6 +8,8 @@ from .content.enemies import E_PARAMS
 from .controls import ACTION_ORDER, ACTION_LABELS
 from .content.upgrades import UP_BY_ID
 from .combat import effective_armor, skill_cost
+from .world.session import (WORLD_W, WORLD_H, SECTOR_NAMES, AVAILABLE_SECTORS,
+                            CPU_EXIT, START, camera_for)
 from .constants import (W, H, DT, TAU, clamp, rnd, C_GRID, C_STAR, C_PLAYER, C_PLAYER_GLOW, C_RUSH, C_BOSS, C_SHARD, C_TEXT, C_DIM, C_HP, C_BAD, C_GOLD, F_TITLE, F_HUGE, F_BIG, F_MID, F_UI, F_HUD, F_NUM, F_MONO, RARITY_COL, RARITY_NAME)
 
 class VisualMixin:
@@ -611,11 +613,13 @@ class VisualMixin:
         self.pause_title = c.create_text(W / 2, H / 2 - 60, text="PAUSED",
                                          fill=C_PLAYER, font=F_HUGE, tags="ovl")
         c.create_text(W / 2, H / 2 - 10,
-                      text=f"WAVE {self.wave}   ·   SCORE {self.score:,}",
+                      text=("SYSTEM HUB · " + self.world.room.upper())
+                      if self.state == "hub" else
+                      f"WAVE {self.wave}   ·   SCORE {self.score:,}",
                       fill=C_TEXT, font=F_MID, tags="ovl")
         c.create_text(W / 2, H / 2 + 40, text=f"{self.settings.bindings['pause'].upper()}  ·  계속하기",
                       fill=C_DIM, font=F_UI, tags="ovl")
-        c.create_text(W / 2, H / 2 + 66, text="R  ·  재시작",
+        c.create_text(W / 2, H / 2 + 66, text="F  ·  시설 상호작용" if self.state == "hub" else "R  ·  재시작",
                       fill=C_DIM, font=F_UI, tags="ovl")
         c.create_text(W / 2, H / 2 + 108, text="O  ·  게임 설정",
                       fill=C_PLAYER, font=F_UI, tags="ovl")
@@ -646,7 +650,7 @@ class VisualMixin:
                 (ACTION_LABELS[action], self.settings.bindings[action].upper())
                 for action in ACTION_ORDER
             ]
-            first_y, row_step, row_height = 207, 42, 36
+            first_y, row_step, row_height = 201, 39, 33
         else:
             prefs = self.settings
             items = [
@@ -727,6 +731,11 @@ class VisualMixin:
         self.pool_line.end()
         self.pool_drone.end()
 
+        if self.state == "hub":
+            self._render_hub()
+        elif self.state in ("play", "upgrade") and self.world.active_sector:
+            self._render_sector_gate()
+
         if self.state == "play":
             self._update_hud()
         if self.banner_t > 0 and self.state == "play":
@@ -753,7 +762,7 @@ class VisualMixin:
             self._animate_upgrade_cards()
         elif self.state == "dead":
             self._animate_game_over()
-        if self.paused and self.state == "play":
+        if self.paused and self.state in ("play", "hub"):
             self._animate_pause()
         self._update_audio_hud()
         if self.show_fps:
@@ -768,8 +777,149 @@ class VisualMixin:
         elif getattr(self, "_fps_item", None):
             c.itemconfigure(self._fps_item, state="hidden")
         self._render_screen_fx()
+        c.tag_raise("ovl")
+        c.tag_raise("cfg")
         self.draw_cursor()
         c.tag_raise("cursor")
+
+    # ----------------------------------------------------------- 인월드 허브
+    def _render_hub(self):
+        """Draw a scrolling 2400x1560 world instead of a menu selection UI."""
+        c = self.c
+        c.delete("hub-world")
+        world = self.world
+        p = self.p
+        cx, cy = camera_for(p.x, p.y, W, H)
+        base = world.room == "base"
+        c.create_rectangle(0, 0, W, H, fill="#071322" if base else "#090f20",
+                           outline="", tags="hub-world")
+        # World-space grid follows the camera; local canvas coordinates stay
+        # bounded and the renderer creates only visible tiles each frame.
+        for wx in range(int(cx // 120) * 120, int(cx + W) + 121, 120):
+            x = wx - cx
+            c.create_line(x, 0, x, H, fill="#153043" if base else "#27243e",
+                          tags="hub-world")
+        for wy in range(int(cy // 120) * 120, int(cy + H) + 121, 120):
+            y = wy - cy
+            c.create_line(0, y, W, y, fill="#153043" if base else "#27243e",
+                          tags="hub-world")
+
+        hx, hy = START[0] - cx, START[1] - cy
+        for node in world.nodes():
+            sx, sy = node.x - cx, node.y - cy
+            if not (-160 < sx < W + 160 and -160 < sy < H + 160):
+                continue
+            c.create_line(hx, hy, sx, sy, fill="#19384b" if base else "#29314c",
+                          width=12, tags="hub-world")
+            c.create_line(hx, hy, sx, sy, fill="#19485d" if base else "#40415d",
+                          width=2, dash=(12, 13), tags="hub-world")
+
+        # Structures in the hub have matching collision rectangles.
+        for x0, y0, x1, y1 in __import__(
+                "neonvoid.world.session", fromlist=["PILLARS"]).PILLARS:
+            c.create_rectangle(x0-cx, y0-cy, x1-cx, y1-cy,
+                               fill="#15384c", outline="#3f7185", width=2,
+                               tags="hub-world")
+
+        pulse = math.sin(self.ui_t * 2.1)
+        c.create_oval(hx - 72, hy - 72, hx + 72, hy + 72,
+                      outline="#1a5260", width=4, tags="hub-world")
+        c.create_oval(hx - 47, hy - 47, hx + 47, hy + 47,
+                      outline="#2a7a8b", width=2, tags="hub-world")
+        c.create_text(hx, hy - 96,
+                      text="ANTIVIRUS CORE" if base else "OS SYSTEM JUNCTION",
+                      fill="#7ec9db", font=F_MID, tags="hub-world")
+
+        near = world.nearest(p.x, p.y)
+        for node in world.nodes():
+            sx, sy = node.x - cx, node.y - cy
+            if not (-160 < sx < W + 160 and -160 < sy < H + 160):
+                continue
+            available = (base or node.id not in SECTOR_NAMES
+                         or node.id in AVAILABLE_SECTORS)
+            cleaned = node.id in world.sector_clean
+            color = ("#42d7aa" if cleaned else
+                     "#65e9fc" if available else "#62647e")
+            highlight = node == near
+            radius = 43 if highlight else 38
+            c.create_oval(sx-radius, sy-radius, sx+radius, sy+radius,
+                          fill="#102c37" if available else "#171727",
+                          outline=color, width=3 if highlight else 2,
+                          tags="hub-world")
+            if highlight:
+                c.create_oval(sx-radius-9, sy-radius-9,
+                              sx+radius+9, sy+radius+9,
+                              outline="#34718b", width=2, tags="hub-world")
+            c.create_text(sx, sy-64, text=node.label, fill=color,
+                          font=F_HUD, tags="hub-world")
+            caption = ("CLEAN" if cleaned else
+                       f"WAVE {world.sector_waves[node.id]}/5" if
+                       node.id in AVAILABLE_SECTORS else
+                       "SEALED" if not available else "ACTIVE TERMINAL")
+            c.create_text(sx, sy+64, text=caption,
+                          fill="#779ab3" if available else "#6b6b85",
+                          font=F_MONO, tags="hub-world")
+
+        # Player is in the world, not a selectable cursor or a title-screen icon.
+        px, py = p.x - cx, p.y - cy
+        body = self._arrow(px, py, 19.0 + 1.3 * pulse, p.aim)
+        c.create_oval(px-29, py-29, px+29, py+29,
+                      outline="#237a92", width=2, tags="hub-world")
+        c.create_polygon(*[value for pt in body for value in pt],
+                         fill="#70f0ff", outline="#d9ffff", width=2,
+                         tags="hub-world")
+        c.create_oval(px-4, py-4, px+4, py+4, fill="#f6ffff",
+                      outline="", tags="hub-world")
+
+        c.create_rectangle(12, 12, 493, 75, fill="#061322",
+                           outline="#284c5c", tags="hub-world")
+        c.create_text(28, 29, anchor="w",
+                      text="SYSTEM HUB" if base else "OPERATING SYSTEM  /  INFECTED",
+                      fill="#72ecf8", font=F_MID, tags="hub-world")
+        c.create_text(28, 56, anchor="w",
+                      text=("백신 준비 · 배포 게이트로 이동하세요" if base else
+                            f"CPU {world.sector_waves['cpu']}/5  ·  정화된 구역 "
+                            f"{len(world.sector_clean)}/4"),
+                      fill="#98b8ca", font=F_UI, tags="hub-world")
+
+        c.create_text(W - 17, 27, anchor="e",
+                      text=f"이동 WASD / 방향키  ·  대시 Shift  ·  설정 O",
+                      fill="#6c9cb0", font=F_UI, tags="hub-world")
+        action_key = self.settings.bindings["interact"].upper()
+        if near:
+            prompt = (f"[{action_key}]  {near.label}" +
+                      ("  ·  콘텐츠 연결 대기" if (not base and
+                       near.id in SECTOR_NAMES and
+                       near.id not in AVAILABLE_SECTORS) else
+                       "  ·  상호작용"))
+            c.create_rectangle(W/2-270, H-95, W/2+270, H-49,
+                               fill="#0a2736", outline="#397b93",
+                               tags="hub-world")
+            c.create_text(W/2, H-72, text=prompt, fill="#c6f8ff",
+                          font=F_UI, tags="hub-world")
+        if self.world_notice_t > 0:
+            c.create_text(W/2, H-23, text=self.world_notice,
+                          fill="#ffd37c", font=F_UI, tags="hub-world")
+
+    def _render_sector_gate(self):
+        """The CPU exit is physically approached; it never auto-teleports."""
+        c = self.c
+        c.delete("sector-gate")
+        if self.world.active_sector != "cpu":
+            return
+        x, y = CPU_EXIT
+        near = math.hypot(self.p.x-x, self.p.y-y) < 112.0
+        tone = "#78f0cf" if near else "#327e8b"
+        c.create_rectangle(24, y-76, 70, y+76, fill="#0a2531",
+                           outline=tone, width=3, tags="sector-gate")
+        c.create_line(48, y-56, 48, y+56, fill=tone, width=3,
+                      tags="sector-gate")
+        c.create_text(128, y-115, text="OS HUB EXIT",
+                      fill=tone, font=F_HUD, tags="sector-gate")
+        if near:
+            c.create_text(160, y+112,
+                          text=f"[{self.settings.bindings['interact'].upper()}] 복귀",
+                          fill="#d4fbff", font=F_UI, tags="sector-gate")
 
     def _animate_pause(self):
         appear = clamp(self.pause_t / 0.24, 0, 1)
