@@ -56,7 +56,10 @@ static func import_legacy(source_directory: String, target_slot: String = "user:
         var result: Dictionary = Validator.validate(name, parsed.data)
         if not result.ok:
             return {"ok": false, "reason": "source_" + name + "_" + result.reason}
-        state[name] = parsed.data
+        var converted: Dictionary = Validator.convert(name, parsed.data)
+        if not converted.ok:
+            return {"ok": false, "reason": "conversion_" + name + "_" + converted.reason}
+        state[name] = converted.value
         originals[name] = raw.bytes
         provenance[name] = {"present": true, "sha256": _digest(raw.bytes),
             "bytes": raw.bytes.size(), "schema_version": parsed.data.get("schema_version", 0)}
