@@ -1,0 +1,30 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/player/legacy_player.gd" id="1_player"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_visual"]
+radius = 0.13
+height = 0.26
+
+[sub_resource type="StandardMaterial3D" id="Material_visual"]
+albedo_color = Color(0.435, 0.949, 1, 1)
+roughness = 0.35
+
+[sub_resource type="SphereShape3D" id="SphereShape_hit"]
+radius = 0.13
+
+[node name="LegacyPlayer" type="Node3D"]
+script = ExtResource("1_player")
+
+[node name="PlayerVisual" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.13, 0)
+mesh = SubResource("SphereMesh_visual")
+material_override = SubResource("Material_visual")
+
+[node name="HitArea" type="Area3D" parent="."]
+collision_layer = 2
+collision_mask = 4
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HitArea"]
+position = Vector3(0, 0.13, 0)
+shape = SubResource("SphereShape_hit")
