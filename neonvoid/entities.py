@@ -51,7 +51,7 @@ class Player:
 class Enemy:
     __slots__ = ("kind", "x", "y", "vx", "vy", "hp", "maxhp", "r",
                  "t", "cd", "state", "ang", "flash", "score", "spd", "dmg",
-                 "armor", "statuses")
+                 "armor", "statuses", "guard_t")
 
     def __init__(self):
         self.kind = "drifter"
@@ -69,12 +69,14 @@ class Enemy:
         self.dmg = 8.0
         self.armor = 0.0
         self.statuses = []
+        self.guard_t = 0.0
 
 
 class Bullet:
     __slots__ = ("x", "y", "vx", "vy", "r", "dmg", "life", "pierce",
                  "homing", "explode", "ricochet", "crit", "chain",
-                 "color", "dead", "hits", "friendly", "armor_pen")
+                 "color", "dead", "hits", "friendly", "armor_pen",
+                 "infection_on_hit")
 
     def __init__(self):
         self.x = self.y = 0.0
@@ -93,6 +95,7 @@ class Bullet:
         self.hits = []
         self.friendly = True
         self.armor_pen = 0.0
+        self.infection_on_hit = 0.0
 
 
 class Particle:

@@ -88,11 +88,12 @@ def main():
         assert game.state == "hub" and game.world.room == "os"
         game.p.x, game.p.y = 1960, 780
         game.interact_hub()
-        assert game.state == "hub"
-        assert game.world.active_sector is None
-        assert "연결 대기" in game.world_notice
+        assert game.state == "play" and game.world.active_sector == "memory"
+        assert game.wave == 1
+        game.p.x, game.p.y = CPU_EXIT
+        game.leave_sector()
         game.render()
-        print("[gui-world] hub, settings, deploy, CPU retreat/5 waves and sealed gates passed")
+        print("[gui-world] hub, deploy, CPU retreat/clear, Memory gate passed")
     finally:
         root.destroy()
 
