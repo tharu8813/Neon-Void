@@ -57,50 +57,93 @@ jobs:
           $editor = Get-ChildItem -Path $target -Filter '*win64.exe' -File | Select-Object -First 1
           if (-not $editor) { throw 'Pinned Godot Windows executable not found' }
           "NEON_GODOT=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Editor import, static parse, script smoke, scene boot
+      - name: Linux editor import, static parse, persistence smoke, scene boot
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$NEON_GODOT" --version
+          "$NEON_GODOT" --headless --path godot --editor --import --quit
+          "$NEON_GODOT" --headless --path godot --script res://tests/port_smoke.gd
+          "$NEON_GODOT" --headless --path godot --script res://tests/persistence_smoke.gd
+          "$NEON_GODOT" --headless --path godot --quit-after 3
+      - name: Windows editor import, static parse, persistence smoke, scene boot
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & $env:NEON_GODOT --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --editor --import --quit
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --script res://tests/port_smoke.gd
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --script res://tests/persistence_smoke.gd
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --quit-after 3
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = 'Stop'
+          # Godot's Windows editor is GUI-subsystem; '&' can return before it exits.
+          # Use Start-Process -Wait and assert the actual exit code on EVERY check.
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "Process failed: $binary $arguments (exit $($p.ExitCode))" }
+          }
+          Invoke-CheckedProcess $env:NEON_GODOT '--version'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --editor --import --quit'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --script res://tests/port_smoke.gd'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --script res://tests/persistence_smoke.gd'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --quit-after 3'
 
   windows-export:
-    # Full templates exceed 1.2GB. This expensive binary export check is
-    # opt-in to avoid downloading them on every ordinary code-only PR.
-    if: github.event_name == 'workflow_dispatch'
-    name: Windows x64 export smoke (manual, full templates)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Automated Windows export is required for Godot PRs.
+    # Passing headless checks does not prove on-screen GPU rendering or DPI.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    name: Windows x64 export and executable headless boot
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Download editor and Windows export template
-        shell: bash
+      - name: Install pinned Godot editor and Windows x64 export template
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/godot"
-          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v${GODOT_TAG}_linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
-          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
-          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v$GODOT_TAG_export_templates.tpz" -o "$RUNNER_TEMP/templates.tpz"
-          mkdir -p "$RUNNER_TEMP/extracted" "$HOME/.local/share/godot/export_templates/$GODOT_VERSION.stable"
-          unzip -q "$RUNNER_TEMP/templates.tpz" 'templates/windows_release_x86_64.exe' -d "$RUNNER_TEMP/extracted"
-          cp "$RUNNER_TEMP/extracted/templates/windows_release_x86_64.exe" "$HOME/.local/share/godot/export_templates/$GODOT_VERSION.stable/"
-          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64" >> "$GITHUB_ENV"
-          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64"
-      - name: Import and produce Windows executable
-        shell: bash
+          $ErrorActionPreference = 'Stop'
+          $editorDir = Join-Path $env:RUNNER_TEMP 'godot-editor'
+          New-Item -ItemType Directory -Path $editorDir -Force | Out-Null
+          $uri = 'https://github.com/godotengine/godot-builds/releases/download/' + $env:GODOT_TAG + '/Godot_v' + $env:GODOT_TAG + '_win64.exe.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'godot-editor.zip'
+          Invoke-WebRequest -Uri $uri -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $editorDir
+          $editor = Get-ChildItem -Path $editorDir -Filter '*win64.exe' -File | Select-Object -First 1
+          if (-not $editor) { throw 'Pinned Windows editor not found' }
+          "NEON_GODOT=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $uri = 'https://github.com/godotengine/godot-builds/releases/download/' + $env:GODOT_TAG + '/Godot_v' + $env:GODOT_TAG + '_export_templates.tpz'
+          $templateFile = Join-Path $env:RUNNER_TEMP 'godot-templates.tpz'
+          Invoke-WebRequest -Uri $uri -OutFile $templateFile
+          # TPZ is a ZIP. Extract only the x64 release binary, not all platforms.
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $destination = Join-Path $env:APPDATA ('Godot/export_templates/' + $env:GODOT_VERSION + '.stable')
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($templateFile)
+          try {
+            $entry = $archive.GetEntry('templates/windows_release_x86_64.exe')
+            if (-not $entry) { throw 'Windows x64 release template missing' }
+            $binary = Join-Path $destination 'windows_release_x86_64.exe'
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $binary, $true)
+          } finally {
+            $archive.Dispose()
+          }
+          if (-not (Test-Path $binary)) { throw 'Export template not extracted' }
+      - name: Import, export, headless-boot exported Windows binary
+        shell: pwsh
         run: |
-          set -euo pipefail
-          "$NEON_GODOT" --headless --path godot --editor --import --quit
-          mkdir -p godot/build
-          "$NEON_GODOT" --headless --path godot --export-release "Windows Desktop" build/NeonVoid3D.exe
-          test -s godot/build/NeonVoid3D.exe
+          $ErrorActionPreference = 'Stop'
+          # Godot's standard Windows executable is GUI-subsystem, so PowerShell
+          # does NOT reliably await it via '&' or populate LASTEXITCODE.
+          # Start-Process -Wait yields a real process exit code.
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "Process failed with exit code $($p.ExitCode): $binary $arguments" }
+          }
+          Invoke-CheckedProcess $env:NEON_GODOT '--version'
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --editor --import --quit'
+          New-Item -ItemType Directory -Path 'godot/build' -Force | Out-Null
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --export-release "Windows Desktop" build/NeonVoid3D.exe'
+          $exe = (Resolve-Path 'godot/build/NeonVoid3D.exe').Path
+          if ((Get-Item $exe).Length -le 0) { throw 'Empty Windows export' }
+          Invoke-CheckedProcess $exe '--headless --quit-after 3'
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
+          "Windows x64 export and headless boot passed. SHA256: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - uses: actions/upload-artifact@v4
         with:
           name: NeonVoid3D-windows-export-smoke
