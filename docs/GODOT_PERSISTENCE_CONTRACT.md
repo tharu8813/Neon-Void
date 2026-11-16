@@ -59,8 +59,7 @@ support needs a separately reviewed format.
 ## Runtime transaction and recovery
 
 `save_store.gd` manages one envelope containing all five documents:
-`{format:1, revision:N, payload_sha256:..., payload:{...}}`. All keys,
-current payload schema and the SHA-256 are revalidated before use.
+`{format:1, revision:N, payload_sha256:..., payload_json:"..."}`. The SHA-256 is computed over the **exact serialized payload_json string** to\navoid type-representation changes after parsing; the inner JSON and all\ncurrent schema fields are revalidated before use.
 A runtime mutation takes a directory lock (`<slot>.write-lock`), re-reads
 the current envelope, computes a new immutable-style state, validates it,
 writes the old full snapshot to `state.json.bak`, writes a synced temporary
