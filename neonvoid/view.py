@@ -389,7 +389,9 @@ class VisualMixin:
         else:
             c.coords(bar, x0, top, x1, bottom)
             glow = 0.6 + 0.4 * math.sin(self.ui_t * 6.4)
-            c.itemconfigure(bar, fill="#ffffff" if glow > 0.86 else color)
+            ready_color = (color if self.settings.reduced_effects else
+                           "#ffffff" if glow > 0.86 else color)
+            c.itemconfigure(bar, fill=ready_color)
             c.itemconfigure(bg, fill="#102b34")
 
     def _update_danger_vignette(self, hp_ratio):
@@ -434,7 +436,8 @@ class VisualMixin:
         elif ratio > 0.25:
             col = C_GOLD
         else:
-            col = C_BAD if math.sin(self.ui_t * 9.0) > -0.2 else "#ff9bb0"
+            col = (C_BAD if self.settings.reduced_effects or
+                   math.sin(self.ui_t * 9.0) > -0.2 else "#ff9bb0")
         c.itemconfigure(self.hp_fg, fill=col)
         c.itemconfigure(self.hp_txt, text=f"{int(p.hp)} / {int(p.maxhp)}")
         st = p.st
@@ -520,9 +523,10 @@ class VisualMixin:
             c.itemconfigure(bg, state="normal")
             if i < p.charges:
                 fill = C_PLAYER
-                if p.charges >= n and math.sin(self.ui_t * 6.4) > 0.7:
+                if (not self.settings.reduced_effects and p.charges >= n
+                        and math.sin(self.ui_t * 6.4) > 0.7):
                     fill = "#b8ffff"
-                if self.dash_ready_t > 0:
+                if self.dash_ready_t > 0 and not self.settings.reduced_effects:
                     fill = "#ffffff" if self.dash_ready_t > 0.35 else fill
                 c.coords(fg, x0, 44, x0 + 24, 50)
                 c.itemconfigure(fg, fill=fill, state="normal")
@@ -606,7 +610,8 @@ class VisualMixin:
                      W / 2 - 298 + 596 * r, 94)
             pulse = 0.75 + 0.25 * math.sin(self.ui_t * 6.0)
             c.itemconfigure(self.boss_fg,
-                            fill=C_BOSS if pulse > 0.85 else "#ff8cf6")
+                            fill=C_BOSS if self.settings.reduced_effects or
+                            pulse > 0.85 else "#ff8cf6")
             phase = (max(1, self.boss.state) if self.boss.kind == "boss"
                      else boss_phase(r))
             label = f"{self.boss.kind.upper()}  ·  PHASE {phase}"
