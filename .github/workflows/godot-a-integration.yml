@@ -1,0 +1,78 @@
+name: Godot A integrated gameplay checks
+
+on:
+  pull_request:
+    paths:
+      - 'godot/**'
+      - '.github/workflows/godot-a-integration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'godot/**'
+      - '.github/workflows/godot-a-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_TAG: '4.7.2-stable'
+
+jobs:
+  integration:
+    name: A 4x5 main scene integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.7.2 Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v${GODOT_TAG}_linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
+          mkdir -p "$RUNNER_TEMP/godot"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64"
+          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Install Godot 4.7.2 Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'godot'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $url = "https://github.com/godotengine/godot-builds/releases/download/$env:GODOT_TAG/Godot_v$env:GODOT_TAG`_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile (Join-Path $env:RUNNER_TEMP 'godot.zip')
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP 'godot.zip') -DestinationPath $dir
+          $exe = Get-ChildItem -Path $dir -Filter '*win64.exe' -File | Select-Object -First 1
+          if (-not $exe) { throw 'Missing editor' }
+          "NEON_GODOT=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Linux headless import and complete 4x5 integration
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
+          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/integration_smoke.gd
+      - name: Windows headless import and complete 4x5 integration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedGodot([string]$argsText) {
+            $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $argsText -NoNewWindow -PassThru
+            try {
+              if (-not $p.WaitForExit(80000)) {
+                $p.Kill($true)
+                throw "Godot timed out: $argsText"
+              }
+              if ($p.ExitCode -ne 0) { throw "Godot failed: $argsText (exit $($p.ExitCode))" }
+            } finally { $p.Dispose() }
+          }
+          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/integration_smoke.gd'
