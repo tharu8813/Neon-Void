@@ -10,6 +10,7 @@ const SaveBridge = preload("res://scripts/integration/save_bridge.gd")
 const SaveStore = preload("res://scripts/persistence/save_store.gd")
 const Progression = preload("res://scripts/progression/antivirus_progression.gd")
 const CheckpointRules = preload("res://scripts/progression/checkpoint_rules.gd")
+const Bindings = preload("res://scripts/input/legacy_bindings.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 const ARENA_SPAWN: Vector2 = Vector2(195.0, 360.0)
@@ -87,13 +88,21 @@ func _ready() -> void:
         persistence_enabled = false
     if persistence_enabled:
         save_slot = SaveBridge.safe_slot_path()
-        var boot: Dictionary = SaveBridge.ensure_slot(save_slot)
-        if boot.get("ok", false):
-            saved_state = boot["state"]
-            var cp: Variant = saved_state.get("os_checkpoint.json")
-            checkpoint_revision = int(cp.revision) if cp != null else 0
+        if DirAccess.dir_exists_absolute(save_slot):
+            var boot: Dictionary = SaveBridge.ensure_slot(save_slot)
+            if boot.get("ok", false):
+                saved_state = boot["state"]
+                var cp: Variant = saved_state.get("os_checkpoint.json")
+                checkpoint_revision = int(cp.revision) if cp != null else 0
+            else:
+                last_error = "저장 슬롯 접근 실패. 원본은 변경되지 않았습니다: " + str(boot.get("reason", "unknown"))
         else:
-            last_error = "저장 슬롯 접근 실패. 원본은 변경되지 않았습니다: " + str(boot.get("reason", "unknown"))
+            # Never create a blank save on application launch: leave the
+            # default destination free for explicit legacy import.
+            saved_state = SaveStore.fresh_state()
+        if not saved_state.is_empty():
+            controls.call("apply_bindings", saved_state["settings.json"]["bindings"])
+            _apply_runtime_settings(saved_state["settings.json"])
     _make_hub_markers()
     _set_world(false)
     _update_visuals()
@@ -111,6 +120,11 @@ func start_new_run() -> bool:
         if not last_error.is_empty():
             ui.call("show_error", last_error)
             return false
+        if not DirAccess.dir_exists_absolute(save_slot):
+            var initialized: Dictionary = SaveBridge.ensure_slot(save_slot)
+            if not initialized.get("ok", false):
+                ui.call("show_error", "새 저장 슬롯을 생성하지 못했습니다. 기존 데이터는 유지됩니다.")
+                return false
         var current: Dictionary = SaveStore.read(save_slot)
         if not current.get("ok", false):
             ui.call("show_error", "저장 슬롯 확인에 실패해 배포를 중단했습니다.")
@@ -437,14 +451,33 @@ func _on_menu_action(action: String, payload: Dictionary) -> void:
             ui.call("show_error", "현재 연결되지 않은 명령: " + action)
 
 func _on_binding_change(action: String, key: String) -> void:
-    if not controls.call("rebind_action", action, key):
+    var candidate_bindings: Dictionary = Bindings.rebound(controls.get("bindings"), action, key)
+    if candidate_bindings.is_empty():
         ui.call("show_error", "지원하지 않거나 중복된 키 설정입니다.")
+        return
+    var options: Dictionary = saved_state.get("settings.json", SaveStore.fresh_state()["settings.json"]).duplicate(true)
+    options["bindings"] = candidate_bindings
+    if not _commit_options(options):
+        ui.call("show_error", "키 변경을 저장할 수 없어 이전 키 설정을 유지합니다.")
+        return
+    controls.call("apply_bindings", candidate_bindings)
+    _update_hud()
 
 func _on_setting_change(key: String, value: Variant) -> void:
-    if key == "show_fps" or key == "reduced_effects":
-        var snapshot: Dictionary = _hud_snapshot()
-        snapshot["settings"][key] = value
-        ui.call("update_game_state", snapshot)
+    var options: Dictionary = saved_state.get("settings.json", SaveStore.fresh_state()["settings.json"]).duplicate(true)
+    if key == "resolution" and value is Dictionary:
+        options["window_width"] = int(value.get("window_width", options["window_width"]))
+        options["window_height"] = int(value.get("window_height", options["window_height"]))
+    elif key in ["volume", "muted", "display_mode", "show_fps", "reduced_effects"]:
+        options[key] = value
+    else:
+        ui.call("show_error", "허용되지 않은 설정 항목입니다.")
+        return
+    if not _commit_options(options):
+        ui.call("show_error", "설정 변경을 안전하게 저장하지 못했습니다.")
+        return
+    _apply_runtime_settings(options)
+    _update_hud()
 
 func _pause_gameplay() -> void:
     paused = true
@@ -759,3 +792,40 @@ func extract_software(uid: String) -> bool:
     ui.call("open_menu", "title")
     _update_hud()
     return true
+
+func _commit_options(candidate: Dictionary) -> bool:
+    var validation: Dictionary = SaveBridge.Validator.convert("settings.json", candidate)
+    if not validation.get("ok", false):
+        return false
+    if not persistence_enabled:
+        saved_state["settings.json"] = validation["value"]
+        return true
+    if not DirAccess.dir_exists_absolute(save_slot):
+        var initialized: Dictionary = SaveBridge.ensure_slot(save_slot)
+        if not initialized.get("ok", false):
+            return false
+    var before: Dictionary = SaveStore.read(save_slot)
+    if not before.get("ok", false):
+        return false
+    var result: Dictionary = SaveStore.persist_document(save_slot, "settings.json",
+        validation["value"], int(before["revision"]))
+    if not result.get("applied", false) and result.get("reason", "") != "unchanged":
+        return false
+    return _reload_save()
+
+func _apply_runtime_settings(settings: Dictionary) -> void:
+    if DisplayServer.get_name() == "headless":
+        return
+    if AudioServer.get_bus_count() > 0:
+        AudioServer.set_bus_mute(0, bool(settings.get("muted", false)))
+        AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.001, float(settings.get("volume", 0.9)))))
+    var display_mode: String = str(settings.get("display_mode", "windowed"))
+    match display_mode:
+        "fullscreen":
+            DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+        "borderless":
+            DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+        _:
+            DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+            DisplayServer.window_set_size(Vector2i(
+                int(settings.get("window_width", 1280)), int(settings.get("window_height", 720))))
