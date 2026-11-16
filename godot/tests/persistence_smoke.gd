@@ -57,6 +57,10 @@ func _run() -> void:
             "settings version advanced with Python's volume clamp")
         expect(v2_settings.value.bindings.skill_pulse == "q" and v2_settings.value.bindings.skill_guard == "e",
             "legacy v2 key layout extended without conflict")
+    var old_score: Dictionary = Validator.convert("save.json",
+        {"best_score": "007", "best_wave": 4.9, "runs": 2})
+    expect(old_score.ok and old_score.value.best_score == 7 and old_score.value.best_wave == 4,
+        "legacy Python int-coercible score and wave survive migration")
     var old_profile: Dictionary = {"schema_version": 1, "total_score": 42, "recent_runs": []}
     var v1_profile: Dictionary = Validator.convert("profile.json", old_profile)
     expect(v1_profile.ok and v1_profile.value.schema_version == 2
