@@ -519,15 +519,15 @@ class VisualMixin:
 
         # 웨이브 팝
         c.itemconfigure(self.wave_txt, text=f"WAVE {self.wave}")
-        c.coords(self.wave_txt, W - 24, 26 - 9.0 * self.wave_pop)
+        c.coords(self.wave_txt, W - 24, 26 - (0.0 if self.settings.reduced_effects else 9.0 * self.wave_pop))
         c.itemconfigure(self.wave_txt,
-                        fill="#ffffff" if self.wave_pop > 0.45 else C_TEXT)
+                        fill="#ffffff" if not self.settings.reduced_effects and self.wave_pop > 0.45 else C_TEXT)
 
         if self.combo > 1:
-            c.coords(self.combo_txt, W / 2, 26 - 8.0 * self.combo_pop)
+            c.coords(self.combo_txt, W / 2, 26 - (0.0 if self.settings.reduced_effects else 8.0 * self.combo_pop))
             c.itemconfigure(self.combo_txt,
                             text=f"x{self.combo_mult():.1f}  {self.combo} COMBO",
-                            fill="#ffffff" if self.combo_pop > 0.35 else C_GOLD,
+                            fill="#ffffff" if not self.settings.reduced_effects and self.combo_pop > 0.35 else C_GOLD,
                             state="normal")
         else:
             c.itemconfigure(self.combo_txt, state="hidden")
