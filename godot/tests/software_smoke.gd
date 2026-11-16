@@ -77,7 +77,8 @@ func _run() -> void:
 	root.add_child(panel)
 	var picked: Array[int] = []
 	panel.card_selected.connect(func(index: int) -> void: picked.append(index))
-	panel.set_offers(["rapid", "power", "bonus"], {})
+	var sample_offers: Array[String] = ["rapid", "power", "bonus"]
+	panel.set_offers(sample_offers, {})
 	panel._on_pick(2)
 	if not panel.visible or picked != [2]:
 		_fail("reward UI event")
