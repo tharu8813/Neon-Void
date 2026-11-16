@@ -22,7 +22,10 @@
 - [x] A1: 인월드 백신 허브, 이동형 OS 배포 및 CPU 출입 게이트, 독립 웨이브 체크포인트, 월드 카메라·충돌 (PR 최종 검증 후 확인)
 - [x] A2: B #11의 네 구역 콘텐츠 및 감염·정화 API 연결 (#17)
 - [x] A3: C #12의 백신 DB/XP/영구 소프트웨어, OS CLEAN → 철수 → 새 OS 배포 통합 (PR 검증 완료 후)
-- [ ] 백신 시스템 세계관 Epic #10, 통합 담당 #13의 전체 완료 조건 검증
+- [x] Epic #10 / A 통합 #13 구현 및 후속 검증 완료 (2026-11-16)
+- [x] #22 OS 캠페인 체크포인트/크래시 복구와 XP 영수증 중복 방지 (PR CI 통과 후 확정)
+- [ ] #23 DPI·창 모드·전체화면·성능 기준
+- [ ] #24 Windows 실기기 전체 게임 루프 확인
 
 
 - [ ] Multiple playable stages/arenas, hazards and encounter progression (catalog is ready).
