@@ -1026,9 +1026,9 @@ class VisualMixin:
                       text="KEY BINDINGS" if is_controls else "SETTINGS",
                       fill=C_PLAYER, font=F_HUGE, tags="cfg")
         c.create_text(W / 2, 185,
-                      text="방향키 / WASD로 선택 · Enter로 키 변경"
+                      text="↑↓ / WASD 선택 · Home/End 첫/끝 · Enter 키 변경"
                       if is_controls else
-                      "방향키 / WASD로 선택 · 좌우로 변경",
+                      "↑↓ / WASD 선택 · Home/End 첫/끝 · ←→ 값 변경",
                       fill=C_DIM, font=F_UI, tags="cfg")
 
         if is_controls:
