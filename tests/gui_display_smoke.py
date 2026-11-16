@@ -97,6 +97,23 @@ def main():
         assert game.mouse_down is False  # released by helper
         assert game.mx >= 0 and game.my >= 0
 
+        # Simulate Tk point-to-pixel scaling values corresponding to 100–200%
+        # without claiming to reproduce physical Windows per-monitor DPI.
+        original_dpi = root.tk.call("tk", "scaling")
+        try:
+            for dpi in (1.0, 1.25, 1.5, 2.0):
+                root.tk.call("tk", "scaling", dpi)
+                game.c.set_viewport_size(960, 540)
+                game.render()
+                self_px = game.c.viewport.to_screen(640, 360)
+                self_logical = game.c.viewport.to_game(*self_px)
+                assert all(math.isclose(actual, desired, abs_tol=0.01)
+                           for actual, desired in zip(self_logical, (640, 360)))
+                assert math.isclose(game.c.coords(game.hp_bg)[0], 24,
+                                    abs_tol=0.001)
+        finally:
+            root.tk.call("tk", "scaling", original_dpi)
+
         # Stress repeated resizes: no new canvas objects/font spec leaks.
         game.render()
         baseline = len(game.c.find_all())
