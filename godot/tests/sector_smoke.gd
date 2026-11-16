@@ -22,6 +22,43 @@ func _run() -> void:
     check(Catalog.plan_wave("cpu", 0).is_empty(), "invalid index")
     check(Catalog.plan_wave("NOT_A_SECTOR", 1).is_empty(), "invalid sector")
     # These are independently derived from Python content.sectors.plan_sector_wave().
+    # Golden fixtures are the original Python random.Random / SHA256 planner,
+    # not produced by this Godot implementation. Check all 20 seed-42 plans.
+    var golden42: Dictionary = {
+        "CPU": [
+            "overheater,overheater,overheater,overheater,overheater,overheater,overheater,overheater",
+            "overheater,overheater,rusher,rusher,rusher,overheater,rusher,rusher,overheater",
+            "overheater,trojan,rusher,trojan,overheater,trojan,trojan,rusher,rusher,overheater",
+            "packet_swarm,overheater,packet_swarm,trojan,overheater,overheater,trojan,overheater,overheater,packet_swarm,trojan,trojan,overheater,overheater",
+            "overseer,overheater,rusher,overheater"
+        ],
+        "MEMORY": [
+            "worm,worm,worm,worm,worm,worm",
+            "splitter,splitter,worm,splitter,worm,splitter,worm",
+            "worm,splitter,worm,worm,splitter,trojan,worm,worm,worm",
+            "trojan,worm,splitter,splitter,trojan,rootkit,rootkit,splitter,worm",
+            "replicator,trojan,trojan,trojan"
+        ],
+        "STORAGE": [
+            "ransomware,ransomware,ransomware,ransomware",
+            "ransomware,ransomware,guardian,ransomware",
+            "rootkit,rootkit,ransomware,ransomware,guardian,ransomware",
+            "ransomware,rootkit,trojan,rootkit,trojan,guardian,ransomware",
+            "encryptor,ransomware,ransomware,ransomware"
+        ],
+        "NETWORK": [
+            "packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm,packet_swarm",
+            "packet_swarm,trojan,trojan,packet_swarm,packet_swarm,trojan,trojan,trojan,trojan,trojan,packet_swarm",
+            "trojan,rootkit,rootkit,packet_swarm,trojan,rootkit,rootkit,packet_swarm,trojan,rootkit,packet_swarm,packet_swarm",
+            "trojan,rootkit,worm,rootkit,rootkit,overheater,overheater,packet_swarm,overheater,rootkit,overheater,overheater,worm,overheater,packet_swarm,packet_swarm",
+            "zero_day,packet_swarm,packet_swarm,trojan"
+        ]
+    }
+    for sid in Catalog.IDS:
+        for wave_index in range(1, 6):
+            var result: Dictionary = Catalog.plan_wave(sid, wave_index, 42)
+            check(kinds(result) == golden42[sid][wave_index - 1], "seed42 20-wave golden parity %s %d" % [sid, wave_index])
+            check(result["boss_kind"] == (str(Catalog.SECTORS[sid]["boss"]) if wave_index == 5 else ""), "boss kind / wave gate %s %d" % [sid, wave_index])
     check(kinds(Catalog.plan_wave("CPU", 2, 42)) == "overheater,overheater,rusher,rusher,rusher,overheater,rusher,rusher,overheater", "CPU seed42 wave2 MT parity")
     check(kinds(Catalog.plan_wave("MEMORY", 4, 42)) == "trojan,worm,splitter,splitter,trojan,rootkit,rootkit,splitter,worm", "MEMORY seed42 wave4 MT parity")
     check(kinds(Catalog.plan_wave("STORAGE", 5, 42)) == "encryptor,ransomware,ransomware,ransomware", "STORAGE seed42 boss")
