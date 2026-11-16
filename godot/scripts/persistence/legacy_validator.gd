@@ -230,7 +230,9 @@ static func _checkpoint(obj: Dictionary) -> bool:
     var cards: Variant = obj["pending_cards"]
     if typeof(cards) != TYPE_ARRAY or cards.size() > 3:
         return false
-    if scene == "upgrade" and (cards.size() != 3 or not _integer(waves[sector.to_upper()], 1, 4)):
+    # Godot may present the three-card choice after boss wave 5 too.
+    # Keep those cards durable even when the fourth sector makes OS CLEAN.
+    if scene == "upgrade" and (cards.size() != 3 or not _integer(waves[sector.to_upper()], 1, 5)):
         return false
     if scene != "upgrade" and not cards.is_empty():
         return false
@@ -238,8 +240,6 @@ static func _checkpoint(obj: Dictionary) -> bool:
         for card in cards:
             if not SOFTWARE_CAPS.has(card) and card != "bonus":
                 return false
-    if scene == "upgrade" and ZONES.all(func(z): return int(waves[z]) == 5):
-        return false
     var player: Variant = obj["player"]
     if typeof(player) != TYPE_DICTIONARY or not _has_exact_keys(player, ["hp", "mana", "charges", "fire_cd", "pulse_cd", "guard_cd", "guard_t"]):
         return false
