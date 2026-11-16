@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from neonvoid.view import VisualMixin
+from neonvoid.constants import C_PLAYER
 
 
 class MenuHoverTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class MenuHoverTests(unittest.TestCase):
         self.assertEqual(view._menu_action_at(120, 120), "escape")
         view._update_menu_hover(120, 120)
         view.c.itemconfigure.assert_called_once_with(
-            1, fill="#185064", outline="#53f5e6", width=2)
+            1, fill="#185064", outline=C_PLAYER, width=2)
 
     def test_hover_clears_on_pointer_leave_and_focus_loss(self):
         view = self.make_view()
