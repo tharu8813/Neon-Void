@@ -30,7 +30,8 @@ from .performance import resident_memory_mib
 from .settings import DISPLAY_MODES, MIN_WIDTH, MIN_HEIGHT
 from .world.session import (WorldSession, START, CPU_EXIT, SECTOR_NAMES,
                             move_on_world, camera_for)
-from .content.sectors import SectorCampaign, sector_software_multiplier
+from .content.sectors import (SectorCampaign, sector_software_multiplier,
+                              select_boss_signature)
 from .content.virus_catalog import (ENCRYPTION_PULSE_RADIUS, PATTERNS,
                                     VirusRuntime, MAX_LIVE_ENEMIES)
 from .infection import InfectionState
@@ -2937,11 +2938,12 @@ class Game(VisualMixin):
                           fill=C_BAD, font=F_UI, tags="scr")
 
     # ------------------------------------------------------------- 웨이브
-    def _show_sector_clear(self, sector, healed=0.0):
+    def _show_sector_clear(self, sector, healed=0.0, reward=""):
         self.banner = f"{SECTOR_NAMES[sector]} · CLEAN"
         self.banner_t = self.banner_total = 3.0
         self.wave_done_t = 0.0
         self.sector_clear_heal = healed
+        self.sector_clear_reward = reward
 
     def check_wave(self, dt):
         if self.state != "play":
@@ -2966,9 +2968,19 @@ class Game(VisualMixin):
                 self.current_encounter = None
                 if sector in self.world.sector_clean:
                     self.ebullets.clear()
+                    # Only the first confirmed boss clear can award a module.
+                    # Existing software_levels checkpoint persists the result.
+                    boss_uid = select_boss_signature(sector, self.levels)
+                    boss_reward = ""
+                    if boss_uid is not None:
+                        apply_upgrade(self, boss_uid)
+                        boss_reward = f"{UP_BY_ID[boss_uid][1]} 획득"
+                        self.events.emit("boss_signature_awarded",
+                                         sector_id=sector.upper(),
+                                         software_id=boss_uid)
                     healed = min(self.p.maxhp - self.p.hp, self.p.maxhp * 0.15)
                     self.p.hp += healed
-                    self._show_sector_clear(sector, healed)
+                    self._show_sector_clear(sector, healed, boss_reward)
                     self._persist_checkpoint()
                     if self.world.os_clean:
                         self.announce_world("OS CLEAN · 중앙 시스템에서 철수를 준비하세요", 4)
