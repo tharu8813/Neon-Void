@@ -177,8 +177,48 @@ def main():
             assert cp.load() is None
             assert db.load().closed_runs[new_id] == "abandoned"
             assert db.load().xp == 100
-            print("[gui-checkpoint] crash 3 CPU + 1 MEMORY, resume, cards, "
-                  "new OS, XP receipts and stale closure passed")
+        finally:
+            root.destroy()
+
+        # Normal window close suspends, it does not register an abandonment.
+        root, graceful = create(cp, db)
+        graceful.p.x, graceful.p.y = 1580, 780
+        graceful.interact_hub()
+        graceful_id = graceful.campaign.run_id
+        assert cp.load()["campaign"]["run_id"] == graceful_id
+        graceful.close_game()
+        assert not root.winfo_exists()
+        assert graceful_id not in db.load().closed_runs
+        assert cp.load()["campaign"]["run_id"] == graceful_id
+
+        # A corrupt checkpoint is never silently overwritten on startup.
+        root, suspended = create(cp, db)
+        try:
+            assert suspended.checkpoint_pending is not None
+            suspended.p.x, suspended.p.y = 1580, 780
+            suspended.interact_hub()
+            press(suspended, "Down")
+            press(suspended, "Return")
+            assert db.load().closed_runs[graceful_id] == "abandoned"
+        finally:
+            root.destroy()
+        assert cp.load() is not None
+        cp.path.write_bytes(b"checkpoint broken on purpose")
+        root, corrupt = create(cp, db)
+        try:
+            assert corrupt.checkpoint_error is not None
+            assert cp.path.read_bytes() == b"checkpoint broken on purpose"
+            corrupt.p.x, corrupt.p.y = 1580, 780
+            corrupt.interact_hub()
+            assert corrupt.checkpoint_prompt_open
+            press(corrupt, "Return")
+            assert corrupt.campaign is not None
+            assert corrupt.world.room == "os"
+            preserved = list(Path(directory).glob("os_checkpoint.json.corrupt*"))
+            assert len(preserved) == 1
+            assert preserved[0].read_bytes() == b"checkpoint broken on purpose"
+            print("[gui-checkpoint] crash/recovery, safe quit, death, "
+                  "corrupt archive, OS restart and XP receipts passed")
         finally:
             root.destroy()
 
