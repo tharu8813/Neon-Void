@@ -144,6 +144,7 @@ class VisualMixin:
             self.mx, self.my = ev.x, ev.y
 
     def _on_pointer_leave(self, ev=None):
+        self._update_menu_hover(-1, -1)
         self.cursor_on = False
         self.cursor_trail.clear()
         try:
@@ -152,6 +153,7 @@ class VisualMixin:
             pass
 
     def _on_focus_out(self, ev=None):
+        self._update_menu_hover(-1, -1)
         self.keys.clear()
         self.mouse_down = False
         self.cursor_on = False
