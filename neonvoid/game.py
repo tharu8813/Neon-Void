@@ -112,6 +112,11 @@ class Game(VisualMixin):
         self.world_notice = '백신 코어 온라인 · 배포 단말기를 찾아 이동하세요'
         self.world_notice_t = 4.0
         self.extraction_fx_t = 0.0
+        self.database_close_error = None
+        self.salvage_open = False
+        self.salvage_options = ()
+        self.salvage_selected = 0
+        self.salvage_claimed = False
 
         self.keys = set()
         self.mx, self.my = W / 2, H / 2 - 120
@@ -310,19 +315,43 @@ class Game(VisualMixin):
             self._reward_db(self.campaign.run_id, "os_cleaned")
 
     def _close_database_run(self, status):
-        if self.campaign is None or self.database_error is not None:
-            return
-        try:
-            if self.database_store is None:
-                updated, result = close_run_once(
-                    self.database, run_id=self.campaign.run_id, status=status)
-            else:
-                updated, result = self.database_store.close_run_once(
-                    run_id=self.campaign.run_id, status=status)
-            if result.applied:
+        """Never mistake a failed terminal receipt write for successful closure.
+
+        Retry a transient failure a bounded number of times; retain the
+        campaign on failure so the user can explicitly retry or quit after
+        seeing an error. A previously closed run is an idempotent success.
+        """
+        if self.campaign is None:
+            self.database_close_error = None
+            return True
+        if self.database_error is not None:
+            self.database_close_error = self.database_error
+            self.announce_world("백신 DB 오류 · 런 종료 기록 미확정", 6)
+            return False
+        for _ in range(3):
+            try:
+                if self.database_store is None:
+                    updated, result = close_run_once(
+                        self.database, run_id=self.campaign.run_id, status=status)
+                else:
+                    updated, result = self.database_store.close_run_once(
+                        run_id=self.campaign.run_id, status=status)
+            except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
+                self.database_error = f"{type(exc).__name__}: {exc}"
+                self.database_close_error = self.database_error
+                self.announce_world("백신 DB 종료 기록 손상 · 복구 후 재시도", 6)
+                return False
+            if result.applied or result.reason == "run_closed":
                 self.database = updated
-        except (DatabaseCorruptError, DatabaseStorageError, OSError) as exc:
-            self.database_error = f"{type(exc).__name__}: {exc}"
+                self.database_close_error = None
+                return True
+            if result.reason != "save_failed":
+                self.database_close_error = result.reason
+                self.announce_world("백신 DB 종료 기록 거부 · " + result.reason, 6)
+                return False
+        self.database_close_error = "save_failed"
+        self.announce_world("런 종료 기록을 저장하지 못했습니다 · Enter/R 재시도", 6)
+        return False"
 
     def _database_options(self):
         return (None,) + tuple(sorted(self.database.software_archive))
@@ -438,14 +467,28 @@ class Game(VisualMixin):
 
     # ---------------------------------------------------------- 실행 기록
     def _abandon_active_run(self):
+        if self.campaign is not None and not self._close_database_run("abandoned"):
+            return False
         if self.profile_tracker.active:
             self.events.emit("run_abandoned", score=self.score, wave=self.wave,
                              duration_frames=self.frames - self.run_start_frame)
-            self._close_database_run("abandoned")
+        return True
 
     def close_game(self):
-        """Record a quit from an active run, then destroy the window."""
-        self._abandon_active_run()
+        """Ask before closing without a durable failed/abandoned run receipt."""
+        closed = (self._close_database_run("dead") if
+                  self.campaign is not None and self.state == "dead" else
+                  self._abandon_active_run())
+        if not closed and not self.auto:
+            from tkinter import messagebox
+            if not messagebox.askyesno(
+                "NEON VOID · 저장 실패",
+                "운영체제 종료 기록을 백신 데이터베이스에 저장하지 못했습니다. "
+                "다시 시도하려면 '아니오'를 누르세요. "
+                "저장되지 않은 종료 기록을 포기하고 종료할까요?",
+                parent=self.root,
+            ):
+                return
         self.root.destroy()
 
     # --------------------------------------------------------------- 설정
@@ -716,7 +759,8 @@ class Game(VisualMixin):
 
     # ------------------------------------------------------------------ 상태
     def new_game(self, *, start_combat=True):
-        self._abandon_active_run()
+        if not self._abandon_active_run():
+            return False
         self.run_start_frame = self.frames
         self.extraction_fx_t = 0.0
         c = self.c
@@ -789,10 +833,16 @@ class Game(VisualMixin):
 
     def return_to_base(self, abandon=False):
         if abandon:
-            self._abandon_active_run()
+            if not self._abandon_active_run():
+                return False
+        elif self.state == "dead" and self.campaign is not None:
+            if not self._close_database_run("dead"):
+                return False
         self.world.reset_to_base()
         self.database_open = False
         self.extraction_open = False
+        self.salvage_open = False
+        self.c.delete("salvageui")
         self.c.delete("dbui")
         self.c.delete("extractui")
         self.campaign = None
@@ -820,6 +870,7 @@ class Game(VisualMixin):
         self.state = "hub"
         self.announce_world("백신 복구 완료 · 배포 단말기를 찾아주세요")
         self.events.emit("returned_to_base")
+        return True
 
     def interact_hub(self):
         node = self.world.nearest(self.p.x, self.p.y)
@@ -856,6 +907,8 @@ class Game(VisualMixin):
                                                events=self.events)
                 self.infection.reset_for_new_os()
                 self.purify_uses = 3
+                self.salvage_claimed = False
+                self.salvage_open = False
                 self.p.x, self.p.y = START
                 self.keys.clear()
                 self.events.emit("os_deployed")
@@ -1335,6 +1388,8 @@ class Game(VisualMixin):
             self.world_notice_t -= dt
         if self.extraction_fx_t > 0:
             self.extraction_fx_t = max(0.0, self.extraction_fx_t - dt)
+        if getattr(self, "os_close_retry_t", 0) > 0:
+            self.os_close_retry_t = max(0.0, self.os_close_retry_t - dt)
         if self.state == "hub":
             if not self.paused and not self.settings_open and not (
                     self.database_open or self.extraction_open):
@@ -1370,10 +1425,14 @@ class Game(VisualMixin):
             self.infection.tick(
                 dts, exposure_per_second=
                 self.current_encounter.definition.exposure_per_second)
-            if self.infection.os_integrity <= 0:
+            if (self.infection.os_integrity <= 0 and
+                    getattr(self, "os_close_retry_t", 0) <= 0):
                 # OS collapse ends this deployment, not the player's life.
                 # No extracted module is granted, but persisted XP survives.
-                self.return_to_base(abandon=True)
+                if not self.return_to_base(abandon=True):
+                    # Keep the OS instance and retry at most once per second.
+                    self.os_close_retry_t = 1.0
+                    return
                 self.screen_flash(0.42, C_BAD)
                 self.screen_sweep(0.95, C_BAD)
                 self.announce_world(
@@ -2024,7 +2083,7 @@ class Game(VisualMixin):
         self.events.emit("run_ended", score=self.score, wave=self.wave,
                          record=is_record,
                          duration_frames=self.frames - self.run_start_frame)
-        self._close_database_run("dead")
+        closed = self._close_database_run("dead")
 
         c = self.c
         c.delete("scr")
@@ -2048,6 +2107,10 @@ class Game(VisualMixin):
                       text="ESC  ·  타이틀" if self.auto else
                       "ESC  ·  백신 시스템 허브", fill=C_DIM,
                       font=F_UI, tags="scr")
+        if not closed:
+            c.create_text(W / 2, 505,
+                          text="백신 DB 종료 기록 저장 실패 · Enter로 다시 시도하세요",
+                          fill=C_BAD, font=F_UI, tags="scr")
 
     # ------------------------------------------------------------- 웨이브
     def check_wave(self, dt):
