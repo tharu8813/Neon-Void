@@ -459,6 +459,8 @@ class Game(VisualMixin):
                 if self.return_to_base(abandon=True):
                     self.announce_world(
                         "OS CLEAN · 보관 한도 도달 · 보상 없이 복귀 / XP 유지", 6)
+                else:
+                    self._draw_salvage_terminal()
                 return
             uid = self.salvage_options[self.salvage_selected]
             try:

@@ -190,6 +190,9 @@ def main():
             game.p.x, game.p.y = 1580, 780
             game.interact_hub()
             fourth_run = game.campaign.run_id
+            game.p.x, game.p.y = GATES["cpu"]
+            game.interact_hub()
+            assert game.state == "play"
             real_store = game.database_store
 
             class FailingCloseStore:
@@ -209,6 +212,8 @@ def main():
             assert game.world.room == "os" and game.campaign.run_id == fourth_run
             assert game.profile_tracker.active
             assert game.database_close_error == "save_failed"
+            game.render()
+            assert game.c.find_withtag("db-close-warning")
             assert fourth_run not in real_store.load().closed_runs
 
             game.database_store = real_store

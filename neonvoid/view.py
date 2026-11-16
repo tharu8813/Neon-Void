@@ -975,6 +975,14 @@ class VisualMixin:
             c.create_text(160, y+112,
                           text=f"[{self.settings.bindings['interact'].upper()}] 복귀",
                           fill="#d4fbff", font=F_UI, tags="sector-gate")
+        if self.database_close_error:
+            c.create_rectangle(W/2-310, H-176, W/2+310, H-133,
+                               fill="#32121c", outline="#ff7082",
+                               width=2, tags=("sector-gate", "db-close-warning"))
+            c.create_text(W/2, H-155,
+                          text="런 종료 기록 저장 실패 · R을 다시 눌러 저장 재시도",
+                          fill="#ffe3e4", font=F_UI,
+                          tags=("sector-gate", "db-close-warning"))
 
     # ---------------------------------------------- 인월드 데이터베이스 단말기
     def _draw_database_terminal(self):
