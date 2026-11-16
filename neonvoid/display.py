@@ -195,7 +195,7 @@ class ScaledCanvas(tk.Canvas):
         if new == old:
             return False
         ratio = new.scale / old.scale
-        tk.Canvas.scale(self, "all", 0, 0, ratio)
+        tk.Canvas.scale(self, "all", 0, 0, ratio, ratio)
         tk.Canvas.move(self, "all",
                        new.left - old.left * ratio,
                        new.top - old.top * ratio)
