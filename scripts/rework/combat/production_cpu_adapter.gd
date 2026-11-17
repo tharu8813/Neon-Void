@@ -214,6 +214,10 @@ func spawn_hostile(info: Dictionary) -> bool:
     enemies[id] = {"body": body, "boss": boss, "speed": speed}
     return true
 
+func configure_shield_policy(policy: Dictionary) -> bool:
+    ## A owns the unresolved GDD numbers, B owns deterministic application.
+    return effects.configure_shield_policy(policy)
+
 func configure_plugins(levels: Dictionary, seed: int) -> bool:
     ## A calls this from E's durable mission snapshot after confirmed rewards.
     return effects.configure_levels(levels, seed)
@@ -390,15 +394,52 @@ func _clip_projectile_to_floor(start: Vector3, finish: Vector3,
         _projectile: Dictionary) -> Dictionary:
     if map_plan.is_empty():
         return {"position": finish, "blocked": false}
-    var span: Vector2 = Vector2(finish.x - start.x, finish.z - start.z)
-    var step_size: float = maxf(0.05, Maps.TILE_SIZE * 0.2)
-    var intervals: int = maxi(1, ceili(span.length() / step_size))
-    var safe: Vector3 = start
-    for index in range(1, intervals + 1):
-        var point: Vector3 = start.lerp(finish, float(index) / float(intervals))
-        if not Maps.is_floor(map_plan, _cell(point)):
-            return {"position": safe, "blocked": true}
-        safe = point
+    # Exact grid DDA over the same immutable D map tile contract. A sampled
+    # segment can jump across a thin wall/corner at high projectile speed.
+    var cell: Vector2i = _cell(start)
+    if not Maps.is_floor(map_plan, cell):
+        return {"position": start, "blocked": true}
+    var target: Vector2i = _cell(finish)
+    var delta: Vector2 = Vector2(finish.x - start.x, finish.z - start.z)
+    var sx: int = 1 if delta.x > 0.0 else (-1 if delta.x < 0.0 else 0)
+    var sz: int = 1 if delta.y > 0.0 else (-1 if delta.y < 0.0 else 0)
+    var tx: float = INF
+    var tz: float = INF
+    var dtx: float = INF
+    var dtz: float = INF
+    if sx != 0:
+        dtx = Maps.TILE_SIZE / absf(delta.x)
+        var boundary_x: float = float(cell.x + (1 if sx > 0 else 0)) * Maps.TILE_SIZE
+        tx = maxf(0.0, (boundary_x - start.x) / delta.x)
+    if sz != 0:
+        dtz = Maps.TILE_SIZE / absf(delta.y)
+        var boundary_z: float = float(cell.y + (1 if sz > 0 else 0)) * Maps.TILE_SIZE
+        tz = maxf(0.0, (boundary_z - start.z) / delta.y)
+    var crossings: int = absi(target.x - cell.x) + absi(target.y - cell.y) + 2
+    for index in range(crossings):
+        if cell == target:
+            return {"position": finish, "blocked": false}
+        var t: float = minf(tx, tz)
+        if t > 1.0:
+            break
+        if is_equal_approx(tx, tz):
+            # Corner contact cannot slip diagonally through two solid walls.
+            if not Maps.is_floor(map_plan, cell + Vector2i(sx, 0)) or (
+                    not Maps.is_floor(map_plan, cell + Vector2i(0, sz))):
+                return {"position": start.lerp(finish, clampf(t - 0.00001, 0.0, 1.0)),
+                    "blocked": true}
+            cell += Vector2i(sx, sz)
+            tx += dtx
+            tz += dtz
+        elif tx < tz:
+            cell.x += sx
+            tx += dtx
+        else:
+            cell.y += sz
+            tz += dtz
+        if not Maps.is_floor(map_plan, cell):
+            return {"position": start.lerp(finish, clampf(t - 0.00001, 0.0, 1.0)),
+                "blocked": true}
     return {"position": finish, "blocked": false}
 
 func _make_bullet_visual(p: Dictionary) -> Node3D:
@@ -496,5 +537,7 @@ func diagnostics() -> Dictionary:
         "combat_counters": simulation.counters.duplicate(true),
         "proc_metrics": simulation.bus.metrics.duplicate(true),
         "pending_C_events": effects.outstanding_events(),
+        "C_shields": effects.shield_diagnostics(),
+        "fixed_tick_profile": simulation.profiling_snapshot(),
         "C_fault": effects.fault
     }
