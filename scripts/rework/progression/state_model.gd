@@ -159,6 +159,14 @@ static func _valid_vaccine(vaccine: Variant, config: Dictionary) -> bool:
     if vaccine.get("mission") != null:
         if not _valid_mission(vaccine.mission) or vaccine.closed_runs.has(vaccine.mission.run_id):
             return false
+        # An optional E bonus record must have BOTH original and derived
+        # receipts in the same vaccine generation and atomic state.
+        var grants: Dictionary = vaccine.mission.environment_rolls.get(
+            RareBonus.KEY, {})
+        for source_receipt in grants:
+            if not vaccine.receipts.has(source_receipt) or not vaccine.receipts.has(
+                    str(grants[source_receipt].bonus_receipt)):
+                return false
     return true
 
 static func validate(state: Variant) -> bool:
