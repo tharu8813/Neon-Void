@@ -102,6 +102,7 @@ jobs:
             tests/rework/world/ram_playable_smoke.gd
             tests/rework/world/ssd_playable_smoke.gd
             tests/rework/world/hdd_playable_smoke.gd
+            tests/rework/world/five_hardware_playable_smoke.gd
             tests/rework/world/hardware_rules_smoke.gd
             tests/rework/progression/progression_smoke.gd
             tests/rework/persistence/persistence_smoke.gd
@@ -145,6 +146,7 @@ jobs:
             'tests/rework/world/ram_playable_smoke.gd',
             'tests/rework/world/ssd_playable_smoke.gd',
             'tests/rework/world/hdd_playable_smoke.gd',
+            'tests/rework/world/five_hardware_playable_smoke.gd',
             'tests/rework/world/hardware_rules_smoke.gd',
             'tests/rework/progression/progression_smoke.gd',
             'tests/rework/persistence/persistence_smoke.gd',
