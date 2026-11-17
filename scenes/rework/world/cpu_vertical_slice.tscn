@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/rework/world/vertical_slice_demo.gd" id="1_run"]
+
+[node name="ReworkCPUVerticalSlice" type="Node3D"]
+script = ExtResource("1_run")
+demo_mode = true
+mission_seed = 42
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-70, 20, -20)
+light_energy = 1.3
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
