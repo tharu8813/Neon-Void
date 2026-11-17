@@ -53,7 +53,10 @@ func _run() -> void:
         var affected: Array = a["affected_plugin_ids"]
         check(affected.size() >= 1 and affected.size() <= 2, "tunnel 1-2")
         check(not affected.has("protected") and not affected.has("unknown_status"), "learned and unknown status protected")
-        check(affected.size() == affected.duplicate().size(), "unique tunnel selection")
+        var unique: Dictionary = {}
+        for plugin_id in affected:
+            unique[str(plugin_id)] = true
+        check(unique.size() == affected.size(), "unique tunnel selection")
     var safe: Dictionary = Environments.describe(tunnel_plan, [{"plugin_id": "learned", "learned": true}], 42)
     check(safe["affected_plugin_ids"].is_empty(), "no eligible plugin -> none disabled")
     for stage in range(1, 6):
