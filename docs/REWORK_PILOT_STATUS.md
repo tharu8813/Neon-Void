@@ -73,6 +73,12 @@
 - `tests/rework/world/cpu_vertical_slice_smoke.gd`가 E의 저장된 CPU 맵 시드와 D의 맵 생성 버전이 일치하는지 및 B의 실제 투사체/적 HP를 통해 보스·정화까지 확인한다. `tests/rework/integration/rework_pilot_smoke.gd`는 합성 적 사망 XP와 실제 E 저장·보상·추출 경계를 별도로 검증한다.
 - 각 소유 PR과 #115의 Draft는 보존. #120는 **합성 검증 브랜치**이므로 main에 직접 병합하지 않고 안전한 PR 분리·리뷰가 선행되어야 한다.
 
+## 남은 4종 플러그인과 검증의 의미
+
+- 자세한 소유자별 후속 조건: [REWORK_COMBAT_EFFECT_GAPS.md](REWORK_COMBAT_EFFECT_GAPS.md).
+- **C #117 독립 경로 23/27**은 기존 측정 그대로 유지. A의 **생산형 B #119 경로**에서는 3종 보호막의 제안된 shield-first HP 보호를 실제 B 데미지 처리로 추가 검증했지만, 이는 C 독립 경로의 검증 수를 자동으로 26/27로 바꾸지 않는다.
+- 무작위 레어 플러그인(`nv_c_random_rare`)은 E 승인 영수증·후보/난수 중복 방지 규칙이 없어 여전히 지급 불가. 임의 보상 지급으로 대신하지 않는다.
+
 ## 수동 실기기 QA 체크
 
 **PR 병합 이전 Windows에서 직접 확인해야 할 사항**
