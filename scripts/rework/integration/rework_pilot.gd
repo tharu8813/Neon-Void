@@ -75,6 +75,11 @@ func _ready() -> void:
     var preview_combat: Node = world.get("combat") as Node
     if preview_combat != null:
         preview_combat.connect("enemy_defeated", Callable(self, "_on_enemy_defeated"))
+        var live: Variant = preview_combat.get("live")
+        if live != null:
+            live.require_e_authorization = true
+            live.encounter_authorization_requested.connect(
+                _on_encounter_authorization_requested)
     slot_path = Store.default_slot_path(slot_id)
     if slot_path.is_empty():
         _halt("invalid_pilot_slot")
@@ -497,7 +502,9 @@ func _on_mission_requested(request: Dictionary) -> void:
     # The remaining D facts are routed via A so reward learning happens
     # before the extraction transaction and its user choice is durable.
     world.call("attach_progression_bridge", null)
-    if not _sync_authorized_build_from_E():
+    # B's pre-tick facade handshake already applied the exact E profile
+    # synchronously as D created the motherboard encounter.
+    if frozen:
         return
     message_label.text = "의뢰 저장 완료 · 메인보드에서 하드웨어 선택"
     _refresh()
@@ -529,10 +536,10 @@ func _on_hardware_checkpoint_requested(fact: Dictionary) -> void:
     if not bool(world.call("acknowledge_hardware_checkpoint", receipt, ack)):
         _halt("hardware_map_not_entered_after_durable_ack")
         return
-    # D replaces B's encounter runtime when changing hardware. Rehydrate
-    # combat plugins ONLY from E's authenticated state after the map ACK.
-    # This neither reissues a reward nor writes any new save record.
-    if not _sync_authorized_build_from_E():
+    # D creates a new B actor during the E-approved map transition.
+    # The opt-in facade handshake synchronously re-authorized B/C from E
+    # before this D world call returned, without awarding anything.
+    if frozen:
         return
     _refresh()
 
@@ -550,6 +557,20 @@ func _on_enemy_defeated(actor_id: String, receipt: String) -> void:
         return
     _maybe_open_offer()
     _refresh()
+
+func _on_encounter_authorization_requested(run_id: String) -> void:
+    # This runs SYNCHRONOUSLY inside D -> A facade -> B begin_encounter,
+    # before the first B tick on motherboard, return or any hardware scene.
+    if frozen or bridge == null or run_id != current_run_id:
+        _halt("B_encounter_missing_matching_E_mission")
+        return
+    if not _sync_authorized_build_from_E():
+        return
+    var live: Variant = world.get("combat").get("live")
+    var authorized: Dictionary = live.authorized_growth_snapshot()
+    if not bool(live.confirm_encounter_authorized(
+            run_id, int(authorized.get("revision", -1)))):
+        _halt("B_encounter_approval_handshake_failed")
 
 ## E → A → B: both permanent growth/3 learned skills AND C plugin levels
 ## must be authorized from the SAME verified E revision before the B 60Hz
