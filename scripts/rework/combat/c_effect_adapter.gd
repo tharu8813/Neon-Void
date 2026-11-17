@@ -19,6 +19,16 @@ var next_event_number: int = 0
 var notices: Array[Dictionary] = []
 var generated_in_last_step: int = 0
 var maximum_events_per_tick: int = 512
+var maximum_pending_events: int = 8192
+## BALANCE_DRAFT. All values can be changed by A without editing C recipes.
+## duration_ticks=0 / maximum_total=0 preserve the previous no-expiry/no-cap policy.
+var shield_policy: Dictionary = {
+    "absorption": "post_resistance", "stacking": "add",
+    "duration_ticks": 0, "maximum_total": 0.0
+}
+var shield_layers: Array[Dictionary] = []
+var maximum_observed_pending: int = 0
+var overflow_rejected: int = 0
 var _auxiliary: Dictionary = {}
 var _context: Dictionary = {}
 
@@ -30,6 +40,9 @@ func attach(runtime: Variant, actor_id: String, encounter_id: String,
     player_id = actor_id
     run_id = encounter_id
     pending.clear()
+    shield_layers.clear()
+    maximum_observed_pending = 0
+    overflow_rejected = 0
     notices.clear()
     next_event_number = 0
     fault = ""
@@ -58,9 +71,76 @@ func configure_levels(levels: Dictionary, seed: int) -> bool:
     if not c_engine.configure(levels, seed):
         return false
     pending.clear()
+    shield_layers.clear()
+    maximum_observed_pending = 0
+    overflow_rejected = 0
     _auxiliary = {"buffs": [], "actor_shield": 0.0,
         "basic_attack_blocked": false, "boomerang_outstanding": 0}
     return true
+
+func configure_shield_policy(policy: Dictionary) -> bool:
+    if not shield_layers.is_empty():
+        return false
+    var next: Dictionary = shield_policy.duplicate(true)
+    next.merge(policy, true)
+    if not str(next.get("absorption", "")) in [
+            "post_resistance", "true_damage_bypasses", "none"]:
+        return false
+    if not str(next.get("stacking", "")) in ["add", "replace", "strongest"]:
+        return false
+    if int(next.get("duration_ticks", -1)) < 0 or (
+            float(next.get("maximum_total", -1.0)) < 0.0):
+        return false
+    shield_policy = next
+    return true
+
+func _sync_shield_total() -> void:
+    var total: float = 0.0
+    for layer in shield_layers:
+        total += maxf(0.0, float(layer.get("remaining", 0.0)))
+    _auxiliary["actor_shield"] = total
+
+func _expire_shields() -> void:
+    if combat == null:
+        return
+    var alive_layers: Array[Dictionary] = []
+    for layer in shield_layers:
+        if int(layer.get("expires_at", -1)) >= 0 and (
+                combat.fixed_tick >= int(layer["expires_at"])):
+            continue
+        if float(layer.get("remaining", 0.0)) > 0.0:
+            alive_layers.append(layer)
+    shield_layers = alive_layers
+    _sync_shield_total()
+
+func _grant_shield(command: Dictionary) -> void:
+    _expire_shields()
+    var amount: float = maxf(0.0, float(command.get("amount", 0.0)))
+    var mode: String = str(shield_policy.get("stacking", "add"))
+    var current: float = float(_auxiliary.get("actor_shield", 0.0))
+    if mode == "strongest":
+        if amount <= current:
+            return
+        shield_layers.clear()
+    elif mode == "replace":
+        shield_layers.clear()
+    var maximum: float = float(shield_policy.get("maximum_total", 0.0))
+    if maximum > 0.0:
+        var remaining: float = 0.0
+        for layer in shield_layers:
+            remaining += float(layer.get("remaining", 0.0))
+        amount = minf(amount, maxf(0.0, maximum - remaining))
+    if amount <= 0.0:
+        _sync_shield_total()
+        return
+    var duration: int = int(command.get("duration_ticks",
+        shield_policy.get("duration_ticks", 0)))
+    shield_layers.append({
+        "source": str(command.get("plugin_id", "unknown")),
+        "remaining": amount,
+        "expires_at": combat.fixed_tick + duration if duration > 0 else -1
+    })
+    _sync_shield_total()
 
 func upgrade_plugin(plugin_id: String, level: int) -> bool:
     ## Call only after A/E confirmed reward and durable receipt.
@@ -102,13 +182,24 @@ func _absorb_shield(target_id: String, calculation: Dictionary) -> Dictionary:
         return calculation
     if bool(Statuses.active_flags(combat.actors[player_id]["status_state"]).get("invulnerable", false)):
         return calculation
-    var stored: float = maxf(0.0, float(_auxiliary.get("actor_shield", 0.0)))
+    _expire_shields()
+    var mode: String = str(shield_policy.get("absorption", "post_resistance"))
+    if mode == "none" or (mode == "true_damage_bypasses" and
+            str(calculation.get("damage_type", "")) == "true"):
+        return calculation
     var proposed: float = maxf(0.0, float(calculation.get("calculated_damage", 0.0)))
-    var absorbed: float = minf(stored, proposed)
-    if absorbed > 0.0:
-        _auxiliary["actor_shield"] = stored - absorbed
-        calculation["calculated_damage"] = proposed - absorbed
-        notices.append({"kind": "shield_absorbed", "actor_id": target_id, "amount": absorbed})
+    var remaining: float = proposed
+    for layer in shield_layers:
+        if remaining <= 0.0:
+            break
+        var absorbed: float = minf(float(layer.get("remaining", 0.0)), remaining)
+        layer["remaining"] = float(layer["remaining"]) - absorbed
+        remaining -= absorbed
+        if absorbed > 0.0:
+            notices.append({"kind": "shield_absorbed", "actor_id": target_id,
+                "amount": absorbed, "shield_source": str(layer.get("source", ""))})
+    _expire_shields()
+    calculation["calculated_damage"] = remaining
     return calculation
 
 func _can_fire(actor_id: String) -> bool:
@@ -139,7 +230,14 @@ func _enqueue(kind: String, source: Dictionary) -> void:
         var target_stats: Dictionary = combat.actors[target_id]["stats"]
         normalized["target_health_ratio"] = float(target_stats.get("health", 0.0)) / maxf(
             0.001, float(target_stats.get("max_health", 1.0)))
+    if pending.size() >= maxi(1, maximum_pending_events):
+        overflow_rejected += 1
+        fault = "C_event_queue_overflow"
+        notices.append({"kind": "plugin_error", "reason": fault,
+            "event_id": str(normalized["event_id"])})
+        return
     pending.append(normalized)
+    maximum_observed_pending = maxi(maximum_observed_pending, pending.size())
 
 func _accept_combat_event(event: Dictionary) -> void:
     var kind: String = str(event.get("kind", ""))
@@ -165,6 +263,7 @@ func _accept_combat_event(event: Dictionary) -> void:
         _enqueue(kind, event)
 
 func _world() -> Dictionary:
+    _expire_shields()
     var targets: Dictionary = {}
     var positions: Dictionary = {}
     var status_map: Dictionary = {}
@@ -193,6 +292,7 @@ func _world() -> Dictionary:
 
 func _validate_commands(commands: Array) -> Dictionary:
     var transform_shapes: Dictionary = {}
+    var requested_projectiles: int = 0
     for command in commands:
         if not (command is Dictionary):
             return {"ok": false, "reason": "invalid_C_command"}
@@ -200,13 +300,21 @@ func _validate_commands(commands: Array) -> Dictionary:
         if kind == "rare_reward_request":
             # Only A/E may issue durable reward receipts.
             return {"ok": false, "reason": "E_receipt_callback_required"}
-        if kind == "projectiles" and int(command.get("count", 0)) > 128:
-            return {"ok": false, "reason": "invalid_projectile_count"}
+        if kind == "projectiles":
+            var count: int = int(command.get("count", 0))
+            if count < 0 or count > 128:
+                return {"ok": false, "reason": "invalid_projectile_count"}
+            requested_projectiles += count
         if kind == "projectile_transform":
             var shape: String = str(command.get("shape", ""))
             if not shape in ["laser", "boomerang"]:
                 return {"ok": false, "reason": "unsupported_projectile_transform"}
             transform_shapes[shape] = true
+            if shape == "boomerang":
+                requested_projectiles += maxi(0, int(command.get("count", 1)) - 1)
+    if combat != null and combat.projectiles.size() + requested_projectiles > maxi(
+            1, int(combat.settings.get("max_active_projectiles", 4096))):
+        return {"ok": false, "reason": "B_projectile_capacity_rejected"}
     if transform_shapes.size() > 1:
         # The GDD leaves simultaneous laser+boomerang ordering unresolved.
         return {"ok": false, "reason": "conflicting_projectile_transforms_need_approval"}
@@ -216,6 +324,7 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
     var validation: Dictionary = _validate_commands(commands)
     if not bool(validation["ok"]):
         return validation
+    _expire_shields()
     var next: Dictionary = world.duplicate(true)
     var executable: Array = []
     for command in commands:
@@ -284,7 +393,13 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
                     "allowed_proc_triggers": ["on_hit"]
                 })
     _auxiliary["buffs"] = next.get("buffs", []).duplicate(true)
-    _auxiliary["actor_shield"] = float(next.get("actor_shield", 0.0))
+    # C validates and proposes shield commands; B alone owns barrier layering.
+    # Do not apply C's summed scalar a second time.
+    for effective_command in executable:
+        if str(effective_command.get("type", "")) == "shield" and (
+                str(effective_command.get("actor_id", "")) == player_id):
+            _grant_shield(effective_command)
+    next["actor_shield"] = float(_auxiliary.get("actor_shield", 0.0))
     _auxiliary["basic_attack_blocked"] = bool(next.get("basic_attack_blocked", false))
     _auxiliary["boomerang_outstanding"] = int(next.get("boomerang_outstanding", 0))
     for produced in next.get("generated_events", []):
@@ -403,12 +518,19 @@ func after_fixed_step(raw_events: Array[Dictionary]) -> Array[Dictionary]:
         if combat.fixed_tick < int(buff.get("expires_tick", 0)):
             living_buffs.append(buff)
     _auxiliary["buffs"] = living_buffs
+    _expire_shields()
     for event in raw_events:
+        if not fault.is_empty():
+            break
         _accept_combat_event(event)
+    if not fault.is_empty():
+        return notices.duplicate(true)
     _enqueue("tick", {
         "actor_id": player_id, "tick": combat.fixed_tick,
         "target_id": player_id, "source_tags": ["tick"],
         "allowed_proc_triggers": []})
+    if not fault.is_empty():
+        return notices.duplicate(true)
     var quota: int = maxi(1, maximum_events_per_tick)
     while not pending.is_empty() and generated_in_last_step < quota:
         var event: Dictionary = pending.pop_front()
@@ -429,7 +551,15 @@ func outstanding_events() -> int:
     return pending.size()
 
 func shield_value() -> float:
+    _expire_shields()
     return maxf(0.0, float(_auxiliary.get("actor_shield", 0.0)))
+
+func shield_diagnostics() -> Dictionary:
+    _expire_shields()
+    return {"total": shield_value(), "layers": shield_layers.duplicate(true),
+        "policy": shield_policy.duplicate(true),
+        "max_pending": maximum_observed_pending,
+        "pending": pending.size(), "overflow_rejected": overflow_rejected}
 
 func handle_boomerang_return(projectile: Dictionary) -> void:
     if not enabled or str(projectile.get("shape", "")) != "boomerang":

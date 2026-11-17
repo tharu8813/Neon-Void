@@ -28,6 +28,7 @@ var pending_input: Dictionary = {}
 var last_health: float = -1.0
 var last_mana: float = -1.0
 var last_plugin_fault: String = ""
+var last_combat_overflow: int = 0
 var _reported_deaths: Dictionary = {}
 var _projectile_kinds: Dictionary = {}
 var _old_projectiles: Dictionary = {}
@@ -152,6 +153,7 @@ func reset() -> void:
     last_health = -1.0
     last_mana = -1.0
     last_plugin_fault = ""
+    last_combat_overflow = 0
     game_over = false
     effects = CAdapter.new()
     simulation.begin(0, {"encounter_id": "cleared"})
@@ -213,6 +215,10 @@ func spawn_hostile(info: Dictionary) -> bool:
         return false
     enemies[id] = {"body": body, "boss": boss, "speed": speed}
     return true
+
+func configure_shield_policy(policy: Dictionary) -> bool:
+    ## A owns the unresolved GDD numbers, B owns deterministic application.
+    return effects.configure_shield_policy(policy)
 
 func configure_plugins(levels: Dictionary, seed: int) -> bool:
     ## A calls this from E's durable mission snapshot after confirmed rewards.
@@ -297,6 +303,16 @@ func advance_production_tick() -> Array[Dictionary]:
         _old_projectiles[str(p["id"])] = p.duplicate(true)
     var tick_run_id: String = run_id
     var base_notes: Array[Dictionary] = super.advance_one_tick()
+    var overflow: int = int(simulation.bus.metrics.get("overflow_rejected", 0))
+    if overflow > last_combat_overflow:
+        last_combat_overflow = overflow
+        # Hard cap is an integrity fault, never an apparently successful run.
+        running = false
+        last_plugin_fault = "B_event_queue_overflow"
+        combat_notice.emit({"kind": "combat_overload", "reason": last_plugin_fault,
+            "rejected_events": overflow, "tick": simulation.fixed_tick})
+        plugin_failure.emit(last_plugin_fault)
+        return base_notes
     # D/A death ACK may synchronously return to hub during signal emission.
     if not running or player == null or run_id != tick_run_id:
         return base_notes
@@ -390,15 +406,52 @@ func _clip_projectile_to_floor(start: Vector3, finish: Vector3,
         _projectile: Dictionary) -> Dictionary:
     if map_plan.is_empty():
         return {"position": finish, "blocked": false}
-    var span: Vector2 = Vector2(finish.x - start.x, finish.z - start.z)
-    var step_size: float = maxf(0.05, Maps.TILE_SIZE * 0.2)
-    var intervals: int = maxi(1, ceili(span.length() / step_size))
-    var safe: Vector3 = start
-    for index in range(1, intervals + 1):
-        var point: Vector3 = start.lerp(finish, float(index) / float(intervals))
-        if not Maps.is_floor(map_plan, _cell(point)):
-            return {"position": safe, "blocked": true}
-        safe = point
+    # Exact grid DDA over the same immutable D map tile contract. A sampled
+    # segment can jump across a thin wall/corner at high projectile speed.
+    var cell: Vector2i = _cell(start)
+    if not Maps.is_floor(map_plan, cell):
+        return {"position": start, "blocked": true}
+    var target: Vector2i = _cell(finish)
+    var delta: Vector2 = Vector2(finish.x - start.x, finish.z - start.z)
+    var sx: int = 1 if delta.x > 0.0 else (-1 if delta.x < 0.0 else 0)
+    var sz: int = 1 if delta.y > 0.0 else (-1 if delta.y < 0.0 else 0)
+    var tx: float = INF
+    var tz: float = INF
+    var dtx: float = INF
+    var dtz: float = INF
+    if sx != 0:
+        dtx = Maps.TILE_SIZE / absf(delta.x)
+        var boundary_x: float = float(cell.x + (1 if sx > 0 else 0)) * Maps.TILE_SIZE
+        tx = maxf(0.0, (boundary_x - start.x) / delta.x)
+    if sz != 0:
+        dtz = Maps.TILE_SIZE / absf(delta.y)
+        var boundary_z: float = float(cell.y + (1 if sz > 0 else 0)) * Maps.TILE_SIZE
+        tz = maxf(0.0, (boundary_z - start.z) / delta.y)
+    var crossings: int = absi(target.x - cell.x) + absi(target.y - cell.y) + 2
+    for index in range(crossings):
+        if cell == target:
+            return {"position": finish, "blocked": false}
+        var t: float = minf(tx, tz)
+        if t > 1.0:
+            break
+        if is_equal_approx(tx, tz):
+            # Corner contact cannot slip diagonally through two solid walls.
+            if not Maps.is_floor(map_plan, cell + Vector2i(sx, 0)) or (
+                    not Maps.is_floor(map_plan, cell + Vector2i(0, sz))):
+                return {"position": start.lerp(finish, clampf(t - 0.00001, 0.0, 1.0)),
+                    "blocked": true}
+            cell += Vector2i(sx, sz)
+            tx += dtx
+            tz += dtz
+        elif tx < tz:
+            cell.x += sx
+            tx += dtx
+        else:
+            cell.y += sz
+            tz += dtz
+        if not Maps.is_floor(map_plan, cell):
+            return {"position": start.lerp(finish, clampf(t - 0.00001, 0.0, 1.0)),
+                "blocked": true}
     return {"position": finish, "blocked": false}
 
 func _make_bullet_visual(p: Dictionary) -> Node3D:
@@ -441,6 +494,14 @@ func _on_combat_notice(_event: Dictionary) -> void:
 
 func _on_combat_actor_died(actor_id: String, _killer_id: String) -> void:
     if _reported_deaths.has(actor_id):
+        return
+    # No E kill receipts after the authoritative B event queue has overflowed.
+    if actor_id != PLAYER_ID and int(simulation.bus.metrics.get(
+            "overflow_rejected", 0)) > 0:
+        running = false
+        if last_plugin_fault != "B_event_queue_overflow":
+            last_plugin_fault = "B_event_queue_overflow"
+            plugin_failure.emit(last_plugin_fault)
         return
     _reported_deaths[actor_id] = true
     if actor_id == PLAYER_ID:
@@ -496,5 +557,7 @@ func diagnostics() -> Dictionary:
         "combat_counters": simulation.counters.duplicate(true),
         "proc_metrics": simulation.bus.metrics.duplicate(true),
         "pending_C_events": effects.outstanding_events(),
+        "C_shields": effects.shield_diagnostics(),
+        "fixed_tick_profile": simulation.profiling_snapshot(),
         "C_fault": effects.fault
     }

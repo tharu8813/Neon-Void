@@ -31,6 +31,13 @@ static func reconcile_receipt(slot_path: String, vaccine_id: String,
     return Recovery.reconcile_receipt(slot_path, vaccine_id,
         generation, run_id, receipt_id, offer_id)
 
+static func reconcile_rare_grant(slot_path: String, vaccine_id: String,
+        generation: int, run_id: String, source_receipt: String,
+        offer_id: String = "") -> Dictionary:
+    ## E-authoritative source + rare receipt confirmation, read-only.
+    return Recovery.reconcile_rare_grant(slot_path, vaccine_id, generation,
+        run_id, source_receipt, offer_id)
+
 static func transact_command(slot_path: String, command: Dictionary,
         expected_revision: int = -1, fault_at: String = "") -> Dictionary:
     if not Model.valid_id(command.get("action")):
@@ -62,6 +69,15 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
             return Rules.checkpoint_region(state, vaccine_id, generation, run_id,
                 receipt_id, str(command.get("region_id", "")),
                 int(command.map_seed), str(command.get("generator_id", "")))
+        "checkpoint_combat_observation":
+            if not Model.natural(command.get("combat_tick"), 1000000000000) \
+                    or typeof(command.get("b_state")) != TYPE_DICTIONARY \
+                    or typeof(command.get("d_state")) != TYPE_DICTIONARY:
+                return {"ok": false, "reason": "invalid_combat_observation"}
+            return Rules.checkpoint_combat_observation(state, vaccine_id,
+                generation, run_id, receipt_id, str(command.get("region_id", "")),
+                int(command.combat_tick), str(command.get("b_version", "")),
+                str(command.get("d_version", "")), command.b_state, command.d_state)
         "checkpoint_offer":
             if typeof(command.get("offer_snapshot")) != TYPE_DICTIONARY \
                     or typeof(command.get("rng_state_text", "")) != TYPE_STRING:

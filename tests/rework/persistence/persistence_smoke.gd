@@ -58,7 +58,7 @@ func _run() -> void:
     for name in legacy_names:
         var path: String = legacy.path_join(name)
         _write(path, "{\"synthetic\":\"" + name + "\"}\n")
-        original[name] = _bytes(path)
+        original[name] = _bytes(path).hex_encode().sha256_text()
 
     var state: Dictionary = Model.new_slot("synthetic", "vaccine-1",
         {"mission_xp_step": 40})
@@ -130,7 +130,7 @@ func _run() -> void:
 
     # Four or five preceding file names remain byte-identical, regardless of failures.
     for name in legacy_names:
-        check(_bytes(legacy.path_join(name)) == original[name],
+        check(_bytes(legacy.path_join(name)).hex_encode().sha256_text() == original[name],
             "legacy synthetic file unchanged: " + name)
 
     var current: PackedByteArray = _bytes(slot.path_join("state.json"))
@@ -401,6 +401,8 @@ func _run() -> void:
             "reward receipt replay is refused after intentional roll-forward")
 
     _test_mission_checkpoint(root_dir)
+    _test_rare_pair_recovery(root_dir)
+    _test_combat_observation(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
@@ -470,7 +472,9 @@ func _test_mission_checkpoint(root_dir: String) -> void:
     check(Gateway.transact_command(slot, saved_offer).applied,
         "C three-card offer and entropy cursor committed before UI")
     var after_offer: Dictionary = Gateway.inspect_slot(slot)
-    check(after_offer.ok and after_offer.technically_restorable \
+    check(after_offer.ok and after_offer.map_offer_checkpoint_ready \
+        and not after_offer.technically_restorable \
+        and not after_offer.combat_runtime_checkpoint_present \
         and not after_offer.safe_to_resume and after_offer.requires_user_action \
         and after_offer.reason == "resume_or_cancel_policy_unapproved",
         "saved offer is inspectable but does not authorize unapproved resumption")
@@ -634,3 +638,146 @@ func _test_mission_checkpoint(root_dir: String) -> void:
     check(not invalid.ok and invalid.requires_user_action \
         and not invalid.safe_to_resume and invalid.reason == "invalid_json",
         "damaged primary produces user-action status, never resets to Lv.1")
+
+
+func _test_rare_pair_recovery(root_dir: String) -> void:
+    ## Synthetic E-only slot, no legacy file and no live player save.
+    var slot: String = root_dir.path_join("rework-slot-rare-pair-e")
+    check(Store.initialize(slot, Model.new_slot("rare-pair-e", "rare-vaccine-e")).ok,
+        "E rare-pair fixture initialized independently")
+    var base: Dictionary = {
+        "vaccine_id": "rare-vaccine-e", "generation": 1,
+        "run_id": "run-rare-e"
+    }
+    var start: Dictionary = base.duplicate(true)
+    start.merge({"action": "start_mission", "seed": 2468}, true)
+    check(Gateway.transact_command(slot, start).applied,
+        "E rare reconciliation mission started")
+    var experience: Dictionary = base.duplicate(true)
+    experience.merge({"action": "mission_xp", "receipt_id": "kill-rare-e",
+        "amount": 100}, true)
+    check(Gateway.transact_command(slot, experience).applied,
+        "E rare reconciliation offer earned")
+    var source: Dictionary = base.duplicate(true)
+    source.merge({"action": "plugin_picked",
+        "receipt_id": "run-rare-e:1:0", "offer_id": "run-rare-e:1",
+        "plugin_id": "nv_c_random_rare", "rarity": "common",
+        "level": 1, "offer_source": "levelup"}, true)
+    var absent: Dictionary = Gateway.reconcile_rare_grant(slot, "rare-vaccine-e",
+        1, "run-rare-e", "run-rare-e:1:0", "run-rare-e:1")
+    check(absent.ok and absent.receipt_definitely_absent \
+        and not absent.can_retry_same_receipt and not absent.pair_verified,
+        "missing source is observable but not a replay authorization")
+    var uncertain: Dictionary = Gateway.transact_command(slot, source,
+        -1, "after_primary")
+    check(not uncertain.applied and uncertain.reason == "simulated_ack_lost",
+        "E lost ACK after atomic source+rare primary commit")
+    var proof: Dictionary = Gateway.reconcile_rare_grant(slot, "rare-vaccine-e",
+        1, "run-rare-e", "run-rare-e:1:0", "run-rare-e:1")
+    check(proof.ok and proof.pair_verified and proof.receipt_committed \
+        and proof.grant.bonus_receipt == "run-rare-e:1:0:rare:0",
+        "read-only proof verifies BOTH source and rare receipts")
+    var first: Dictionary = Store.read(slot)
+    check(first.ok and first.state.vaccine.receipts.has("run-rare-e:1:0") \
+        and first.state.vaccine.receipts.has("run-rare-e:1:0:rare:0"),
+        "persisted grant pair survives restart after lost ACK")
+    check(not Gateway.transact_command(slot, source).applied,
+        "replay cannot pay a second rare award")
+    var second: Dictionary = Gateway.reconcile_rare_grant(slot,
+        "rare-vaccine-e", 1, "wrong-run", "run-rare-e:1:0")
+    check(not second.ok and not second.receipt_committed \
+        and not second.receipt_definitely_absent,
+        "wrong run must not claim even an existing source receipt")
+    var forged: Dictionary = Gateway.reconcile_rare_grant(slot,
+        "rare-vaccine-e", 1, "run-rare-e", "run-rare-e:1:0",
+        "run-rare-e:2")
+    check(not forged.ok and not forged.receipt_committed,
+        "source proof cannot be bound to an unclaimed offer")
+    var ledger_erase: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.mission.environment_rolls["e_rare_bonus_v1"].clear()
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, ledger_erase).reason == "invalid_transition",
+        "direct Store writer cannot erase immutable rare grant history")
+    var loaded: Dictionary = Store.read(slot)
+    check(loaded.ok and loaded.revision == first.revision \
+        and loaded.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"] \
+            == first.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"],
+        "failed ledger modification did not roll back rare record or revision")
+
+
+func _test_combat_observation(root_dir: String) -> void:
+    var slot: String = root_dir.path_join("rework-slot-combat-observation")
+    check(Store.initialize(slot,
+        Model.new_slot("combat-observation", "combat-vaccine")).ok,
+        "diagnostic observation synthetic slot initialized")
+    var base: Dictionary = {"vaccine_id": "combat-vaccine", "generation": 1,
+        "run_id": "run-combat-observation"}
+    var start: Dictionary = base.duplicate(true)
+    start.merge({"action": "start_mission", "seed": 1234}, true)
+    check(Gateway.transact_command(slot, start).applied, "runtime diagnostic run started")
+    var region: Dictionary = base.duplicate(true)
+    region.merge({"action": "checkpoint_region", "receipt_id": "map-cpu-observe",
+        "region_id": "CPU", "map_seed": 112233,
+        "generator_id": "d-cpu-v1"}, true)
+    check(Gateway.transact_command(slot, region).applied,
+        "map generator seed/version committed before combat observation")
+    var observed: Dictionary = base.duplicate(true)
+    observed.merge({
+        "action": "checkpoint_combat_observation",
+        "receipt_id": "runtime-tick-100", "region_id": "CPU",
+        "combat_tick": 100, "b_version": "B-runtime-v1",
+        "d_version": "D-world-v1",
+        "b_state": {
+            "tick": 100, "rng_state_text": "9223372036854770000",
+            "player": {"hp": 55, "mana": 30, "position": [3.0, 0.0, 4.0]},
+            "enemies": [{"id": "enemy-1", "hp": 15, "position": [10, 0, 6]}],
+            "projectiles": [{"id": "bullet-1", "age_ticks": 3}],
+            "skills": {"Q": {"cooldown_ticks": 22}},
+            "status_effects": [{"id": "poison", "remaining_ticks": 60}]
+        },
+        "d_state": {
+            "tick": 100, "rng_state_text": "-1234567",
+            "player_transform": {"position": [3, 0, 4], "rotation": [0, 0, 0]},
+            "enemy_transforms": [{"id": "enemy-1", "position": [10, 0, 6]}],
+            "world_entities": []
+        }
+    }, true)
+    var committed: Dictionary = Gateway.transact_command(slot, observed)
+    check(committed.get("applied", false),
+        "B and D observation captured in ONE checksummed E save: " + str(committed))
+    var inspected: Dictionary = Gateway.inspect_slot(slot)
+    check(inspected.ok and inspected.combat_runtime_checkpoint_present \
+        and inspected.combat_observation_snapshot.combat_tick == 100 \
+        and not inspected.technically_restorable and not inspected.safe_to_resume,
+        "diagnostic battle packet visible but mid-combat recovery stays blocked")
+    var original: Dictionary = Store.read(slot)
+    check(original.ok and original.state.vaccine.mission.environment_rolls.has(
+        "e_combat_observation_v1"), "runtime packet survives a fresh verified read")
+    var stale: Dictionary = observed.duplicate(true)
+    stale.receipt_id = "runtime-tick-100-duplicate"
+    check(not Gateway.transact_command(slot, stale).applied,
+        "same combat tick cannot silently replace the B/D packet")
+    var skewed: Dictionary = observed.duplicate(true)
+    skewed.receipt_id = "runtime-tick-101-skewed"
+    skewed.combat_tick = 101
+    skewed.b_state.tick = 101
+    check(not Gateway.transact_command(slot, skewed).applied,
+        "B and D must attest the SAME paused simulation tick")
+    var next: Dictionary = observed.duplicate(true)
+    next.receipt_id = "runtime-tick-101"
+    next.combat_tick = 101
+    next.b_state.tick = 101
+    next.d_state.tick = 101
+    check(Gateway.transact_command(slot, next).applied,
+        "next synchronized B/D observation replaces the older diagnostics")
+    var rewind: Callable = func(copy: Dictionary) -> Dictionary:
+        copy.vaccine.mission.environment_rolls["e_combat_observation_v1"] = \
+            original.state.vaccine.mission.environment_rolls[
+                "e_combat_observation_v1"].duplicate(true)
+        return {"ok": true, "state": copy}
+    check(Store.transact(slot, rewind).reason == "invalid_transition",
+        "direct Store writer cannot rewind the global combat tick")
+    var final_read: Dictionary = Store.read(slot)
+    check(final_read.ok and final_read.state.vaccine.mission.environment_rolls[
+        "e_combat_observation_v1"].combat_tick == 101,
+        "last verified observation is stable after rejected rewind")

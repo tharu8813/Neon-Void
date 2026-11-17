@@ -10,6 +10,9 @@ var seen_collision_targets: Dictionary = {}
 var last_proc_tick: Dictionary = {}
 var next_sequence: int = 0
 var current_tick: int = 0
+## Hard admission ceiling, independent of per-tick scheduling quota.
+## Overflow is a detectable integration failure, never silently counted as a hit.
+var max_pending_events: int = 8192
 var metrics: Dictionary = {}
 
 func _init() -> void:
@@ -24,10 +27,14 @@ func reset() -> void:
     current_tick = 0
     metrics = {"accepted": 0, "processed": 0, "cycle_blocked": 0,
         "duplicate_hit_blocked": 0, "icd_blocked": 0,
-        "permission_blocked": 0, "max_pending": 0}
+        "permission_blocked": 0, "max_pending": 0,
+        "overflow_rejected": 0}
 
 func set_tick(tick: int) -> void:
     current_tick = maxi(current_tick, tick)
+
+func pending_count() -> int:
+    return pending.size() - pending_head
 
 func _new_id() -> String:
     next_sequence += 1
@@ -43,6 +50,17 @@ func _queue(event: Dictionary) -> Dictionary:
             return {}
         targets[target_key] = true
         seen_collision_targets[hit_key] = targets
+    if pending_count() >= maxi(1, max_pending_events):
+        metrics["overflow_rejected"] += 1
+        # Reject BEFORE reserving hit/ICD slots or generating an event ID.
+        if not hit_key.is_empty():
+            var targets: Dictionary = seen_collision_targets.get(hit_key, {})
+            targets.erase(str(event.get("target_id", "")))
+            if targets.is_empty():
+                seen_collision_targets.erase(hit_key)
+            else:
+                seen_collision_targets[hit_key] = targets
+        return {}
     event["event_id"] = _new_id()
     pending.append(event)
     metrics["accepted"] += 1

@@ -8,7 +8,7 @@ const DT_C: float = 1.0 / 60.0
 var effect_owners: Dictionary = {}
 var b_event_hits: Dictionary = {}
 var outstanding_boomerangs: Dictionary = {}
-var pending_e_rewards: Array[Dictionary] = []
+var pending_e_rewards: Array[Dictionary] = [] # Deprecated: no C/B bonus grants.
 var plugin_metrics: Dictionary = {"routed":0,"commands":0,"blocked":0,"pending_max":0,"physical_hits":0}
 var _active_parent: Dictionary = {}
 var _in_effect_dispatch: bool = false
@@ -16,14 +16,37 @@ var _in_effect_dispatch: bool = false
 func attach_plugins(actor_id: String, owned_levels: Dictionary, seed_value: int = 0) -> bool:
 	if not actors.has(actor_id):
 		return false
+	# Production A/B already supports a damage_absorber callback (used by
+	# B's CAdapter). Running BOTH the subclass and adapter would double procs.
+	if stat_provider.is_valid() or attack_provider.is_valid() or fire_gate_provider.is_valid():
+		return false
+	if damage_absorber.is_valid() and damage_absorber.get_object() != self:
+		return false
 	var engine = CEffects.new()
 	if not engine.configure(owned_levels, seed_value):
 		return false
 	effect_owners[actor_id] = engine
+	# Use B's authoritative pre-HP application hook, never heal after damage.
+	# This is the same provisional shield-first policy used by A CAdapter.
+	damage_absorber = Callable(self,"_absorb_c_shield")
 	# B only checks whether this array is nonempty for periodic event submission.
 	# Dummy descriptor has no trigger and cannot duplicate C's attacks.
 	actors[actor_id]["plugins"] = [{"plugin_id":"__c_live_marker","trigger":{"event":"disabled"}}] if not owned_levels.is_empty() else []
 	return true
+
+func _absorb_c_shield(target_id: String, calculation: Dictionary) -> Dictionary:
+	if not actors.has(target_id):
+		return calculation
+	var pool: float = maxf(0.0,float(actors[target_id].get("c_shield_pending",0.0)))
+	var pending_damage: float = maxf(0.0,float(calculation.get("calculated_damage",0.0)))
+	var absorbed: float = minf(pool,pending_damage)
+	if absorbed <= 0.0:
+		return calculation
+	actors[target_id]["c_shield_pending"] = pool-absorbed
+	calculation["calculated_damage"] = pending_damage-absorbed
+	presentation.append({"kind":"shield_absorbed","actor_id":target_id,
+		"amount":absorbed,"policy":"provisional_shield_first"})
+	return calculation
 
 func acknowledge_plugin_level(actor_id: String, plugin_id: String, level: int) -> bool:
 	if not effect_owners.has(actor_id):
@@ -245,11 +268,12 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 		elif typ=="projectile_transform":
 			# Existing shot is modified by _spawn; don't double-spawn it.
 			continue
-		elif typ=="rare_reward_request":
-			delayed_mutations.append(command.duplicate(true))
+		elif typ=="rare_reward_notice":
+			# An unverified acquisition event must never request another E payout.
+			continue
 		elif typ=="shield":
-			# No shield absorption API in B yet. Track pending, do NOT count as
-			# actual combat shield success until B/A supplies real mitigation.
+			# A-approved integration prototype uses B damage_absorber for
+			# real shield-first HP mitigation; stacking/expiry are provisional.
 			delayed_mutations.append(command.duplicate(true))
 		elif typ=="knockback":
 			var victim: String = target_id
@@ -282,8 +306,8 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 	# C side effects must NEVER survive a rejected B proc batch.
 	for item in delayed_mutations:
 		match str(item.get("type","")):
-			"rare_reward_request":
-				pending_e_rewards.append(item)
+			"rare_reward_notice":
+				pass # E is sole authority; no C-side payout queue.
 			"shield":
 				actors[actor_id]["c_shield_pending"] = float(actors[actor_id].get("c_shield_pending",0.0))+float(item.get("amount",0.0))
 			"knockback":

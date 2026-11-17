@@ -245,5 +245,8 @@ func _run() -> void:
 	if not _check(actual_b.run(), "production B runtime plugin tests"):
 		quit(1)
 		return
-	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, maxed, empty, levels, proc path")
+	var rare_contract = preload("res://tests/rework/plugins/plugin_atomic_rare_cases.gd").new()
+	if not _check(rare_contract.run(), "E-only rare receipts and all 27 level caps"):
+		return
+	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, caps, E rare receipts, proc path")
 	quit(0)

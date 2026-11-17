@@ -5,6 +5,7 @@ const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Fence = preload("res://scripts/rework/persistence/lifetime_fence.gd")
 const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
+const Observation = preload("res://scripts/rework/progression/combat_observation.gd")
 const STATE_FILE := "state.json"
 const BACKUP_FILE := "state.json.bak"
 const RECOVERY_FILE := "state.json.recovery"
@@ -308,7 +309,8 @@ static func _monotonic_transition(previous: Dictionary, upcoming: Dictionary) ->
                     or later.generated_map_seeds[region] != earlier.generated_map_seeds[region]:
                 return false
         if not Checkpoint.monotonic(earlier, later) \
-                or not RareBonus.monotonic(earlier, later):
+                or not RareBonus.monotonic(earlier, later) \
+                or not Observation.monotonic(earlier, later):
             return false
     return true
 

@@ -250,23 +250,24 @@ func _run() -> void:
 				check(mission["obtained_plugins"].has(claimed_id) and int(mission["pending_plugin_offers"])==0,
 					"C and E share one persisted selection / pending reward consumed")
 				check(int(c_offers.levels.get(claimed_id,0))==1,"C inventory updated after durable commit")
-				# The 15th common plugin grants a RANDOM rare, not merely a
-				# description. E's event-source transaction must own its receipt.
+				# The old C separate-rare grant API is deliberately disabled.
+				# A/E #121 now owns source+bonus in one atomic transaction.
+				var before_rare: Dictionary = gateway_api.snapshot(slot_path)
 				var random_rare_runtime = Runtime.new()
-				check(random_rare_runtime.configure({"nv_c_random_rare":1},77),"rare grant runtime configured")
-				var award: Dictionary = Coordinator.commit_random_rare(random_rare_runtime,
+				check(random_rare_runtime.configure({"nv_c_random_rare":1},77),
+					"rare display runtime configured")
+				var blocked: Dictionary = Coordinator.commit_random_rare(random_rare_runtime,
 					slot_path,"vaccine-c",1,"run-c-receipt","acquire-rare",9812)
-				check(award.get("ok",false),"rare auto-grant committed via E")
-				if award.get("ok",false):
-					var rare_id: String = str(award["plugin_id"])
-					var second_snapshot: Dictionary = gateway_api.snapshot(slot_path)
-					check(second_snapshot.get("ok",false)
-						and second_snapshot["snapshot"]["vaccine"]["mission"]["obtained_plugins"].has(rare_id)
-						and int(random_rare_runtime.levels[rare_id])==1,"rare E receipt and C inventory aligned")
-					var duplicate_award: Dictionary = Coordinator.commit_random_rare(random_rare_runtime,
-						slot_path,"vaccine-c",1,"run-c-receipt","acquire-rare",9812)
-					check(not duplicate_award.get("ok",false)
-						and int(random_rare_runtime.levels[rare_id])==1,"rare receipt never grants twice")
+				var after_rare: Dictionary = gateway_api.snapshot(slot_path)
+				check(not blocked.get("ok",false) and
+					str(blocked.get("reason",""))=="rare_grant_owned_by_E_source_transaction",
+					"legacy C rare RNG/payout API fails closed")
+				check(bool(before_rare.get("ok",false)) and
+					bool(after_rare.get("ok",false)) and
+					int(after_rare.get("revision",-1))==int(before_rare.get("revision",-2))
+					and after_rare.get("snapshot",{})==before_rare.get("snapshot",{}),
+					"blocked C rare grant never mutates E save")
+
 
 			else:
 				check(false,"persisted E snapshot missing")

@@ -49,6 +49,36 @@ func fire_event(combat, event_kind: String, tags: Array = ["basic_attack","proje
 	dispatch_total+=processed.size()
 	max_pending=maxi(max_pending,int(combat.bus.metrics.get("max_pending",0)))
 
+
+func verify_shield_hp(combat, uid: String) -> bool:
+	# Use real B Damage.calculate + damage_absorber + apply_damage.
+	# Same provisional shield-first rule as A's c_effect_adapter.
+	var before: float = float(combat.actors["P"].get("c_shield_pending",0.0))
+	check(before>0.0 and before<100.0,uid+" produced shield from real B event")
+	if before<=0.0:
+		return false
+	combat.bus.submit_root({"kind":"damage","trigger_kind":"on_hit",
+		"actor_id":"E1","target_id":"P",
+		"source_tags":["hostile_attack"],"allowed_proc_triggers":[],
+		"attack":{"damage_type":"true","base_damage":before+5.0,
+			"ad_ratio":0.0,"ap_ratio":0.0,"can_crit":false,"is_on_hit":true}})
+	combat.bus.drain_batch(512,Callable(combat,"_resolve_event"))
+	var hp: float = float(combat.snapshot("P")["stats"]["health"])
+	var after: float = float(combat.actors["P"].get("c_shield_pending",0.0))
+	check(is_equal_approx(hp,95.0) and is_zero_approx(after),
+		uid+" absorbs B damage before HP, then spills exactly 5")
+	combat.bus.submit_root({"kind":"damage","trigger_kind":"on_hit",
+		"actor_id":"E1","target_id":"P",
+		"source_tags":["hostile_attack"],"allowed_proc_triggers":[],
+		"attack":{"damage_type":"true","base_damage":8.0,
+			"ad_ratio":0.0,"ap_ratio":0.0,"can_crit":false,"is_on_hit":true}})
+	combat.bus.drain_batch(512,Callable(combat,"_resolve_event"))
+	var hp_after: float = float(combat.snapshot("P")["stats"]["health"])
+	check(is_equal_approx(hp_after,87.0) and
+		is_zero_approx(float(combat.actors["P"].get("c_shield_pending",0.0))),
+		uid+" cannot reuse already consumed shield")
+	return is_equal_approx(hp_after,87.0) and is_zero_approx(after)
+
 func run() -> bool:
 	var plugins: Array[Dictionary] = Catalog.entries()
 	var verified_battle: Dictionary = {}
@@ -70,11 +100,11 @@ func run() -> bool:
 				combat.bus.set_tick(1800)
 				combat.fixed_tick=1800
 				fire_event(combat,"periodic",["periodic"])
-				mutated = false # B has NO shield-absorption integration.
+				mutated = verify_shield_hp(combat,uid)
 			"skill_shield","dash_shield":
 				fire_event(combat,"skill_cast" if kind=="skill_shield" else "dash",
 					["skill_cast"] if kind=="skill_shield" else ["dash"])
-				mutated = false # Pending shield is not mitigated damage.
+				mutated = verify_shield_hp(combat,uid)
 			"low_hp_emergency":
 				combat.actors["P"]["stats"]["health"]=20.0
 				fire_event(combat,"damage_taken",["damage_taken"])
@@ -131,7 +161,7 @@ func run() -> bool:
 			verified_battle[uid] = true
 		else:
 			not_verified.append(uid)
-		if kind not in ["grant_rare","periodic_shield","skill_shield","dash_shield"]:
+		if kind != "grant_rare":
 			check(mutated,"B world effect missing: "+uid+" ["+kind+"]")
 		var max_level: int = int(entry.get("max_level",1))
 		check(not combat.attach_plugins("P",{uid:max_level+1},10),

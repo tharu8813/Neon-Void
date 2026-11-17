@@ -5,6 +5,7 @@ const State = preload("res://scripts/rework/progression/state_model.gd")
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
 const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
+const Observation = preload("res://scripts/rework/progression/combat_observation.gd")
 
 static func _reject(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}
@@ -88,6 +89,22 @@ static func checkpoint_region(state: Dictionary, vaccine_id: String,
     if not stored.ok:
         return _reject(str(stored.reason))
     return _finish(out, "region_checkpointed")
+
+static func checkpoint_combat_observation(state: Dictionary, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String, region_id: String,
+        combat_tick: int, b_version: String, d_version: String,
+        b_state: Dictionary, d_state: Dictionary) -> Dictionary:
+    var prepared: Dictionary = _prepare(state, vaccine_id, generation, run_id)
+    if not prepared.ok:
+        return prepared
+    var out: Dictionary = prepared.state
+    if not _accept_receipt(out.vaccine, receipt_id):
+        return _reject("duplicate_or_invalid_receipt")
+    var recorded: Dictionary = Observation.record(out.vaccine.mission,
+        region_id, combat_tick, b_version, d_version, b_state, d_state)
+    if not recorded.get("ok", false):
+        return _reject(str(recorded.get("reason", "combat_observation_rejected")))
+    return _finish(out, "combat_observation_checkpointed")
 
 static func checkpoint_offer(state: Dictionary, vaccine_id: String,
         generation: int, run_id: String, receipt_id: String,
