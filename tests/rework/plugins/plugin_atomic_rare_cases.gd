@@ -16,6 +16,102 @@ func _check(yes: bool, label: String) -> void:
 func _accept_commands(_commands: Array, _world: Dictionary) -> Dictionary:
 	return {"ok":true}
 
+
+func _clean_generated(folder: String) -> void:
+	# Only called for unique user://rework-c-atomic-* test directories.
+	var dir: DirAccess = DirAccess.open(folder)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var next: String = dir.get_next()
+	while not next.is_empty():
+		var child: String = folder.path_join(next)
+		if dir.current_is_dir():
+			_clean_generated(child)
+		else:
+			DirAccess.remove_absolute(child)
+		next = dir.get_next()
+	dir.list_dir_end()
+	DirAccess.remove_absolute(folder)
+
+func _test_actual_E_transaction() -> void:
+	## Runs on A #121+ only, using a fresh synthetic slot, never real saves.
+	if not ResourceLoader.exists("res://scripts/rework/progression/rare_bonus.gd"):
+		print("C ATOMIC RARE: E atomic rare implementation unavailable on this stack")
+		return
+	var store: Script = load("res://scripts/rework/persistence/rework_save_store.gd")
+	var model: Script = load("res://scripts/rework/progression/state_model.gd")
+	var gateway: Script = load("res://scripts/rework/persistence/progression_gateway.gd")
+	var suffix: String = "c-atomic-" + str(Time.get_ticks_usec()) + "-" + str(OS.get_process_id())
+	var folder: String = ProjectSettings.globalize_path("user://rework-c-atomic-" + suffix)
+	var slot_path: String = folder.path_join("rework-slot-" + suffix)
+	var vaccine_id: String = "vaccine-c-atomic"
+	var run_id: String = "run-c-atomic"
+	var created: Dictionary = store.initialize(slot_path,model.new_slot(suffix,vaccine_id))
+	_check(bool(created.get("ok",false)),"E source+bonus test slot initialized")
+	if not bool(created.get("ok",false)):
+		return
+	var started: Dictionary = gateway.transact_command(slot_path,{
+		"action":"start_mission","vaccine_id":vaccine_id,"generation":1,
+		"run_id":run_id,"seed":1789})
+	_check(bool(started.get("applied",false)),"E atomic test mission started")
+	if not bool(started.get("applied",false)):
+		_clean_generated(folder)
+		return
+	var xp: Dictionary = gateway.transact_command(slot_path,{
+		"action":"mission_xp","vaccine_id":vaccine_id,"generation":1,
+		"run_id":run_id,"receipt_id":"c-rare-xp1","amount":100})
+	_check(bool(xp.get("applied",false)),"E issued one level-up offer")
+	var single_source: Array[Dictionary] = [
+		Catalog.find_by_id("nv_c_random_rare",Catalog.entries())
+	]
+	var offers = Offers.new(single_source)
+	_check(offers.begin_mission(1789,{},run_id),"C prepares source-only card")
+	var opening: Dictionary = offers.roll_offer()
+	_check(not opening.get("cards",[]).is_empty() and
+		str(opening["cards"][0].get("plugin_id",""))=="nv_c_random_rare",
+		"deterministic fixture offers random rare source")
+	var picked: Dictionary = Coordinator.commit_choice(offers,0,slot_path,
+		vaccine_id,1,run_id)
+	_check(bool(picked.get("ok",false)) and
+		bool(picked.get("rare_bonus",{}).get("ok",false)),
+		"C displays source only after E confirms atomic rare pair")
+	var saved: Dictionary = gateway.snapshot(slot_path)
+	if bool(picked.get("ok",false)) and bool(saved.get("ok",false)):
+		var receipt: String = str(picked.get("receipt_id",""))
+		var bonus: Dictionary = picked.get("rare_bonus",{})
+		var source_rare: String = str(bonus.get("plugin_id",""))
+		var mission: Dictionary = saved["snapshot"]["vaccine"]["mission"]
+		_check(mission["obtained_plugins"].has("nv_c_random_rare")
+			and mission["obtained_plugins"].has(source_rare)
+			and saved["snapshot"]["vaccine"]["receipts"].has(receipt)
+			and saved["snapshot"]["vaccine"]["receipts"].has(str(bonus.get("bonus_receipt",""))),
+			"E persisted both source and bonus receipts in one transaction")
+		var combat = Runtime.new()
+		_check(combat.configure({"nv_c_random_rare":1},23),
+			"C combat ready for E confirmed rare bonus")
+		var once: Dictionary = Coordinator.apply_verified_rare(combat,offers,
+			saved,receipt,vaccine_id,1,run_id)
+		var twice: Dictionary = Coordinator.apply_verified_rare(combat,offers,
+			saved,receipt,vaccine_id,1,run_id)
+		_check(bool(once.get("ok",false)) and bool(twice.get("already_synced",false))
+			and int(combat.levels.get(source_rare,0))==int(bonus.get("level",-1)),
+			"E source+bonus ACK reconciles exactly once")
+		var before_replay: Dictionary = gateway.snapshot(slot_path)
+		var original: Dictionary = picked.get("plugin",{})
+		var duplicate_tx: Dictionary = gateway.transact_command(slot_path,{
+			"action":"plugin_picked","vaccine_id":vaccine_id,"generation":1,
+			"run_id":run_id,"receipt_id":receipt,
+			"offer_id":original.get("offer_id",""),
+			"plugin_id":"nv_c_random_rare","rarity":"common",
+			"level":int(original.get("level",1)),
+			"offer_source":"levelup"})
+		var after_replay: Dictionary = gateway.snapshot(slot_path)
+		_check(not bool(duplicate_tx.get("applied",false)) and
+			int(after_replay.get("revision",-1))==int(before_replay.get("revision",-2)),
+			"E duplicate transaction cannot issue another rare")
+	_clean_generated(folder)
+
 func run() -> bool:
 	var entries: Array[Dictionary] = Catalog.entries()
 	_check(entries.size() == 27 and Catalog.validate(entries).is_empty(),
@@ -146,6 +242,7 @@ func run() -> bool:
 		and int(empty_offers.levels.get(rare_id,0))==0,
 		"no local awards after corrupted or absent receipt pair")
 	_check(level_checks > 0,"every defined level boundary tested")
+	_test_actual_E_transaction()
 	if failures.is_empty():
 		print("C ATOMIC RARE PASS: 27 plugin level caps, read-only E receipts, no double award")
 	return failures.is_empty()
