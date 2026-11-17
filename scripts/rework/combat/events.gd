@@ -134,6 +134,13 @@ func drain_batch(max_events: int, handler: Callable = Callable()) -> Array[Dicti
                 var entry: Dictionary = request
                 submit_proc(event, str(entry.get("effect_id", "")),
                     entry.get("event", {}), int(entry.get("icd_ticks", 0)))
+    # Compact once per batch. No per-event O(n) Array.pop_front().
+    if pending_head > 0:
+        var remaining: Array[Dictionary] = []
+        for index in range(pending_head, pending.size()):
+            remaining.append(pending[index])
+        pending = remaining
+        pending_head = 0
     # Already-popped events cannot replay; discard per-drain ID bookkeeping.
     processed_ids.clear()
     return processed
