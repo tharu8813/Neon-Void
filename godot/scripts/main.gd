@@ -527,11 +527,15 @@ func _on_interact() -> void:
         return
     # Python game.py::_handle_key requires F within 112 logical pixels of
     # CPU_EXIT(100,360). A remote F must never abandon a running sector.
-    if mode in ["combat", "between", "clean"] and LegacyExit.can_interact(actor.get("logical_position")):
+    if mode == "between":
+        # The existing durable reward flow requires F to confirm next wave.
+        # Keep this explicit checkpoint-safe transition until the source's
+        # auto-start behavior can be migrated without changing E receipts.
+        start_next_wave()
+        return
+    if mode in ["combat", "clean"] and LegacyExit.can_interact(actor.get("logical_position")):
         retreat_to_hub()
         return
-    if mode == "between":
-        start_next_wave()
     elif mode == "base":
         var terminal: String = nearest_base_terminal(actor.get("logical_position"))
         if terminal.is_empty():
