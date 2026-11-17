@@ -35,6 +35,8 @@ var _dash_key_down: bool = false
 var _skill_keys_down: Array[bool] = [false, false, false]
 var _old_player_movement: bool = true
 var _has_player_movement: bool = false
+var _has_player_speed: bool = false
+var _old_player_speed: float = 5.0
 var balance_draft: Dictionary = {
     "seed": 42,
     "player_attack_base_damage": 4.0,
@@ -97,6 +99,9 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
     _has_player_movement = _has_property(player, "movement_enabled")
     if _has_player_movement:
         _old_player_movement = bool(player.get("movement_enabled"))
+    _has_player_speed = _has_property(player, "walk_speed")
+    if _has_player_speed:
+        _old_player_speed = float(player.get("walk_speed"))
     player_stats = simulation.actors[PLAYER_ID]["stats"]
     game_over = false
     _emit_resource_changes(true)
@@ -109,8 +114,11 @@ func _has_property(object: Object, property_name: String) -> bool:
 
 func reset() -> void:
     running = false
-    if player != null and is_instance_valid(player) and _has_player_movement:
-        player.set("movement_enabled", _old_player_movement)
+    if player != null and is_instance_valid(player):
+        if _has_player_movement:
+            player.set("movement_enabled", _old_player_movement)
+        if _has_player_speed:
+            player.set("walk_speed", _old_player_speed)
     for enemy in enemies.values():
         var body: Variant = enemy.get("body", null)
         if is_instance_valid(body):
@@ -136,6 +144,7 @@ func reset() -> void:
     player = null
     camera = null
     _has_player_movement = false
+    _has_player_speed = false
     last_health = -1.0
     last_mana = -1.0
     last_plugin_fault = ""
@@ -179,7 +188,7 @@ func spawn_hostile(info: Dictionary) -> bool:
         balance_draft["boss_move_speed"] if boss else balance_draft["enemy_move_speed"]))
     var combat_stats: Dictionary = Stats.make({
         "max_health": hp, "health": hp, "move_speed": speed,
-        "attack_speed": float(balance_draft["enemy_attack_speed"]),
+        "attack_speed": float(info.get("attack_speed", balance_draft["enemy_attack_speed"])),
         "attack_damage": 9.0 if boss else 3.0,
         "boss_control_resistance": float(balance_draft["boss_control_resistance"]) if boss else 0.0
     })
@@ -316,6 +325,9 @@ func _move_physical_player() -> void:
     if displacement.length_squared() > 0.000001:
         player.move_and_collide(displacement)
     simulation.set_actor_position(PLAYER_ID, player.global_position)
+    if _has_player_speed:
+        player.set("walk_speed", maxf(0.0,
+            float(simulation._effective_stats(simulation.actors[PLAYER_ID]).get("move_speed", _old_player_speed))))
     if _has_player_movement:
         var flags: Dictionary = Statuses.active_flags(state["status_state"])
         player.set("movement_enabled", _old_player_movement and

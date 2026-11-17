@@ -28,6 +28,7 @@ var settings: Dictionary = {
     "default_projectile_speed": 18.0,
     "projectile_radius_scale": 0.025,
     "default_projectile_lifetime_ticks": 120,
+    "attack_speed_cap": 30.0,  # BALANCE_DRAFT: GDD cap confirmed, number unapproved.
     "vamp_overlap_policy": "unresolved"
 }
 var counters: Dictionary = {}
@@ -240,8 +241,10 @@ func _fire_if_ready(actor_id: String, aim: Vector2) -> void:
     if fire_gate_provider.is_valid() and not bool(fire_gate_provider.call(actor_id)):
         actor["fire_credit"] = minf(1.0, float(actor["fire_credit"]))
         return
-    actor["fire_credit"] = float(actor["fire_credit"]) + maxf(0.0,
-        float(stats.get("attack_speed", 0.0))) * DT
+    var attacks_per_second: float = clampf(
+        float(stats.get("attack_speed", 0.0)), 0.0,
+        maxf(0.0, float(settings.get("attack_speed_cap", 30.0))))
+    actor["fire_credit"] = float(actor["fire_credit"]) + attacks_per_second * DT
     if bool(Statuses.active_flags(actor["status_state"]).get("stopped", false)):
         actor["fire_credit"] = minf(float(actor["fire_credit"]), 1.0)
         return
@@ -590,7 +593,14 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
         var actor: Dictionary = actors[actor_id]
         if not bool(actor["alive"]):
             continue
-        actor["skills"].tick()
+        # Refresh temporary stat-derived mana attributes without overwriting
+        # current mana or permanent skill progression every tick.
+        var mana_stats: Dictionary = _effective_stats(actor)
+        var slots: Variant = actor["skills"]
+        slots.max_mana = maxf(0.0, float(mana_stats.get("max_mana", slots.max_mana)))
+        slots.mana = minf(slots.mana, slots.max_mana)
+        slots.mana_regen = maxf(0.0, float(mana_stats.get("mana_regen", slots.mana_regen)))
+        slots.tick()
         if not actor["plugins"].is_empty():
             bus.submit_root({"kind": "periodic", "trigger_kind": "periodic",
                 "actor_id": str(actor_id), "target_id": str(actor_id),

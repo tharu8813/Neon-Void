@@ -5,6 +5,7 @@ const Production = preload("res://scripts/rework/combat/production_cpu_adapter.g
 const Motor = preload("res://scripts/rework/world/preview_player_motor.gd")
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
 const Statuses = preload("res://scripts/rework/combat/statuses.gd")
+const Runtime = preload("res://scripts/rework/combat/combat_runtime.gd")
 const DScene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
 const Board = preload("res://scripts/rework/world/motherboard_layout.gd")
 
@@ -73,6 +74,14 @@ static func run(check: Callable, scene_root: Node) -> void:
          "stack_mode":"refresh", "flags":["rooted"]})
     check.call(int(control.get("duration_ticks", -1)) == 60,
         "live boss control resistance applied in B status engine")
+    var movement_buff: Dictionary = Statuses.apply(
+        battle.simulation.actors["VACCINE"]["status_state"],
+        {"id":"temporary_slow", "duration_ticks":120,
+         "stack_mode":"refresh", "stat_modifiers":{"move_speed":-3.0,
+         "max_mana":50.0, "mana_regen":60.0}})
+    check.call(bool(movement_buff.get("ok", false)),
+        "live player movement and mana stats can be modified by status")
+    battle.simulation.actors["VACCINE"]["skills"].mana = 50.0
     var origin_x: float = player.global_position.x
     battle.set_combat_input({"move": Vector2.LEFT, "dash": true, "fire": false,
         "aim_world": player.global_position + Vector3.RIGHT * 5.0})
@@ -82,6 +91,11 @@ static func run(check: Callable, scene_root: Node) -> void:
     check.call(dash_notice.any(func(e: Dictionary) -> bool:
         return str(e.get("kind", "")) == "dash"),
         "real dash event emitted")
+    check.call(close_to(float(player.get("walk_speed")), 2.0),
+        "B slow debuff updates D's actual 3D motor speed")
+    check.call(close_to(float(battle.simulation.actors["VACCINE"]["skills"].max_mana), 150.0) and
+        close_to(float(battle.simulation.actors["VACCINE"]["skills"].mana_regen), 65.0),
+        "temporary max-mana/regen stat changes refresh live B skill controller")
     check.call(battle.learn_active_skill({"id":"pulse", "mana_cost":10.0,
         "cooldown_ticks":60, "attack":{"damage_type":"magic",
         "base_damage":7.0}}, 0, true), "learn and equip first of three skill slots")
@@ -167,6 +181,17 @@ static func run(check: Callable, scene_root: Node) -> void:
         float(battle.simulation.snapshot("SOLO")["stats"]["health"]) < 20.0,
         "single enemy: C lightning no-op must not break B normal attack")
     battle.reset()
+
+    # Attack-speed hard ceiling exists by GDD, but the numerical 5 is only
+    # a test override, never an approved fixed balance rule.
+    var rate_test = Runtime.new(555, {"encounter_id":"rate-cap", "attack_speed_cap":5.0})
+    rate_test.register_actor("P", "vaccine", Vector3.ZERO,
+        {"attack_speed":100000.0},
+        {"player_controlled":true})
+    for rate_tick in range(60):
+        rate_test.step_fixed({"P":{"fire":true, "aim_world":Vector3(20,0,0)}})
+    check.call(int(rate_test.counters["shots"]) <= 6,
+        "configurable attack-speed cap bounds 60Hz shot submissions")
 
     # P2 synthetic crowd: real actor bodies + B pooled projectiles, without
     # making a machine-specific FPS assertion from a GitHub runner.
