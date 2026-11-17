@@ -8,6 +8,7 @@ const Pilot = preload("res://scenes/rework/integration/rework_pilot.tscn")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Board = preload("res://scripts/rework/world/motherboard_layout.gd")
+const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const REGIONS := ["CPU", "GPU", "RAM", "SSD", "HDD"]
 var errors: int = 0
 var pilot: Node3D
@@ -102,11 +103,24 @@ func _kill_real_B(router: Variant, actor_id: String,
             return false
         var target: Vector3 = router.enemies[actor_id]["node"].global_position
         if world.current_mode != "motherboard":
-            # Deterministic combat fixture positions the *actual player body*
-            # on a valid open floor tile close to the B enemy, rather than
-            # firing indefinitely through D procedural walls from a console.
-            # Still only B projectile collision can issue an accepted kill.
-            world.player.global_position = target + Vector3(0.5, 0.5, 0.0)
+            # Place the actual player body in a distinct neighboring FLOOR
+            # tile. Half-unit offsets overlap B enemy collision and produce
+            # false misses even with real projectiles.
+            var enemy_cell: Vector2i = world.hardware.world_to_cell(target)
+            var adjacent: Array[Vector2i] = [
+                Vector2i(1, 0), Vector2i(0, 1),
+                Vector2i(-1, 0), Vector2i(0, -1)]
+            var positioned: bool = false
+            for step in adjacent:
+                var floor_cell: Vector2i = enemy_cell + step
+                if Maps.is_floor(world.hardware.map_plan, floor_cell):
+                    world.player.global_position = Maps.cell_to_world(floor_cell) \
+                        + Vector3.UP * 0.5
+                    positioned = true
+                    break
+            if not positioned:
+                check(false, "no walkable adjacent floor for B hostile " + actor_id)
+                return false
         var commands: Dictionary = {"VACCINE": {
             "move": Vector2.ZERO, "aim_world": target, "fire": true}}
         for enemy in router.enemies.keys():
