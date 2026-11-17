@@ -159,7 +159,8 @@ func _render() -> void:
 			_button("설정", "page:settings")
 			_button("설치된 소프트웨어", "page:loadout")
 			_button("시스템 진단", "page:diagnostics")
-			_button("허브로 돌아가기", "return_hub")
+			if str(state.get("status", "")) != "base":
+				_button("허브로 돌아가기", "return_hub")
 		"settings":
 			_render_settings()
 		"controls":
@@ -178,6 +179,8 @@ func _render() -> void:
 				_button("이전 OS 이어하기", "page:checkpoint")
 			_button("백신 데이터베이스", "page:database")
 			_button("시스템 진단", "page:diagnostics")
+			if bool(state.get("import_available", false)):
+				_button("기존 Python 저장 데이터 가져오기 (원본 보존)", "import_legacy")
 		"sectors":
 			_render_sectors()
 		"purification":
@@ -200,7 +203,7 @@ func _render() -> void:
 		"death":
 			_heading("시스템 중단")
 			_info("플레이어 시스템이 종료되었습니다.", ThemeD.RED)
-			_button("새 OS 배포", "deploy")
+			_button("백신 허브로 귀환", "return_base")
 			_button("백신 데이터베이스", "page:database")
 		"loadout":
 			_heading("설치된 소프트웨어")
