@@ -134,7 +134,7 @@ static func hardware_cleaned(state: Dictionary, vaccine_id: String, generation: 
 
 static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int,
         run_id: String, receipt_id: String, plugin_id: String, rarity: String,
-        level: int, offer_source: String = "levelup") -> Dictionary:
+        level: int, offer_source: String = "levelup", offer_id: String = "") -> Dictionary:
     var prepared: Dictionary = _prepare(state, vaccine_id, generation, run_id)
     if not prepared.ok:
         return prepared
@@ -142,6 +142,9 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
         return _reject("invalid_plugin")
     var output: Dictionary = prepared.state
     var m: Dictionary = output.vaccine.mission
+    var offer_key: String = offer_id if not offer_id.is_empty() else receipt_id
+    if not State.valid_id(offer_key) or m.claimed_offer_ids.has(offer_key):
+        return _reject("offer_already_claimed")
     if offer_source == "levelup" and m.pending_plugin_offers < 1:
         return _reject("no_levelup_offer")
     if m.obtained_plugins.has(plugin_id):
@@ -151,6 +154,7 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
     if not _accept_receipt(output.vaccine, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     m.obtained_plugins[plugin_id] = {"rarity": rarity, "level": level}
+    m.claimed_offer_ids.append(offer_key)
     if offer_source == "levelup":
         m.pending_plugin_offers -= 1
     return _finish(output, "plugin_picked")
