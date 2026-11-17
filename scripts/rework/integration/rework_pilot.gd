@@ -7,6 +7,7 @@ const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Bridge = preload("res://scripts/rework/integration/mission_commit_bridge.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
+const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -37,6 +38,7 @@ func _ready() -> void:
     world.set("demo_mode", false)
     _create_ui()
     world.connect("mission_start_requested", Callable(self, "_on_mission_requested"))
+    world.connect("hardware_checkpoint_requested", Callable(self, "_on_hardware_checkpoint_requested"))
     world.connect("mission_returned", Callable(self, "_on_mission_returned"))
     world.connect("integration_error", Callable(self, "_on_world_error"))
     # A handles D's durability requests so extraction can present a 0-2
@@ -222,6 +224,29 @@ func _on_mission_requested(request: Dictionary) -> void:
         return
     message_label.text = "CPU 의뢰 저장됨 · 전투 XP로 플러그인 획득"
     _refresh()
+
+## A is the only owner of E transactions; D cannot create a real CPU
+## map until the seed + exact generation algorithm have been durably written.
+func _on_hardware_checkpoint_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        _halt("hardware_checkpoint_without_active_E_run")
+        return
+    var plan: Dictionary = world.get("mission")
+    var expected: Dictionary = plan.get("regions", {}).get("CPU", {})
+    if str(fact.get("run_id", "")) != current_run_id \
+            or str(fact.get("region_id", "")) != "CPU" \
+            or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
+            or expected.is_empty() or expected != fact.get("region_plan", {}) \
+            or int(fact.get("map_seed", -1)) != int(expected.get("map_seed", -2)):
+        _halt("CPU_map_plan_changed_before_save")
+        return
+    var ack: Dictionary = bridge.checkpoint_hardware_entry(fact)
+    if not bool(ack.get("ok", false)):
+        _halt("CPU_map_checkpoint_not_durable")
+        return
+    if not bool(world.call("acknowledge_hardware_checkpoint",
+            str(fact.get("receipt_id", "")), ack)):
+        _halt("CPU_map_not_entered_after_durable_ack")
 
 func _on_enemy_defeated(actor_id: String, receipt: String) -> void:
     if frozen or bridge == null:
