@@ -19,7 +19,7 @@ const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Geometry = preload("res://scripts/rework/world/hardware_geometry.gd")
 const ObjectiveSession = preload("res://scripts/rework/world/cpu_objective_session.gd")
 const PlayerMotor = preload("res://scripts/rework/world/preview_player_motor.gd")
-const CombatPreview = preload("res://scripts/rework/world/demo_combat_bridge.gd")
+const CombatRouter = preload("res://scripts/rework/world/world_combat_router.gd")
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
 const WorldState = preload("res://scripts/rework/world/extraction_state.gd")
 const Gate = preload("res://scripts/rework/world/extraction_gate.gd")
@@ -51,11 +51,12 @@ func _ready() -> void:
     add_child(camera)
     camera.current = true
     camera.global_position = Vector3(13, 14, 9)
-    combat = CombatPreview.new()
-    combat.name = "BCombatPreviewBridge"
+    combat = CombatRouter.new()
+    combat.name = "WorldCombatRouter"
     add_child(combat)
     combat.enemy_defeated.connect(_on_enemy_defeated)
     combat.player_died.connect(_on_player_died)
+    combat.integration_failed.connect(_freeze_with_error)
     enter_hub()
 
 func _build_player() -> void:
@@ -188,7 +189,11 @@ func _enter_motherboard() -> bool:
     player.global_position = BoardLayout.SPAWN + Vector3.UP * 0.5
     camera.world_bounds = BoardLayout.BOUNDS
     camera.global_position = Vector3(BoardLayout.SPAWN.x, 14, BoardLayout.SPAWN.z)
-    combat.begin_encounter(player, camera, {}, current_run_id)
+    if not combat.begin_encounter(player, camera, {}, current_run_id, {
+        "formal": not demo_mode, "seed": int(mission["regions"]["CPU"]["encounter_seed"]),
+        "encounter_id": "motherboard:intro"}):
+        _freeze_with_error("B_intro_encounter_failed")
+        return false
     for enemy in BoardLayout.INTRO:
         if not combat.spawn_hostile({
             "actor_id": str(enemy["id"]), "position": enemy["position"], "boss": false
@@ -226,7 +231,11 @@ func _enter_cpu(region_plan: Dictionary) -> bool:
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
     camera.world_bounds = planned_map["world_bounds"]
     camera.global_position = Vector3(player.position.x, 14, player.position.z)
-    combat.begin_encounter(player, camera, planned_map, current_run_id)
+    if not combat.begin_encounter(player, camera, planned_map, current_run_id, {
+        "formal": not demo_mode, "seed": int(region_plan["encounter_seed"]),
+        "encounter_id": "CPU:mission"}):
+        _freeze_with_error("B_CPU_encounter_failed")
+        return false
     return true
 
 func _on_enemy_defeated(actor_id: String, receipt_id: String) -> void:
