@@ -108,6 +108,11 @@ func _run() -> void:
         "installed dash-blast software damages nearby C enemy through true mitigation")
     expect(not target.is_empty() and Vector2(target["vel"]).x > 0.0,
         "dash-blast applies the source outward 140px/s knockback")
+    actor.set("dash_dir", Vector2.RIGHT)
+    var after_initial: float = float(target["hp"])
+    game.call("_apply_dash_blast_pulse")
+    expect(float(game_sim.get_enemy(blast_id)["hp"]) < after_initial,
+        "ongoing dash applies extra 34-percent blast every third frame")
     game.queue_free()
 
     if failures == 0:
