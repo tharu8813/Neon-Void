@@ -97,6 +97,13 @@ func render_world(world: Node3D) -> void:
     if not is_verified or not visible or world == null:
         return
     var mode: String = str(world.get("current_mode"))
+    if str(mission.get("run_id", "")) != str(world.get("current_run_id")):
+        title_label.text = "의뢰 데이터 확인 필요"
+        summary_label.text = "저장된 의뢰 ID와 현재 월드 ID가 일치하지 않아"
+        objective_label.text = "정화/철수 상태를 표시하지 않아"
+        for region in HARDWARE:
+            region_labels[region].text = str(region) + " · 확인 필요"
+        return
     var id: String = mode.to_upper()
     var world_mission: Variant = world.get("mission")
     var plan: Dictionary = world_mission if world_mission is Dictionary else {}
