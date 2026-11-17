@@ -55,3 +55,59 @@ A owns `.github/workflows/**`: add these commands to **both Linux and Windows** 
 
 ### Collision lifetime and memory contract
 Every projectile or attack occurrence uses a globally unique `hit_key` for that encounter, shared across all its collision callbacks. At the **end** of that projectile's lifetime, A/D calls `Events.retire_hit_key(hit_key)` so the duplicate-hit ledger can be dropped. Do not retire while the projectile is capable of further hits. Events' processed-ID scratch bookkeeping is cleared after draining; metrics remain available for profiling. Per-target ICD state remains valid across ticks until `reset()` at the next encounter.
+
+## P1 runtime / C-D-A bridge (stacked follow-up PR)
+
+`combat_runtime.gd` is the **B-owned deterministic 60 Hz combat source of truth**. It is not automatically loaded by the legacy scene. `combat_node_bridge.gd` is a Node3D that **A must explicitly attach to the rework scene**, and whose input and projectile visuals are supplied by A. The fallback XZ plane does **not** implement D terrain/wall collision or Godot physics by itself. Attach actual `CharacterBody3D`s, set `drive_actor_nodes=true` for bridge-driven movement or leave false for A-driven actors, then pass physics-corrected `global_position` back each tick. Do not double-drive externally controlled bodies.
+
+### B runtime API
+- `Runtime.new(seed, {encounter_id, grid_cell_size, event_work_per_tick, vamp_overlap_policy, default_projectile_speed, projectile_radius_scale})` then `register_actor(id, team, Vector3 worldXZ, stats, options)`. Actor options include `player_controlled`, `radius`, `attack_definition`, `projectile_speed`, `projectile_pierce`, `projectile_lifetime_ticks`, `attack_range`, `preferred_min_range/max_range`, `dash_definition`. Default physical basic attack is 100% AD [초안]. Units: 3D world units/s, 60 ticks/s, fractional percentages.
+- `set_actor_plugins(id, instances)`, `learn_skill(id, def, slot, progression_authorized)`, `set_actor_position(id, Vector3)`, `step_fixed({actor_id:{move:Vector2 XZ,aim_world:Vector3,fire:bool,dash:bool,skill_slot:0..2}})`, `snapshot(id)`, `projectile_snapshots()`.
+- Output `step_fixed` is an array of **presentation-only** notices: `projectile_spawn`, `projectile_retire`, `hit`, `death`, `skill_cast`, `dash`, `vamp_policy_pending`. They are not persisted receipts.
+- `combat_node_bridge.gd`: `setup(encounter_id,seed,config)`, `register_node(actor_id,team,Node3D,stats,opts)`, `set_input(id,command)`, `set_projectile_factory(Callable)`, `advance_one_tick()`. Signals `combat_notice`, `combat_actor_died`. It is opt-in and scene-free so no existing root changes. D supplies enemy IDs + positions/geometry, A supplies mouse-to-XZ ray/keyboard/scene graphics.
+
+### Exact C integration contract (proposed, requires review)
+C's current catalog has `plugin_id`, `trigger.event`, `trigger.source_tags`, `proc_permissions.allowed_proc_triggers`, `internal_cooldown_seconds`, `cooldown_scope`, level and Korean descriptions. This **does not yet contain executable effect numbers/commands**. B does **not** infer numbers from localized summaries. C or A supplies an instance preserving those fields plus **versioned numeric**:
+```json
+{
+ "plugin_id": "example_lightning", "level": 1,
+ "trigger": {"event": "projectile_hit", "source_tags": ["basic_attack"]},
+ "internal_cooldown_seconds": 3, "cooldown_scope": "per_target",
+ "proc_permissions": {"allowed_proc_triggers": ["on_hit"], "can_trigger_on_hit_effects": true},
+ "effect_commands": [
+  {"kind": "damage", "target_policy": "nearest_other_enemy",
+   "attack": {"damage_type":"magic", "base_damage": 12, "ad_ratio":0, "ap_ratio":0.2, "can_crit":false}}
+ ]
+}
+```
+This is a **sample API payload**, not the confirmed content or an automatic change to C's 27 plugins. Recognized commands: `damage`, `status`, `heal`, `stat_modifier`, `spawn_projectile`; `passive_stat_modifiers` is a numeric additive map, `trigger_after_hits` is mandatory for `on_hit_proc_count` (no guessing from descriptions). `status` command supplies an explicit `status` dictionary; `stat_modifier` supplies `stats,duration_ticks,stack_mode`. `target_policy` currently supports `current`, `self`, `nearest_other_enemy`. C `trigger.event` mapping: `projectile_hit`, `damage_dealt`, `skill_damage`, `skill_cast`, `on_hit_proc_count`, `health_threshold`, `periodic`, `mobility_or_reveal` to B runtime `on_hit/skill_cast/damage_taken/periodic/dash` fields. Unsupported triggers remain inert, not silently executed. Every chain child carries `proc_path`, source/target IDs, trigger kind, tags and C permission data. Per-target/actor/global ICD keys differ from cycle path keys. A's implementation must explicitly test the C catalog once effect_commands are authored.
+
+### P0/P1/P2 validation and limitations
+- Existing `tests/rework/combat/combat_foundation_smoke.gd` runs `runtime_cases.gd` via a preload, so A's existing Linux/Windows rework smoke hook includes the new live logic regressions **after** this stacked PR is incorporated into a branch with the CI workflow from main.
+- `collision_grid.gd` broadphases actors in XZ with stable ID order and computes swept projectile/circle hits, avoiding high-speed tunneling on the plane. This is not mesh-vs-bullet or wall physics. `enemy_ai.gd` exposes chase/retreat/attack range selection; D still defines content/terrain.
+- `Events.drain_batch(quota,handler)` defers overflow to later ticks without removing it, and `Events.drain(handler)` retains its unlimited semantics. Legitimate proc ancestry can have many stages, while exact repeated effect+actor+target cycles are rejected. Recycled projectile dictionaries are bounded purely for memory/performance. Frame/kill statistics are read-only counters; no VFX RNG enters damage.
+- **[미확정]** When both on-hit and omni-vamp exist on one event, the default `vamp_overlap_policy=unresolved` emits `vamp_policy_pending` instead of applying an unapproved stack formula; A may explicitly set `sum`, `omni_only`, or `on_hit_only` as a temporary QA configuration. HP-only overkill and shields remain unresolved. 3D terrain collision, enemy pathfinding around walls, skill categories/animation, plugin catalogue numeric data, projectile VFX, reward/XP/save receipts, HUD, actual Windows input/perf QA require A/C/D/E follow-on work.
+
+### Example programmatic smoke calls
+```gdscript
+var sim = preload("res://scripts/rework/combat/combat_runtime.gd").new(42, {"encounter_id":"cpu-01"})
+sim.register_actor("vaccine", "player", Vector3.ZERO, {}, {"player_controlled":true})
+sim.register_actor("virus", "enemy", Vector3(5,0,0), {}, {})
+var notices = sim.step_fixed({"vaccine": {"move": Vector2.RIGHT,
+    "aim_world": Vector3(5,0,0), "fire": true}})
+```
+
+### P2 event coverage / performance details
+- B now emits `basic_attack` on firing, `dash` on successful movement dash, `periodic` only for actors carrying plugins, `damage_taken` with post-hit `health_fraction`, and `kill` once on a lethal HP transition. Critical hits appear as `critical=true` on `hit` presentation events and processed damage records; C can filter by this field.
+- C trigger naming covers `projectile_hit, damage_dealt, skill_damage, skill_cast, on_hit_proc_count, health_threshold, periodic, mobility_or_reveal, dash, dash_or_blink, kill, passive_and_damage_taken, on_hit_proc, on_hit_proc_or_kill, basic_attack`. `passive` uses numeric passive offsets. `on_acquire` awaits E's exactly-once claim to avoid duplicate acquisition rewards.
+- Every on-hit proc has opt-in rights from C's `can_trigger_on_hit_effects`. Numeric `on_hit_damage_efficiency` of a plugin bullet modifies the *resulting downstream proc damage*, not the original bonus projectile damage. C must supply target radius/range and trigger threshold data explicitly; no invented defaults from Korean summaries.
+- `Events.drain_batch` keeps a queue cursor to avoid quadratic `pop_front` overhead. Its per-tick quota only shifts processing to later frames and never discards overflow. Collision broadphase returns stable actor ID order, then sorts swept hit fractions, independent of rendering order.
+- C action `damage` with `target_policy=nearest_other_enemy` may optionally supply `max_range` in world units. No map wall line-of-sight test is claimed: D/A needs a physics query before enabling area effects through closed terrain.
+- Enemy steering is a simple chase/retreat range policy, not a navmesh solver. A/D provides collision/nav and enemy geometry for production. Continuous projectile math covers dynamic XZ actor circles but not 3D wall/mesh intersection.
+
+### Derived-projectile cycle guard and area commands
+A plugin-induced projectile is **not** an independent root attack. `Events.submit_continuation(payload,proc_path)` carries the originating ancestry through `_spawn()` and the collision callback. Thus `on_hit -> extra bullet -> on_hit` cannot silently reset the cycle ledger. Genuine independent player shots use `submit_root`, resetting ancestry as intended.
+- `effect_commands`: `{"kind":"damage","target_policy":"area_around_target","radius":2.1,"attack":{...}}` expands to every eligible living enemy in the XZ circle. Attacks are flagged `is_area=true` to apply the GDD's **33% omni-vamp efficiency** once, regardless of separate `is_dot`. No invented range: a numeric `radius` is required.
+- `spawn_projectile` supports numeric `count`, `spread_radians`, `speed` and combat `attack` data. Projectile children inherit the C plugin's `allowed_proc_triggers`, `on_hit_damage_efficiency` and full ancestry; the default does not grant on-hit rights.
+- `combat_runtime.step_fixed` emits status DoT damage with its original source actor when present; source-less DoT may damage its own target for environmental damage, not grant a phantom external attacker. The caller (A/D) still owns wall collision and LOS checks before activating line-of-sight-sensitive effects.
+- Same-script `runtime_cases.gd` regressions include proper area hits, derived-bullet feedback cancellation, 4-hit trigger count, separate seeded simulation and DoT health reduction. Existing B core smoke imports that suite; **running it in an A-owned Linux/Windows CI tree remains mandatory before merge**.
