@@ -30,28 +30,64 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 		var uid: String = str(command.get("plugin_id", ""))
 		match str(command["type"]):
 			"damage":
-				var target_id: String = str(command.get("target_id",""))
-				if target_id.is_empty() or not next["targets"].has(target_id):
+				var impact_id: String = str(command.get("target_id",""))
+				if impact_id.is_empty() or not next["targets"].has(impact_id):
 					return {"ok":false,"reason":"unknown_target"}
-				var defender: Dictionary = next["targets"][target_id]
-				var attacker: Dictionary = next.get("actor_stats", {})
-				var attack: Dictionary = command.get("attack", {})
-				var status_map: Dictionary = next.get("target_statuses",{})
-				var modified_defender: Dictionary = statuses_api.modified_stats(defender,status_map.get(target_id,{"statuses":[]}))
-				var calculated: Dictionary = damage_api.calculate(attacker, modified_defender, attack, false)
-				if not calculated.get("ok",false):
-					return {"ok":false,"reason":"B_damage_invalid"}
-				var hit: Dictionary = damage_api.apply_damage(defender, calculated, bool(defender.get("invulnerable",false)))
-				if not hit.get("ok",false):
-					return {"ok":false,"reason":"B_damage_apply_failed"}
-				next["targets"][target_id] = defender
-				total_damage += float(hit.get("actual_damage",0.0))
-				events.append({"kind":"on_hit_proc","actor_id":str(command.get("actor_id","")),"target_id":target_id,
-					"plugin_id":uid,"tick":int(command.get("tick",0)),
-					"actual_damage":float(hit.get("actual_damage",0.0)),
-					"source_tags":command.get("source_tags",[]),"proc_path":command.get("proc_path",[]),
-					"allowed_proc_triggers":command.get("allowed_proc_triggers",[]),
-					"killed":bool(hit.get("killed",false))})
+				var targets_hit: Array[String] = []
+				var shape: String = str(command.get("shape",""))
+				var positions: Dictionary = next.get("target_positions",{})
+				var origin: Variant = positions.get(impact_id,null)
+				# World supplies current target centers; deterministic ID order
+				# breaks equidistant ties without any graphics RNG.
+				var nearby: Array[Dictionary] = []
+				if origin is Vector2 or origin is Vector3:
+					for other_id in next["targets"].keys():
+						if str(other_id)==impact_id and shape=="lightning":
+							continue
+						var destination: Variant = positions.get(other_id,null)
+						if typeof(origin) != typeof(destination):
+							continue
+						var distance: float = origin.distance_to(destination)
+						nearby.append({"target_id":str(other_id),"distance":distance})
+					nearby.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+						if is_equal_approx(float(left["distance"]),float(right["distance"])):
+							return str(left["target_id"]) < str(right["target_id"])
+						return float(left["distance"]) < float(right["distance"]))
+				if shape=="lightning":
+					var count: int = maxi(0,int(command.get("chain_targets",1)))
+					if nearby.is_empty():
+						return {"ok":false,"reason":"missing_adjacent_chain_target"}
+					var max_reach: float = float(command.get("search_distance_mult",1.0)) * float(next.get("lightning_base_reach",8.0))
+					for neighbor in nearby:
+						if float(neighbor["distance"]) <= max_reach and targets_hit.size() < count:
+							targets_hit.append(str(neighbor["target_id"]))
+				elif bool(command.get("attack",{}).get("is_area",false)) and not nearby.is_empty():
+					var area_radius: float = float(command.get("area_radius",0.0))
+					for neighbor in nearby:
+						if float(neighbor["distance"]) <= area_radius:
+							targets_hit.append(str(neighbor["target_id"]))
+				else:
+					targets_hit.append(impact_id)
+				for victim_id in targets_hit:
+					var defender: Dictionary = next["targets"][victim_id]
+					var attacker: Dictionary = next.get("actor_stats", {})
+					var attack: Dictionary = command.get("attack", {})
+					var status_map: Dictionary = next.get("target_statuses",{})
+					var modified_defender: Dictionary = statuses_api.modified_stats(defender,status_map.get(victim_id,{"statuses":[]}))
+					var calculated: Dictionary = damage_api.calculate(attacker, modified_defender, attack, false)
+					if not calculated.get("ok",false):
+						return {"ok":false,"reason":"B_damage_invalid"}
+					var hit: Dictionary = damage_api.apply_damage(defender, calculated, bool(defender.get("invulnerable",false)))
+					if not hit.get("ok",false):
+						return {"ok":false,"reason":"B_damage_apply_failed"}
+					next["targets"][victim_id] = defender
+					total_damage += float(hit.get("actual_damage",0.0))
+					events.append({"kind":"on_hit_proc","actor_id":str(command.get("actor_id","")),"target_id":victim_id,
+						"plugin_id":uid,"tick":int(command.get("tick",0)),
+						"actual_damage":float(hit.get("actual_damage",0.0)),
+						"source_tags":command.get("source_tags",[]),"proc_path":command.get("proc_path",[]),
+						"allowed_proc_triggers":command.get("allowed_proc_triggers",[]),
+						"killed":bool(hit.get("killed",false))})
 			"status":
 				var target_id: String = str(command.get("target_id",""))
 				if target_id.is_empty() or not next["targets"].has(target_id):
