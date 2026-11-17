@@ -249,31 +249,42 @@ func _on_mission_requested(request: Dictionary) -> void:
     world.call("attach_progression_bridge", null)
     if not _sync_authorized_build_from_E():
         return
-    message_label.text = "CPU 의뢰 저장됨 · 전투 XP로 플러그인 획득"
+    message_label.text = "의뢰 저장 완료 · 메인보드에서 하드웨어 선택"
     _refresh()
 
-## A is the only owner of E transactions; D cannot create a real CPU
-## map until the seed + exact generation algorithm have been durably written.
+## A is the only owner of E transactions. All supported hardware maps
+## require immutable region/generator/seed checkpoint BEFORE D draws geometry.
+## The E approval is scoped to the actual selected run and its D mission plan.
 func _on_hardware_checkpoint_requested(fact: Dictionary) -> void:
     if frozen or bridge == null:
         _halt("hardware_checkpoint_without_active_E_run")
         return
+    var region: String = str(fact.get("region_id", ""))
     var plan: Dictionary = world.get("mission")
-    var expected: Dictionary = plan.get("regions", {}).get("CPU", {})
-    if str(fact.get("run_id", "")) != current_run_id \
-            or str(fact.get("region_id", "")) != "CPU" \
+    var expected: Dictionary = plan.get("regions", {}).get(region, {})
+    var receipt: String = str(fact.get("receipt_id", ""))
+    if not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(region) \
+            or str(fact.get("run_id", "")) != current_run_id \
+            or receipt != current_run_id + ":" + region + ":map-checkpoint" \
             or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
-            or expected.is_empty() or expected != fact.get("region_plan", {}) \
+            or expected.is_empty() or str(expected.get("id", "")) != region \
+            or expected != fact.get("region_plan", {}) \
             or int(fact.get("map_seed", -1)) != int(expected.get("map_seed", -2)):
-        _halt("CPU_map_plan_changed_before_save")
+        _halt("hardware_map_plan_changed_before_save")
         return
     var ack: Dictionary = bridge.checkpoint_hardware_entry(fact)
     if not bool(ack.get("ok", false)):
-        _halt("CPU_map_checkpoint_not_durable")
+        _halt("hardware_map_checkpoint_not_durable")
         return
-    if not bool(world.call("acknowledge_hardware_checkpoint",
-            str(fact.get("receipt_id", "")), ack)):
-        _halt("CPU_map_not_entered_after_durable_ack")
+    if not bool(world.call("acknowledge_hardware_checkpoint", receipt, ack)):
+        _halt("hardware_map_not_entered_after_durable_ack")
+        return
+    # D replaces B's encounter runtime when changing hardware. Rehydrate
+    # combat plugins ONLY from E's authenticated state after the map ACK.
+    # This neither reissues a reward nor writes any new save record.
+    if not _sync_authorized_build_from_E():
+        return
+    _refresh()
 
 func _on_enemy_defeated(actor_id: String, receipt: String) -> void:
     if frozen or bridge == null:
@@ -592,7 +603,7 @@ func _on_death_requested(fact: Dictionary) -> void:
         _halt("death_world_ack_failed")
 
 func _on_unavailable(region_id: String) -> void:
-    message_label.text = region_id + "는 아직 플레이 가능한 구역이 아니야"
+    message_label.text = region_id + "는 아직 제작 중이야"
 
 func _on_world_error(reason: String) -> void:
     _halt("world:" + reason)
