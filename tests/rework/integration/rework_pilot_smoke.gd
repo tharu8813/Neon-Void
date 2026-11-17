@@ -3,6 +3,7 @@ extends SceneTree
 const PilotScene = preload("res://scenes/rework/integration/rework_pilot.tscn")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
+const WorldCatalog = preload("res://scripts/rework/world/hardware_catalog.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -75,11 +76,50 @@ func _run() -> void:
         check(mission["obtained_plugins"].size() == 1,
             "plugin saved in E before returning to gameplay")
     check(not bool(pilot.get("frozen")), "no safety halt")
+    # Simulate D's confirmed objective facts after the independently tested B
+    # live combat path. Here the goal is A's durable extraction/learning UI.
+    var run_state: RefCounted = world.get("world_state") as RefCounted
+    for objective_id in WorldCatalog.objectives("CPU"):
+        check(bool(run_state.call("confirm_objective", "CPU", str(objective_id),
+            "pilot:CPU:" + str(objective_id))), "D CPU objective -> E receipt")
+    check(bool(run_state.call("confirm_boss_defeated", "CPU", "pilot:CPU:boss")),
+        "D CPU cleanse gated by objectives")
+    snapshot = Gateway.snapshot(slot_path)
+    check(bool(snapshot.get("ok", false))
+        and snapshot["snapshot"]["vaccine"]["mission"]["hardware_cleaned_ids"].has("CPU"),
+        "E durable CPU clear before extraction")
+    var extraction: RefCounted = world.get("extraction_gate") as RefCounted
+    var prepared: Dictionary = extraction.call("prepare", "CPU")
+    check(not prepared.is_empty(), "D prepares available CPU extraction")
+    var learning_panel: Control = pilot.get("learn_panel") as Control
+    check(learning_panel.visible and paused,
+        "A prompts for 0-2 plugin learning before E one-shot extraction")
+    var checks: Array = pilot.get("learn_checks")
+    if checks.size() > 0:
+        var first: CheckBox = checks[0]
+        first.button_pressed = true
+    pilot.call("_finish_extraction")
+    snapshot = Gateway.snapshot(slot_path)
+    check(bool(snapshot.get("ok", false)) and not bool(pilot.get("frozen")),
+        "A extraction committed without reconciliation errors")
+    if bool(snapshot.get("ok", false)):
+        check(snapshot["snapshot"]["vaccine"]["mission"] == null,
+            "E closed mission after durable extraction")
+        check(str(world.get("current_mode")) == "hub",
+            "D returns to hub only after E ACK")
+        check(snapshot["snapshot"]["vaccine"]["carried"].size() == checks.size(),
+            "eligible selected plugin preserved in carried inventory")
+    if checks.size() > 0:
+        pilot.call("_deposit_carried")
+        snapshot = Gateway.snapshot(slot_path)
+        check(bool(snapshot.get("ok", false))
+            and snapshot["snapshot"]["vaccine"]["archive"].size() == 1,
+            "manual hub deposit moves learned plugin into DB")
     paused = false
     root.remove_child(pilot)
     pilot.queue_free()
     await process_frame
     _clean(slot_path)
     if failures == 0:
-        print("REWORK A PILOT PASS: opt-in hub, durable mission, 13 B-style kill receipts, C/E reward, safe UI")
+        print("REWORK A PILOT PASS: durable hub/missions, C/E reward, D CPU facts, manual learning/extract/archive")
     quit(1 if failures > 0 else 0)
