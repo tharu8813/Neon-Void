@@ -1,6 +1,7 @@
 extends RefCounted
 ## Versioned, self-contained in-memory state. No imports from legacy save scripts.
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
+const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const VERSION: int = 1
 const MAX_EXACT_INT: int = 9007199254740991
 const HARDWARE: Array[String] = ["CPU", "GPU", "RAM", "SSD", "HDD"]
@@ -118,7 +119,9 @@ static func _valid_mission(mission: Variant) -> bool:
     for key in ["generated_map_seeds", "mission_difficulty", "environment_rolls"]:
         if typeof(mission[key]) != TYPE_DICTIONARY:
             return false
-    return true
+    # Existing 16-key v1 missions stay valid; only new namespaced
+    # checkpoint data receives additional strict validation.
+    return Checkpoint.valid(mission)
 
 static func _valid_vaccine(vaccine: Variant, config: Dictionary) -> bool:
     if typeof(vaccine) != TYPE_DICTIONARY:
