@@ -178,7 +178,14 @@ func _build() -> void:
     holder.add_child(support)
     _marker(holder, "SPAWN", spawn_world(), Color(0.25, 0.9, 0.95))
     for objective in map_plan["objectives"]:
-        _marker(holder, str(objective["id"]), objective["world"], Color(1.0, 0.8, 0.25))
+        var goal_id: String = str(objective["id"])
+        # Dedicated 3D interactive replicas/nodes have their own markers.
+        # Leave the central console for timed/fixed-position objectives.
+        if (region_id == "RAM" and goal_id == "verify_memory") \
+                or (region_id == "SSD" and goal_id == "capture_node") \
+                or (region_id == "HDD" and goal_id in ["repair_platter", "restore_index"]):
+            continue
+        _marker(holder, goal_id, objective["world"], Color(1.0, 0.8, 0.25))
     _marker(holder, "BOSS", boss_world(), Color(1.0, 0.25, 0.3))
     # Distinct return path allows clearing the next hardware without ending the
     # mission; this pad is not interactive until this hardware is cleansed.
