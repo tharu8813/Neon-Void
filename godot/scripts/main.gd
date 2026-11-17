@@ -717,12 +717,20 @@ func _hud_snapshot() -> Dictionary:
     var boss_hp: float = 0.0
     var boss_maxhp: float = 0.0
     var boss_name: String = ""
+    var boss_id: int = -1
     for enemy in sim.enemies:
         if bool(enemy.get("boss", false)):
             boss_hp = float(enemy["hp"])
             boss_maxhp = float(enemy["max_hp"])
             boss_name = str(enemy["kind"])
+            boss_id = int(enemy["id"])
             break
+    var boss_warning: String = ""
+    if boss_id >= 0:
+        for warning in sim.telegraphs:
+            if int(warning.get("source_id", -1)) == boss_id:
+                boss_warning = "공격 발동 임박" if float(warning["remaining"]) <= 0.18 else "보스 공격 예고"
+                break
     var database: Dictionary = saved_state.get("antivirus_db.json", {})
     var db_xp: Dictionary = Progression.xp_progress(database) if not database.is_empty() else {}
     var profile: Dictionary = saved_state.get("profile.json", {})
@@ -739,6 +747,8 @@ func _hud_snapshot() -> Dictionary:
         "guard_t": state.get("guard", 0.0),
         "pulse_cd": state.get("pulse_cd", 0.0), "guard_cd": state.get("guard_cd", 0.0),
         "boss_hp": boss_hp, "boss_maxhp": boss_maxhp, "boss_name": boss_name,
+        "boss_warning": boss_warning,
+        "combo": combo_count, "combo_window": combo_window,
         "sector": "ANTIVIRUS HUB" if mode == "base" else (campaign.active_sector if not campaign.active_sector.is_empty() else "OS HUB"),
         "wave": campaign.active_wave,
         "status": mode, "nearby": _world_nearby_prompt(),
@@ -907,12 +917,28 @@ func _update_visuals() -> void:
                 visual = _make_enemy_visual(str(enemy["kind"]), bool(enemy["boss"]), float(enemy["radius"]))
                 enemy_visuals[id] = visual
             var pos: Vector2 = enemy["pos"]
+            var current_hp: float = float(enemy["hp"])
+            if _enemy_hp_previous.has(id):
+                var hp_lost: float = float(_enemy_hp_previous[id]) - current_hp
+                if hp_lost >= 0.5:
+                    visual_fx.call("show_damage", pos + Vector2(0.0, -float(enemy["radius"]) - 4.0),
+                        hp_lost)
+            _enemy_hp_previous[id] = current_hp
             visual.position = Vector3(pos.x * WORLD_SCALE, 0.115, pos.y * WORLD_SCALE)
             visual.call("sync_state", enemy, reduced_motion)
     for id in enemy_visuals.keys():
         if not active_keys.has(id):
             enemy_visuals[id].queue_free()
             enemy_visuals.erase(id)
+            _enemy_hp_previous.erase(id)
+    if sector_exit != null and sector_exit.visible:
+        var sector_name: String = str(SectorCatalog.SECTORS.get(campaign.active_sector, {}).get(
+            "name", campaign.active_sector))
+        var cfg: Dictionary = saved_state.get("settings.json", {})
+        sector_exit.call("sync_gate", actor.get("logical_position"),
+            sector_name, campaign.is_sector_clean(campaign.active_sector),
+            str(cfg.get("bindings", {}).get("interact", "f")),
+            bool(cfg.get("reduced_effects", false)), 1.0 / 60.0)
     var locations: PackedVector2Array = PackedVector2Array()
     var tints: PackedColorArray = PackedColorArray()
     if mode == "combat":
@@ -929,6 +955,9 @@ func _update_visuals() -> void:
             var reduced: bool = bool(saved_state.get("settings.json", {}).get("reduced_effects", false))
             visual_fx.call("sync_battle", sim.bullets, sim.enemy_bullets,
                 sim.telegraphs, sim.enemies, reduced)
+        elif mode == "hub":
+            visual_fx.call("sync_battle", [], [], [], [],
+                bool(saved_state.get("settings.json", {}).get("reduced_effects", false)))
         elif visual_fx.visible:
             visual_fx.call("clear_battle")
 
