@@ -9,7 +9,7 @@ signal combat_notice(notice: Dictionary)
 signal integration_failed(reason: String)
 
 const Preview = preload("res://scripts/rework/world/demo_combat_bridge.gd")
-const LiveB = preload("res://scripts/rework/world/live_b_combat_world.gd")
+const LiveB = preload("res://scripts/rework/integration/production_b_world_facade.gd")
 var preview: Variant
 var live: Variant
 var mode: String = "preview"
