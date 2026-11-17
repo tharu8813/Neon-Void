@@ -37,6 +37,12 @@ var _infection_detail: Label
 var _infection_bar: ProgressBar
 var _wave_text: Label
 var _score_text: Label
+var _combo_text: Label
+var _audio_status: Label
+var _danger_sides: Array[ColorRect] = []
+var _hit_flash: ColorRect
+var _hit_flash_t: float = 0.0
+var _last_hp: float = -1.0
 var _software_text: Label
 var _fps_text: Label
 var _pulse_text: Label
@@ -58,6 +64,9 @@ func _ready() -> void:
     _world_hud = _layer("WorldHUD")
     _build_combat()
     _build_world()
+    _audio_status = _label(self, "AudioStatus", Rect2(-152, -37, 128, 24),
+        "MUTED · M", 11, DIM_COLOR, 1.0, 1.0)
+    _audio_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
     _draw_state()
 
 func _layer(id: String) -> Control:
@@ -123,7 +132,49 @@ func _bar(parent: Control, id: String, rect: Rect2,
     _place(bar, rect, ax, ay)
     return bar
 
+func _build_danger_overlay() -> void:
+    # Original Tk low-HP vignette/flash as strictly decorative UI surfaces.
+    _hit_flash = ColorRect.new()
+    _hit_flash.name = "ScreenHitFlash"
+    _hit_flash.color = Color(1.0, 0.22, 0.32, 0.0)
+    _hit_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _combat_hud.add_child(_hit_flash)
+    _hit_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    _hit_flash.visible = false
+    for edge in ["top", "bottom", "left", "right"]:
+        var band := ColorRect.new()
+        band.name = "Danger_" + edge
+        band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        band.color = Color(0.7, 0.06, 0.16, 0.0)
+        _combat_hud.add_child(band)
+        if edge == "top":
+            band.anchor_right = 1.0
+            band.offset_bottom = 34.0
+        elif edge == "bottom":
+            band.anchor_left = 0.0
+            band.anchor_right = 1.0
+            band.anchor_top = 1.0
+            band.anchor_bottom = 1.0
+            band.offset_top = -34.0
+        elif edge == "left":
+            band.anchor_bottom = 1.0
+            band.offset_right = 34.0
+        else:
+            band.anchor_left = 1.0
+            band.anchor_right = 1.0
+            band.anchor_bottom = 1.0
+            band.offset_left = -34.0
+        _danger_sides.append(band)
+
+func _process(delta: float) -> void:
+    if _hit_flash_t <= 0.0:
+        return
+    _hit_flash_t = maxf(0.0, _hit_flash_t - delta)
+    _hit_flash.visible = _hit_flash_t > 0.0 and _combat_hud.visible
+    _hit_flash.color.a = 0.16 * (_hit_flash_t / 0.22)
+
 func _build_combat() -> void:
+    _build_danger_overlay()
     # Frozen Tk Canvas coordinates, including the exact HP/MANA gutters.
     _panel(_combat_hud, "HPFrame", Rect2(24, 22, 240, 12),
         Color("#0d1626"), Color("#1d2c46"))
@@ -196,6 +247,10 @@ func _build_combat() -> void:
     _score_text = _label(_combat_hud, "ScoreText", Rect2(-250, 44, 226, 26),
         "0", 14, GOLD, 1.0, 0.0)
     _score_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+    _combo_text = _label(_combat_hud, "ComboText", Rect2(-220, 8, 440, 36),
+        "", 20, GOLD, 0.5, 0.0)
+    _combo_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _combo_text.visible = false
 
     _boss_panel = Control.new()
     _boss_panel.name = "BossHUD"
@@ -249,6 +304,8 @@ func _draw_state() -> void:
     _world_hud.visible = world
     _combat_hud.visible = combat
     _last_mode = mode
+    var audio_opts: Dictionary = _data.get("settings", {})
+    _audio_status.visible = bool(audio_opts.get("muted", false))
     if world:
         var is_base: bool = mode == "base"
         _location_text.text = "ANTIVIRUS CORE" if is_base else "OPERATING SYSTEM"
@@ -266,6 +323,18 @@ func _draw_state() -> void:
     var hp: float = float(_data.get("hp", 100.0))
     var maxhp: float = maxf(1.0, float(_data.get("maxhp", 100.0)))
     var hp_ratio: float = clampf(hp / maxhp, 0.0, 1.0)
+    var reduced: bool = bool(_data.get("settings", {}).get("reduced_effects", false))
+    if _last_hp >= 0.0 and hp < _last_hp - 0.5 and not reduced:
+        _hit_flash_t = 0.22
+        _hit_flash.visible = true
+    _last_hp = hp
+    var danger: float = clampf((0.35 - hp_ratio) / 0.35, 0.0, 1.0)
+    for band in _danger_sides:
+        band.visible = danger > 0.0 and not reduced
+        band.color.a = minf(0.36, 0.32 * danger)
+    if reduced:
+        _hit_flash_t = 0.0
+        _hit_flash.visible = false
     if hp_ratio < _hp_trailing:
         _hp_trailing = lerpf(_hp_trailing, hp_ratio, 0.11)
     else:
@@ -348,6 +417,9 @@ func _draw_state() -> void:
     var wave: int = int(_data.get("wave", 0))
     _wave_text.text = "WAVE %d" % wave if wave > 0 else "WAVE CLEAR"
     _score_text.text = "SCORE %d" % int(_data.get("score", 0))
+    var combo: int = int(_data.get("combo", 0))
+    _combo_text.visible = combo > 1 and float(_data.get("combo_window", 0.0)) > 0.0
+    _combo_text.text = "%d COMBO" % combo if _combo_text.visible else ""
     _fps_text.text = "FPS %.0f" % float(_data.get("fps", 0.0)) if bool(_data.get("show_fps", false)) else ""
 
     var infected: float = clampf(float(_data.get("infection", 0.0)), 0.0, 100.0)
@@ -376,3 +448,4 @@ func _draw_state() -> void:
         _boss_text.text = "%s  %.0f / %.0f" % [
             str(_data.get("boss_name", "BOSS")).to_upper(), boss_hp, boss_max]
         _boss_warning.text = str(_data.get("boss_warning", ""))
+        _boss_warning.visible = not _boss_warning.text.is_empty()
