@@ -402,6 +402,7 @@ func _run() -> void:
 
     _test_mission_checkpoint(root_dir)
     _test_rare_pair_recovery(root_dir)
+    _test_combat_observation(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
@@ -702,3 +703,81 @@ func _test_rare_pair_recovery(root_dir: String) -> void:
         and loaded.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"] \
             == first.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"],
         "failed ledger modification did not roll back rare record or revision")
+
+
+func _test_combat_observation(root_dir: String) -> void:
+    var slot: String = root_dir.path_join("rework-slot-combat-observation")
+    check(Store.initialize(slot,
+        Model.new_slot("combat-observation", "combat-vaccine")).ok,
+        "diagnostic observation synthetic slot initialized")
+    var base: Dictionary = {"vaccine_id": "combat-vaccine", "generation": 1,
+        "run_id": "run-combat-observation"}
+    var start: Dictionary = base.duplicate(true)
+    start.merge({"action": "start_mission", "seed": 1234}, true)
+    check(Gateway.transact_command(slot, start).applied, "runtime diagnostic run started")
+    var region: Dictionary = base.duplicate(true)
+    region.merge({"action": "checkpoint_region", "receipt_id": "map-cpu-observe",
+        "region_id": "CPU", "map_seed": 112233,
+        "generator_id": "d-cpu-v1"}, true)
+    check(Gateway.transact_command(slot, region).applied,
+        "map generator seed/version committed before combat observation")
+    var observed: Dictionary = base.duplicate(true)
+    observed.merge({
+        "action": "checkpoint_combat_observation",
+        "receipt_id": "runtime-tick-100", "region_id": "CPU",
+        "combat_tick": 100, "b_version": "B-runtime-v1",
+        "d_version": "D-world-v1",
+        "b_state": {
+            "tick": 100, "rng_state_text": "9223372036854770000",
+            "player": {"hp": 55, "mana": 30, "position": [3.0, 0.0, 4.0]},
+            "enemies": [{"id": "enemy-1", "hp": 15, "position": [10, 0, 6]}],
+            "projectiles": [{"id": "bullet-1", "age_ticks": 3}],
+            "skills": {"Q": {"cooldown_ticks": 22}},
+            "status_effects": [{"id": "poison", "remaining_ticks": 60}]
+        },
+        "d_state": {
+            "tick": 100, "rng_state_text": "-1234567",
+            "player_transform": {"position": [3, 0, 4], "rotation": [0, 0, 0]},
+            "enemy_transforms": [{"id": "enemy-1", "position": [10, 0, 6]}],
+            "world_entities": []
+        }
+    }, true)
+    var committed: Dictionary = Gateway.transact_command(slot, observed)
+    check(committed.get("applied", false),
+        "B and D observation captured in ONE checksummed E save")
+    var inspected: Dictionary = Gateway.inspect_slot(slot)
+    check(inspected.ok and inspected.combat_runtime_checkpoint_present \
+        and inspected.combat_observation_snapshot.combat_tick == 100 \
+        and not inspected.technically_restorable and not inspected.safe_to_resume,
+        "diagnostic battle packet visible but mid-combat recovery stays blocked")
+    var original: Dictionary = Store.read(slot)
+    check(original.ok and original.state.vaccine.mission.environment_rolls.has(
+        "e_combat_observation_v1"), "runtime packet survives a fresh verified read")
+    var stale: Dictionary = observed.duplicate(true)
+    stale.receipt_id = "runtime-tick-100-duplicate"
+    check(not Gateway.transact_command(slot, stale).applied,
+        "same combat tick cannot silently replace the B/D packet")
+    var skewed: Dictionary = observed.duplicate(true)
+    skewed.receipt_id = "runtime-tick-101-skewed"
+    skewed.combat_tick = 101
+    skewed.b_state.tick = 101
+    check(not Gateway.transact_command(slot, skewed).applied,
+        "B and D must attest the SAME paused simulation tick")
+    var next: Dictionary = observed.duplicate(true)
+    next.receipt_id = "runtime-tick-101"
+    next.combat_tick = 101
+    next.b_state.tick = 101
+    next.d_state.tick = 101
+    check(Gateway.transact_command(slot, next).applied,
+        "next synchronized B/D observation replaces the older diagnostics")
+    var rewind: Callable = func(copy: Dictionary) -> Dictionary:
+        copy.vaccine.mission.environment_rolls["e_combat_observation_v1"] = \
+            original.state.vaccine.mission.environment_rolls[
+                "e_combat_observation_v1"].duplicate(true)
+        return {"ok": true, "state": copy}
+    check(Store.transact(slot, rewind).reason == "invalid_transition",
+        "direct Store writer cannot rewind the global combat tick")
+    var final_read: Dictionary = Store.read(slot)
+    check(final_read.ok and final_read.state.vaccine.mission.environment_rolls[
+        "e_combat_observation_v1"].combat_tick == 101,
+        "last verified observation is stable after rejected rewind")
