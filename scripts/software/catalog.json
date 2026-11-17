@@ -110,7 +110,7 @@
     {
       "id": "vamp",
       "name": "흡혈 장치",
-      "description": "적 처치 시 체력 +0.7",
+      "description": "적 처치 시 체력 +0.35",
       "tier": 1,
       "max_stack": 3,
       "weight": 0.42,
