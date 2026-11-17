@@ -250,7 +250,12 @@ func _parse_authorized_progression(loaded: Dictionary) -> Dictionary:
     if state.get("selection_required", true) != false:
         return {"ok": false, "reason": "vaccine_selection_pending"}
     var generation: Variant = state.get("generation", -1)
-    if not (generation is int) or generation < 1:
+    # Godot JSON roundtrips may represent an exact E integer as float.
+    if not (typeof(generation) == TYPE_INT or typeof(generation) == TYPE_FLOAT):
+        return {"ok": false, "reason": "invalid_E_generation"}
+    if is_nan(float(generation)) or is_inf(float(generation)) or (
+            float(generation) != floorf(float(generation))) or (
+            float(generation) < 1.0) or float(generation) > 1000000000.0:
         return {"ok": false, "reason": "invalid_E_generation"}
     if not state.get("vaccine") is Dictionary:
         return {"ok": false, "reason": "missing_E_vaccine"}
@@ -270,7 +275,7 @@ func _parse_authorized_progression(loaded: Dictionary) -> Dictionary:
         balance_draft.get("player_stats", {})), vaccine["invested_stats"])
     if not bool(checked.get("ok", false)):
         return checked
-    return {"ok": true, "vaccine_id": id, "generation": generation,
+    return {"ok": true, "vaccine_id": id, "generation": int(generation),
         "revision": revision, "invested_stats": vaccine["invested_stats"].duplicate(true),
         "known_skills": vaccine["known_skills"].duplicate(true),
         "equipped_skills": vaccine["equipped_skills"].duplicate(true)}
