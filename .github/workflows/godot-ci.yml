@@ -103,6 +103,7 @@ jobs:
             tests/rework/persistence/persistence_smoke.gd
             tests/rework/integration/mission_commit_bridge_smoke.gd
             tests/rework/integration/rework_pilot_smoke.gd
+            tests/rework/integration/rare_bonus_pilot_smoke.gd
           )
           count=0
           failures=0
@@ -138,7 +139,8 @@ jobs:
             'tests/rework/progression/progression_smoke.gd',
             'tests/rework/persistence/persistence_smoke.gd',
             'tests/rework/integration/mission_commit_bridge_smoke.gd',
-            'tests/rework/integration/rework_pilot_smoke.gd'
+            'tests/rework/integration/rework_pilot_smoke.gd',
+            'tests/rework/integration/rare_bonus_pilot_smoke.gd'
           )
           $count = 0
           $failures = 0
