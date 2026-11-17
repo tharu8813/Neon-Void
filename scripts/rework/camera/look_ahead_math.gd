@@ -45,6 +45,20 @@ static func camera_target(player_xz: Vector2, logical_pointer: Vector2, bounds: 
     center.y = (bounds.position.y + bounds.end.y) * 0.5 if min_center.y > max_center.y else clampf(requested.y, min_center.y, max_center.y)
     return center
 
+static func clamp_visible_center(center: Vector2, player_xz: Vector2, bounds: Rect2, view_height: float = DEFAULT_HEIGHT, player_margin: float = 0.5) -> Vector2:
+    # Apply AFTER smoothing: a rapidly moving player cannot leave the view.
+    var half_view: Vector2 = Vector2(view_height * LOGICAL_SIZE.x / LOGICAL_SIZE.y, view_height) * 0.5
+    var safe: Vector2 = Vector2(maxf(0.0, half_view.x - player_margin), maxf(0.0, half_view.y - player_margin))
+    var constrained: Vector2 = Vector2(
+        clampf(center.x, player_xz.x - safe.x, player_xz.x + safe.x),
+        clampf(center.y, player_xz.y - safe.y, player_xz.y + safe.y)
+    )
+    var minimum: Vector2 = bounds.position + half_view
+    var maximum: Vector2 = bounds.end - half_view
+    constrained.x = bounds.get_center().x if minimum.x > maximum.x else clampf(constrained.x, minimum.x, maximum.x)
+    constrained.y = bounds.get_center().y if minimum.y > maximum.y else clampf(constrained.y, minimum.y, maximum.y)
+    return constrained
+
 static func smooth(current: Vector2, target: Vector2, delta_seconds: float, responsiveness: float = 9.0) -> Vector2:
     if delta_seconds <= 0.0:
         return current
