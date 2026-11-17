@@ -79,9 +79,11 @@ func _run() -> void:
             verify(str(game.get("mode")) == "reward", "reward state after wave")
             verify(game.get_node("UIShell")._offer.visible, "D card selector visible")
             game.call("_on_card_selected", 0)
-            verify(str(game.get("mode")) == ("clean" if wave_index == 5 else "between"), "selected card transition")
+            verify(str(game.get("mode")) == ("clean" if wave_index == 5 else "combat"),
+                "Python pick_upgrade automatically enters the next C wave")
             if wave_index < 5:
-                verify(bool(game.call("start_next_wave")), "next wave")
+                verify(int(campaign.active_wave) == wave_index + 1,
+                    "next wave begins automatically only after reward choice")
         game.call("retreat_to_hub")
         verify(str(game.get("mode")) == "hub", "return hub")
     verify(game.get("campaign").is_os_clean(), "all sectors clean in any order")
