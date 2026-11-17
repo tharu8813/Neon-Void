@@ -193,6 +193,24 @@ func _run() -> void:
 		var hp_before: float = float(b_world["targets"]["virus-2"]["health"])
 		check(Sink.tick_dots(b_world).get("ok",false)
 			and float(b_world["targets"]["virus-2"]["health"])<hp_before,"B DoT tick actually reduces HP")
+
+		# Short buffs update a real derived actor stat and expire at fixed ticks.
+		var short_world: Dictionary = sample.duplicate(true)
+		check(Sink.apply([{"type":"buff","plugin_id":"nv_c_mobility_sprint",
+			"actor_id":"vaccine-1","stat":"move_speed","value":2.0,
+			"start_tick":120,"duration_ticks":120}],short_world).get("ok",false),"B sink stores mobility buff")
+		check(float(Sink.actor_stats_at_tick(short_world,121).get("move_speed",0.0))==7.0
+			and float(Sink.actor_stats_at_tick(short_world,241).get("move_speed",0.0))==5.0,
+			"mobility buff applied and expires exactly at 2s")
+		var boom_world: Dictionary = sample.duplicate(true)
+		check(Sink.apply([{"type":"projectile_transform","plugin_id":"nv_l_boomerang",
+			"shape":"boomerang","count":2}],boom_world).get("ok",false),"boomerang spawn")
+		check(bool(boom_world.get("basic_attack_blocked",false))
+			and int(boom_world.get("boomerang_outstanding",0))==2,"boomerang prevents new basic attack until return")
+		check(Sink.acknowledge_boomerang_return(boom_world,1).get("ok",false)
+			and bool(boom_world.get("basic_attack_blocked",false)),"first return keeps gate")
+		check(Sink.acknowledge_boomerang_return(boom_world,1).get("attacks_unlocked",false),
+			"last return unlocks attacks")
 		var snapshot: Dictionary = b_world.duplicate(true)
 		var bad: Dictionary = Sink.apply([b_command,{"type":"bogus"}],b_world)
 		check(not bad.get("ok",false) and b_world==snapshot,"all-or-none world publication on multi-command failure")
