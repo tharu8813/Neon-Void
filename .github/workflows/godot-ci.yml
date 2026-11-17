@@ -105,6 +105,7 @@ jobs:
             tests/rework/integration/rework_pilot_smoke.gd
             tests/rework/integration/rare_bonus_pilot_smoke.gd
             tests/rework/integration/pilot_recovery_view_smoke.gd
+            tests/rework/integration/pilot_tactical_hud_smoke.gd
           )
           count=0
           failures=0
@@ -142,7 +143,8 @@ jobs:
             'tests/rework/integration/mission_commit_bridge_smoke.gd',
             'tests/rework/integration/rework_pilot_smoke.gd',
             'tests/rework/integration/rare_bonus_pilot_smoke.gd',
-            'tests/rework/integration/pilot_recovery_view_smoke.gd'
+            'tests/rework/integration/pilot_recovery_view_smoke.gd',
+            'tests/rework/integration/pilot_tactical_hud_smoke.gd'
           )
           $count = 0
           $failures = 0
