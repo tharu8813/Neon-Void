@@ -9,11 +9,14 @@ signal player_died()
 signal health_updated(health: float, maximum: float)
 signal combat_notice(notice: Dictionary)
 signal integration_failed(reason: String)
+signal encounter_authorization_requested(run_id: String)
 
 const Production = preload("res://scripts/rework/combat/production_cpu_adapter.gd")
 var bridge: Variant = null
 var seed: int = 42
 var last_error: String = ""
+var require_e_authorization: bool = false
+var _encounter_authorized: bool = false
 var enemies: Dictionary:
     get:
         if bridge == null:
@@ -58,12 +61,37 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
     if not ready:
         last_error = "B_production_begin_rejected"
         integration_failed.emit(last_error)
-    return ready
+        return false
+    # Opt-in A pilot requires the E-owned growth+skills AND C-level build to be
+    # acknowledged BEFORE the first B simulation tick. D starts B encounters
+    # on every new motherboard/hardware scene, including returns from a zone.
+    _encounter_authorized = false
+    if require_e_authorization:
+        encounter_authorization_requested.emit(new_run_id)
+        if not _encounter_authorized:
+            last_error = "B_formal_encounter_missing_E_authorization"
+            bridge.reset()
+            integration_failed.emit(last_error)
+            return false
+    return true
 
 func reset() -> void:
     if bridge != null:
         bridge.reset()
+    _encounter_authorized = false
     last_error = ""
+
+func confirm_encounter_authorized(run_id: String, revision: int) -> bool:
+    # This A-only handshake is not a substitute for E. The pilot must call it
+    # ONLY after its complete E snapshot checks, B growth ACK and C-level ACK.
+    if not require_e_authorization or bridge == null or not bridge.running \
+            or bridge.run_id != run_id or bridge.simulation.fixed_tick != 0:
+        return false
+    var growth: Dictionary = authorized_growth_snapshot()
+    if int(growth.get("revision", -1)) != revision or revision < 1:
+        return false
+    _encounter_authorized = true
+    return true
 
 func spawn_hostile(info: Dictionary) -> bool:
     return bridge != null and bool(bridge.spawn_hostile(info))
