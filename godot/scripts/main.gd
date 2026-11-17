@@ -252,9 +252,10 @@ func _set_world(combat_world: bool) -> void:
     gate_container.visible = not combat_world
     _sync_hub_markers()
     if visual_fx != null:
-        # Hub purification feedback is rendered as an inert transient ring.
+        # Combat projectiles/drones must not leak into the hub, which
+        # still supports its own one-shot green purification effect.
         visual_fx.visible = combat_world or mode == "hub"
-        if mode == "base":
+        if not combat_world:
             visual_fx.call("clear_battle")
     camera_3d.set("hub_mode", not combat_world)
     actor.set("hub_mode", not combat_world)
