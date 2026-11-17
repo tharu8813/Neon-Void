@@ -15,6 +15,9 @@ const Migration = preload("res://scripts/persistence/migration_service.gd")
 const HubGeometry = preload("res://scripts/world/hub_geometry.gd")
 const ActorShapes = preload("res://scripts/visuals/legacy_actor_shapes.gd")
 const EnemyVisual = preload("res://scripts/visuals/legacy_enemy_visual.gd")
+const EnemyCatalog = preload("res://scripts/enemies/enemy_catalog.gd")
+const CombatFX = preload("res://scripts/visuals/legacy_combat_fx.gd")
+const LegacyAudio = preload("res://scripts/audio/legacy_audio.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 # Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
@@ -60,6 +63,9 @@ var avatar_material: StandardMaterial3D
 var avatar_hit_material: StandardMaterial3D
 var avatar_aura: MeshInstance3D
 var avatar_dash: MeshInstance3D
+var visual_fx: Node3D
+var legacy_audio: Node
+var _last_friendly_cooldown: float = 0.0
 var hud_frames: int = 0
 var score: int = 0
 var run_kills: int = 0
@@ -83,6 +89,12 @@ func _ready() -> void:
     assert(camera_3d.projection == Camera3D.PROJECTION_ORTHOGONAL)
     assert(arena_floor.mesh != null and player_visual.mesh != null)
     _setup_player_visual()
+    visual_fx = CombatFX.new()
+    visual_fx.name = "CombatFX"
+    add_child(visual_fx)
+    legacy_audio = LegacyAudio.new()
+    legacy_audio.name = "LegacyAudio"
+    add_child(legacy_audio)
     actor.set("auto_tick", false)
     actor.call("set_input_source", controls)
     actor.set("camera_source", camera_3d)
@@ -94,6 +106,7 @@ func _ready() -> void:
     camera_3d.call("follow_logical", HUB_SPAWN)
     controls.connect("system_pressed", _on_system_pressed)
     actor.connect("skill_requested", _on_skill_requested)
+    actor.connect("dash_started", _on_dash_visual)
     actor.connect("interact_requested", _on_interact)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
@@ -224,6 +237,10 @@ func _set_world(combat_world: bool) -> void:
     hub_floor.visible = not combat_world
     gate_container.visible = not combat_world
     _sync_hub_markers()
+    if visual_fx != null:
+        visual_fx.visible = combat_world
+        if not combat_world:
+            visual_fx.call("clear_battle")
     camera_3d.set("hub_mode", not combat_world)
     actor.set("hub_mode", not combat_world)
     camera_3d.call("follow_logical", actor.get("logical_position"))
@@ -247,7 +264,9 @@ func start_next_wave() -> bool:
     if plan.is_empty():
         return false
     sim.begin_wave(int(plan["wave_index"]), plan["spawns"], str(plan["boss_kind"]))
+    _last_friendly_cooldown = float(sim.player.get("fire_cd", 0.0))
     mode = "combat"
+    legacy_audio.call("play_effect", "wave")
     _resume_gameplay()
     return true
 
@@ -282,7 +301,17 @@ func _physics_process(delta: float) -> void:
     if mode == "combat":
         PlayerBridge.read_player(sim, actor)
         sim.set_player_snapshot({"stats": software.stats})
+        var shots_before: int = sim.enemy_bullets.size()
+        var cooldown_before: float = float(sim.player.get("fire_cd", 0.0))
         sim.step_fixed()
+        # Observe C state transitions. Do NOT insert audio events into C's
+        # deterministic event list or alter any combat timing.
+        var cooldown_after: float = float(sim.player.get("fire_cd", 0.0))
+        if cooldown_after > cooldown_before + 0.001:
+            legacy_audio.call("play_effect", "shoot", 0.045)
+        if sim.enemy_bullets.size() > shots_before:
+            legacy_audio.call("play_effect", "eshoot", 0.08)
+        _last_friendly_cooldown = cooldown_after
         PlayerBridge.write_player(sim, actor)
         campaign.tick_infection(1.0 / 60.0)
         if float(actor.get("hp")) <= 0.0:
@@ -374,6 +403,7 @@ func _present_wave_reward() -> void:
     mode = "reward"
     _pause_gameplay()
     ui.call("show_reward_cards", _pending_offers, software.levels)
+    legacy_audio.call("play_effect", "up")
     _update_hud()
 
 func _on_card_selected(index: int) -> void:
@@ -404,6 +434,7 @@ func _on_card_selected(index: int) -> void:
         return
     if chosen == "bonus":
         score += 250
+    legacy_audio.call("play_effect", "pick")
     _pending_offers.clear()
     _apply_stats()
     ui.call("complete_reward_selection")
@@ -412,10 +443,21 @@ func _on_card_selected(index: int) -> void:
 
 func _on_player_hit(_damage: float, infection_delta: float) -> void:
     campaign.apply_infection(infection_delta)
+    legacy_audio.call("play_effect", "hurt")
+    visual_fx.call("add_burst", actor.get("logical_position"), "hurt")
+    if float(actor.get("hp")) / maxf(1.0, float(actor.get("max_hp"))) < 0.35:
+        legacy_audio.call("play_effect", "lowhp", 2.0)
 
 func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     run_kills += 1
     score += 10
+    var boss_kill: bool = EnemyCatalog.is_boss(kind)
+    legacy_audio.call("play_effect", "boom" if boss_kill else "kill", 0.06)
+    if enemy_visuals.has(_enemy_id):
+        var death_visual: Node3D = enemy_visuals[_enemy_id]
+        var at: Vector3 = death_visual.position
+        visual_fx.call("add_burst", Vector2(at.x / WORLD_SCALE, at.z / WORLD_SCALE),
+            "boss" if boss_kill else "kill")
     if SectorCatalog.SECTORS.has(campaign.active_sector):
         if kind == str(SectorCatalog.SECTORS[campaign.active_sector]["boss"]):
             run_boss_kills += 1
@@ -430,10 +472,20 @@ func _apply_stats() -> void:
     actor.set("mana", minf(float(actor.get("mana")), software.maxmana))
     sim.set_player_snapshot({"stats": software.stats, "max_hp": software.maxhp, "max_mana": software.maxmana})
 
+func _on_dash_visual(_direction: Vector2) -> void:
+    if paused or mode not in ["base", "hub", "combat", "between", "clean"]:
+        return
+    legacy_audio.call("play_effect", "dash", 0.08)
+    if mode == "combat":
+        visual_fx.call("add_burst", actor.get("logical_position"), "dash")
+
 func _on_skill_requested(skill: String) -> void:
     if mode != "combat" or paused:
         return
-    PlayerBridge.try_cast(sim, actor, skill)
+    if PlayerBridge.try_cast(sim, actor, skill):
+        legacy_audio.call("play_effect", "hshot" if skill == "pulse" else "phase")
+        if skill == "pulse":
+            visual_fx.call("add_burst", actor.get("logical_position"), "pulse")
 
 func nearest_base_terminal(point: Vector2) -> String:
     # Match Python WorldSession.nearest: nearest reachable node, not the first
@@ -830,6 +882,13 @@ func _update_visuals() -> void:
             locations.append(bullet["pos"])
             tints.append(Color("#ff9fbb"))
     projectiles.call("set_projectiles", locations, tints)
+    if visual_fx != null:
+        if mode == "combat":
+            var reduced: bool = bool(saved_state.get("settings.json", {}).get("reduced_effects", false))
+            visual_fx.call("sync_battle", sim.bullets, sim.enemy_bullets,
+                sim.telegraphs, sim.enemies, reduced)
+        elif visual_fx.visible:
+            visual_fx.call("clear_battle")
 
 func _deployed_base() -> Dictionary:
     var base: Dictionary = Progression.base_stats_for_level(deployed_level)
@@ -1028,6 +1087,9 @@ func _commit_options(candidate: Dictionary) -> bool:
     return _reload_save()
 
 func _apply_runtime_settings(settings: Dictionary) -> void:
+    if legacy_audio != null:
+        legacy_audio.call("apply_settings", float(settings.get("volume", 0.9)),
+            bool(settings.get("muted", false)))
     if DisplayServer.get_name() == "headless":
         return
     if AudioServer.get_bus_count() > 0:
