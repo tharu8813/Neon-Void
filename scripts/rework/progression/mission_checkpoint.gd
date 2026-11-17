@@ -192,8 +192,9 @@ static func record_offer(mission: Dictionary, snapshot: Dictionary,
             or not _whole(snapshot.get("missed_screens"), 1000000) \
             or not _keys(snapshot.get("context"), [
                 "cleared_hardware", "difficulty_tier", "luck_points"]) \
-            or typeof(snapshot.get("cards")) != TYPE_ARRAY \
-            or snapshot.cards.size() != 3:
+            or typeof(snapshot.get("offer_id")) != TYPE_STRING \
+            or typeof(snapshot.get("high_seen")) != TYPE_BOOL \
+            or not _cards(snapshot.get("cards")):
         return {"ok": false, "reason": "invalid_offer_snapshot"}
     var candidate: Dictionary = _normalized_offer(snapshot)
     if not _offer(candidate):
