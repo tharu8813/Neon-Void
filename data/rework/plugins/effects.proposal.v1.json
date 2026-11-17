@@ -137,8 +137,9 @@
       "reactivation_condition": "unconfirmed_off_by_default_after_break",
       "level_bonus": [
         0,
-        0
-      ]
+        0.25
+      ],
+      "proposed_level2_note": "100% GDD-confirmed base +25 percentage points unapproved level-up"
     },
     "nv_c_armor_shred": {
       "kind": "armor_shred",
@@ -178,8 +179,12 @@
     },
     "nv_c_random_rare": {
       "kind": "grant_rare",
-      "grant_count": 1,
-      "level_effect": "additional_rare_unapproved"
+      "grant_count": [
+        1,
+        2
+      ],
+      "level_effect": "additional_rare_unapproved",
+      "proposed_level2_note": "Additional rare pick at level 2 is NOT user-approved"
     },
     "nv_c_dash_explosion": {
       "kind": "dash_explosion",
