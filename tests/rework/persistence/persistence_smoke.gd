@@ -58,7 +58,7 @@ func _run() -> void:
     for name in legacy_names:
         var path: String = legacy.path_join(name)
         _write(path, "{\"synthetic\":\"" + name + "\"}\n")
-        original[name] = _bytes(path)
+        original[name] = _bytes(path).sha256_text()
 
     var state: Dictionary = Model.new_slot("synthetic", "vaccine-1",
         {"mission_xp_step": 40})
@@ -130,7 +130,7 @@ func _run() -> void:
 
     # Four or five preceding file names remain byte-identical, regardless of failures.
     for name in legacy_names:
-        check(_bytes(legacy.path_join(name)) == original[name],
+        check(_bytes(legacy.path_join(name)).sha256_text() == original[name],
             "legacy synthetic file unchanged: " + name)
 
     var current: PackedByteArray = _bytes(slot.path_join("state.json"))
@@ -401,6 +401,7 @@ func _run() -> void:
             "reward receipt replay is refused after intentional roll-forward")
 
     _test_mission_checkpoint(root_dir)
+    _test_rare_pair_recovery(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
@@ -470,7 +471,9 @@ func _test_mission_checkpoint(root_dir: String) -> void:
     check(Gateway.transact_command(slot, saved_offer).applied,
         "C three-card offer and entropy cursor committed before UI")
     var after_offer: Dictionary = Gateway.inspect_slot(slot)
-    check(after_offer.ok and after_offer.technically_restorable \
+    check(after_offer.ok and after_offer.map_offer_checkpoint_ready \
+        and not after_offer.technically_restorable \
+        and not after_offer.combat_runtime_checkpoint_present \
         and not after_offer.safe_to_resume and after_offer.requires_user_action \
         and after_offer.reason == "resume_or_cancel_policy_unapproved",
         "saved offer is inspectable but does not authorize unapproved resumption")
@@ -634,3 +637,68 @@ func _test_mission_checkpoint(root_dir: String) -> void:
     check(not invalid.ok and invalid.requires_user_action \
         and not invalid.safe_to_resume and invalid.reason == "invalid_json",
         "damaged primary produces user-action status, never resets to Lv.1")
+
+
+func _test_rare_pair_recovery(root_dir: String) -> void:
+    ## Synthetic E-only slot, no legacy file and no live player save.
+    var slot: String = root_dir.path_join("rework-slot-rare-pair-e")
+    check(Store.initialize(slot, Model.new_slot("rare-pair-e", "rare-vaccine-e")).ok,
+        "E rare-pair fixture initialized independently")
+    var base: Dictionary = {
+        "vaccine_id": "rare-vaccine-e", "generation": 1,
+        "run_id": "run-rare-e"
+    }
+    var start: Dictionary = base.duplicate(true)
+    start.merge({"action": "start_mission", "seed": 2468}, true)
+    check(Gateway.transact_command(slot, start).applied,
+        "E rare reconciliation mission started")
+    var experience: Dictionary = base.duplicate(true)
+    experience.merge({"action": "mission_xp", "receipt_id": "kill-rare-e",
+        "amount": 100}, true)
+    check(Gateway.transact_command(slot, experience).applied,
+        "E rare reconciliation offer earned")
+    var source: Dictionary = base.duplicate(true)
+    source.merge({"action": "plugin_picked",
+        "receipt_id": "run-rare-e:1:0", "offer_id": "run-rare-e:1",
+        "plugin_id": "nv_c_random_rare", "rarity": "common",
+        "level": 1, "offer_source": "levelup"}, true)
+    var absent: Dictionary = Gateway.reconcile_rare_grant(slot, "rare-vaccine-e",
+        1, "run-rare-e", "run-rare-e:1:0", "run-rare-e:1")
+    check(absent.ok and absent.receipt_definitely_absent \
+        and not absent.can_retry_same_receipt and not absent.pair_verified,
+        "missing source is observable but not a replay authorization")
+    var uncertain: Dictionary = Gateway.transact_command(slot, source,
+        -1, "after_primary")
+    check(not uncertain.applied and uncertain.reason == "simulated_ack_lost",
+        "E lost ACK after atomic source+rare primary commit")
+    var proof: Dictionary = Gateway.reconcile_rare_grant(slot, "rare-vaccine-e",
+        1, "run-rare-e", "run-rare-e:1:0", "run-rare-e:1")
+    check(proof.ok and proof.pair_verified and proof.receipt_committed \
+        and proof.grant.bonus_receipt == "run-rare-e:1:0:rare:0",
+        "read-only proof verifies BOTH source and rare receipts")
+    var first: Dictionary = Store.read(slot)
+    check(first.ok and first.state.vaccine.receipts.has("run-rare-e:1:0") \
+        and first.state.vaccine.receipts.has("run-rare-e:1:0:rare:0"),
+        "persisted grant pair survives restart after lost ACK")
+    check(not Gateway.transact_command(slot, source).applied,
+        "replay cannot pay a second rare award")
+    var second: Dictionary = Gateway.reconcile_rare_grant(slot,
+        "rare-vaccine-e", 1, "wrong-run", "run-rare-e:1:0")
+    check(not second.ok and not second.receipt_committed \
+        and not second.receipt_definitely_absent,
+        "wrong run must not claim even an existing source receipt")
+    var forged: Dictionary = Gateway.reconcile_rare_grant(slot,
+        "rare-vaccine-e", 1, "run-rare-e", "run-rare-e:1:0",
+        "run-rare-e:2")
+    check(not forged.ok and not forged.receipt_committed,
+        "source proof cannot be bound to an unclaimed offer")
+    var ledger_erase: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.mission.environment_rolls["e_rare_bonus_v1"].clear()
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, ledger_erase).reason == "invalid_transition",
+        "direct Store writer cannot erase immutable rare grant history")
+    var loaded: Dictionary = Store.read(slot)
+    check(loaded.ok and loaded.revision == first.revision \
+        and loaded.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"] \
+            == first.state.vaccine.mission.environment_rolls["e_rare_bonus_v1"],
+        "failed ledger modification did not roll back rare record or revision")
