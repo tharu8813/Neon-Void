@@ -255,7 +255,27 @@ func _run() -> void:
     check(persisted_world.interact().get("region_id", "") == "CPU",
         "A persisted pilot enters CPU through physical gate")
     check(str(persisted_world.get("current_mode")) == "cpu",
-        "B formal runtime recreated for CPU encounter")
+        "B formal runtime recreated for CPU encounter only after E ACK")
+    # D's procedural map must never exist in production before E has
+    # committed an immutable versioned seed for this exact region/run.
+    var checkpoint_saved: Dictionary = EGateway.snapshot(fixture_path)
+    check(bool(checkpoint_saved.get("ok", false)), "map checkpoint E snapshot readable")
+    if bool(checkpoint_saved.get("ok", false)):
+        var saved_mission: Dictionary = checkpoint_saved["snapshot"]["vaccine"]["mission"]
+        var cp: Dictionary = saved_mission.get("environment_rolls", {}).get("e_checkpoint_v1", {})
+        var regions: Dictionary = cp.get("regions", {})
+        check(regions.has("CPU"), "CPU map checkpoint persisted before generation")
+        if regions.has("CPU"):
+            check(int(regions["CPU"].get("seed", -1)) ==
+                int(persisted_world.mission["regions"]["CPU"]["map_seed"]),
+                "persisted CPU seed equals actual procedural map seed")
+            check(str(regions["CPU"].get("generator_id", "")) == Maps.GENERATOR_ID,
+                "E saved immutable version of D map generator")
+            check(int(saved_mission.get("generated_map_seeds", {}).get("CPU", -1)) ==
+                int(regions["CPU"]["seed"]),
+                "E map checkpoint and mission map ledger are consistent")
+    check(persisted_world.get("pending_hardware_entry").is_empty(),
+        "D cleared transient pending entry only after E committed CPU map")
     var core_position: Vector3 = persisted_world.hardware.objective_world("secure_core")
     var intrusion_position: Vector3 = persisted_world.hardware.objective_world("stop_intruders")
     persisted_world.player.global_position = core_position + Vector3.UP * 0.5
