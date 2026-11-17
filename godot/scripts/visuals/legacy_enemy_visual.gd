@@ -102,9 +102,17 @@ func sync_state(data: Dictionary, reduced_motion: bool = false) -> void:
         elif enemy_kind not in ["drifter", "mini", "rusher"]:
             spinning = elapsed * 0.4
     hull.rotation.y = -(angle if enemy_kind in ["drifter", "mini", "rusher"] else spinning)
+    # The Tk silhouettes were always in motion: restrained vertical breathing
+    # restores the animation without enlarging collision radius/hitboxes.
+    var breathe: float = 0.0 if reduced_motion else sin(visual_age * (2.1 if boss else 3.1))
+    hull.position.y = 0.014 * breathe
+    var corona: float = 1.0 + (0.0 if reduced_motion else (0.055 if boss else 0.03) * breathe)
+    outline.scale = Vector3(corona, 1.0, corona)
     if boss:
         inset.rotation.y = spinning * 1.6
+        inset.position.y = 0.045 + 0.018 * breathe
         orbit.rotation.y = -spinning * 1.3
+        beacon.scale = Vector3.ONE * (1.0 + (0.0 if reduced_motion else 0.18 * sin(visual_age * 4.2)))
 
     var has_burn: bool = false
     for status in data.get("statuses", []):
@@ -123,3 +131,8 @@ func sync_state(data: Dictionary, reduced_motion: bool = false) -> void:
     warning_ring.visible = (enemy_kind == "rusher" and int(data.get("state", 0)) == 1) \
         or float(data.get("guard", 0.0)) > 0.0 or vulnerable
     warning_ring.material_override = vulnerable_material if vulnerable else warning_default_material
+    if warning_ring.visible:
+        var surge: float = 0.0 if reduced_motion else sin(visual_age * 9.5)
+        var ring_size: float = 1.0 + 0.08 * surge
+        warning_ring.scale = Vector3(ring_size, 1.0, ring_size)
+        warning_ring.rotation.y = 0.0 if reduced_motion else visual_age * 1.8
