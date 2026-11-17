@@ -977,10 +977,22 @@ func _reload_save() -> bool:
     return true
 
 func _input(event: InputEvent) -> void:
-    # While the input dispatcher is disabled after a save failure, R retries
-    # ONLY the exact pending transaction. Never roll new reward cards.
+    # The gameplay dispatcher is disabled while a modal is shown. Python
+    # allows mute and F11 even in pause, so route these two global shortcuts
+    # directly only during the disabled-input state (avoid double toggles).
     if event is InputEventKey:
         var key_event: InputEventKey = event
+        if key_event.pressed and not key_event.echo and paused:
+            if key_event.keycode == KEY_M:
+                _on_system_pressed("m")
+                get_viewport().set_input_as_handled()
+                return
+            if key_event.keycode == KEY_F11:
+                _on_system_pressed("f11")
+                get_viewport().set_input_as_handled()
+                return
+        # While the input dispatcher is disabled after a save failure, R
+        # retries ONLY the pending transaction, never re-rolls reward cards.
         if key_event.pressed and not key_event.echo and key_event.keycode == KEY_R:
             if _pending_wave:
                 get_viewport().set_input_as_handled()
