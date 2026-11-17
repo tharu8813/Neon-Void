@@ -103,7 +103,7 @@ func _test() -> void:
             "run profile and extraction receipt committed together")
         require(int(state.state["save.json"].runs) == 1 and int(state.state["save.json"].best_wave) == 5,
             "historical score and best wave committed with archive")
-    require(str(game.get("mode")) == "title", "ready for next OS after extraction")
+    require(str(game.get("mode")) == "base", "extraction returns to in-world antivirus base")
     if not equipped.is_empty():
         var archived_choice: String = str(equipped.keys()[0])
         require(game.call("select_archived_software", archived_choice), "select archived starting software")
