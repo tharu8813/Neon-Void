@@ -31,6 +31,15 @@ static func _keys(value: Variant, keys: Array) -> bool:
             return false
     return true
 
+static func _same_context(a: Dictionary, b: Dictionary) -> bool:
+    return int(a.cleared_hardware) == int(b.cleared_hardware) \
+        and int(a.difficulty_tier) == int(b.difficulty_tier) \
+        and float(a.luck_points) == float(b.luck_points)
+
+static func _same_card(a: Dictionary, b: Dictionary) -> bool:
+    return int(a.slot) == int(b.slot) and a.plugin_id == b.plugin_id \
+        and a.rarity == b.rarity and bool(a.empty) == bool(b.empty)
+
 static func _cards(value: Variant) -> bool:
     if typeof(value) != TYPE_ARRAY or value.size() != 3:
         return false
@@ -170,14 +179,14 @@ static func monotonic(before: Dictionary, after: Dictionary) -> bool:
                 return false
         else:
             if old.active_offer.offer_id != now.active_offer.offer_id \
-                    or old.active_offer.context != now.active_offer.context \
+                    or not _same_context(old.active_offer.context, now.active_offer.context) \
                     or int(now.rerolls_left) > int(old.rerolls_left) \
                     or int(now.rerolls_left) < int(old.rerolls_left) - 1 \
                     or (old.active_offer.high_seen and not now.active_offer.high_seen):
                 return false
             var changed: int = 0
             for i in range(3):
-                if old.active_offer.cards[i] != now.active_offer.cards[i]:
+                if not _same_card(old.active_offer.cards[i], now.active_offer.cards[i]):
                     changed += 1
             if changed > 1:
                 return false
@@ -268,14 +277,14 @@ static func record_offer(mission: Dictionary, snapshot: Dictionary,
         # One-card reroll: same offer/context, exactly one slot may change,
         # reroll counter must go down by exactly one, no pity manipulation.
         if current.offer_id != candidate.offer_id \
-                or current.context != candidate.context \
+                or not _same_context(current.context, candidate.context) \
                 or int(mission.rerolls_left) < 1 \
                 or next_rerolls != int(mission.rerolls_left) - 1 \
                 or int(snapshot.missed_screens) != int(mission.pity_counter):
             return {"ok": false, "reason": "invalid_reroll_transition"}
         var changed: int = 0
         for i in range(3):
-            if current.cards[i] != candidate.cards[i]:
+            if not _same_card(current.cards[i], candidate.cards[i]):
                 changed += 1
         if changed > 1 or (current.high_seen and not candidate.high_seen):
             return {"ok": false, "reason": "reroll_mutated_other_cards"}
