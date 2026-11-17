@@ -70,6 +70,7 @@ var sector_exit: Node3D
 var _enemy_hp_previous: Dictionary = {}
 var combo_count: int = 0
 var combo_window: float = 0.0
+var lowhp_beat_timer: float = 0.0
 var _last_friendly_cooldown: float = 0.0
 var hud_frames: int = 0
 var score: int = 0
@@ -213,6 +214,7 @@ func start_new_run() -> bool:
     score = 0
     combo_count = 0
     combo_window = 0.0
+    lowhp_beat_timer = 0.0
     _enemy_hp_previous.clear()
     run_kills = 0
     run_boss_kills = 0
@@ -339,6 +341,13 @@ func _physics_process(delta: float) -> void:
             _game_over()
         elif campaign.failed:
             _close_failed_run("abandoned")
+    if mode == "combat" and float(actor.get("hp")) / maxf(1.0, float(actor.get("max_hp"))) < 0.30:
+        lowhp_beat_timer -= 1.0 / 60.0
+        if lowhp_beat_timer <= 0.0:
+            lowhp_beat_timer = 1.15
+            legacy_audio.call("play_effect", "lowhp", 0.7)
+    else:
+        lowhp_beat_timer = 0.0
     if mode != "base":
         run_frames += 1
     _update_visuals()
@@ -516,6 +525,15 @@ func _on_dash_visual(_direction: Vector2) -> void:
     legacy_audio.call("play_effect", "dash", 0.08)
     if mode == "combat":
         visual_fx.call("add_burst", actor.get("logical_position"), "dash")
+        var blast: float = float(software.stats.get("dash_blast", 0.0))
+        if blast > 0.0:
+            var center: Vector2 = actor.get("logical_position")
+            # Python game.py::dash_blast: 78px + enemy radius and an outward
+            # 140px/s impulse. This affects real C enemies, not visual copies.
+            for enemy in sim.enemies.duplicate():
+                if center.distance_to(enemy["pos"]) < 78.0 + float(enemy["radius"]):
+                    sim.damage_enemy(int(enemy["id"]), blast, -1.0, false,
+                        _direction.normalized() * 140.0)
 
 func _on_skill_requested(skill: String) -> void:
     if mode != "combat" or paused:
