@@ -29,6 +29,9 @@ func equip(slot: int, skill_id: String, progression_authorized: bool) -> bool:
         return false
     if not learned.has(skill_id):
         return false
+    for i in range(slots.size()):
+        if i != slot and slots[i] == skill_id:
+            return false
     slots[slot] = skill_id
     return true
 
@@ -60,6 +63,24 @@ func cast(slot: int, at_tick: int, haste: int, flags: Dictionary = {}) -> Dictio
         "status_effects": def.get("status_effects", []).duplicate(true),
         "can_crit": bool(def.get("can_crit", false))
     }
+
+func read_only_state(at_tick: int, haste: int) -> Dictionary:
+    var entries: Array[Dictionary] = []
+    for slot in range(slots.size()):
+        var uid: String = slots[slot]
+        var def: Dictionary = learned.get(uid, {})
+        var until: int = int(ready_at.get(uid, 0))
+        entries.append({"slot": slot, "skill_id": uid,
+            "mana_cost": float(def.get("mana_cost", 0.0)),
+            "remaining_cooldown_ticks": maxi(0, until - at_tick),
+            "cooldown_ticks": Stats.effective_cooldown_ticks(
+                int(def.get("cooldown_ticks", 1)), haste) if not uid.is_empty() else 0,
+            "ready_at_tick": until,
+            "known": not uid.is_empty() and learned.has(uid)})
+    return {"slots": entries, "max_mana": max_mana, "mana": mana,
+        "mana_regen_per_second": mana_regen,
+        "known_skills": learned.keys().duplicate(),
+        "dash_remaining_ticks": maxi(0, dash_ready_at - at_tick)}
 
 func dash(move_direction: Vector2, at_tick: int, definition: Dictionary, flags: Dictionary = {}) -> Dictionary:
     ## Dash distance/speed/cooldown are UNCONFIRMED, supplied by A's config.
