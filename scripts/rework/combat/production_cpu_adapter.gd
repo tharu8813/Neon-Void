@@ -31,6 +31,8 @@ var last_plugin_fault: String = ""
 var _reported_deaths: Dictionary = {}
 var _projectile_kinds: Dictionary = {}
 var _old_projectiles: Dictionary = {}
+var _dash_key_down: bool = false
+var _skill_keys_down: Array[bool] = [false, false, false]
 var _old_player_movement: bool = true
 var _has_player_movement: bool = false
 var balance_draft: Dictionary = {
@@ -68,6 +70,7 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
     var encounter_seed: int = int(balance_draft.get("seed", 42)) ^ int(new_run_id.hash())
     setup(new_run_id, encounter_seed, {
         "encounter_id": new_run_id,
+        "primary_player_id": PLAYER_ID,
         "default_projectile_speed": float(balance_draft["projectile_speed"]),
         "projectile_radius_scale": 0.01
     })
@@ -123,6 +126,8 @@ func reset() -> void:
     _old_projectiles.clear()
     _reported_deaths.clear()
     pending_input.clear()
+    _dash_key_down = false
+    _skill_keys_down = [false, false, false]
     accumulator = 0.0
     last_path_cell = Vector2i(-100, -100)
     cached_distances = PackedInt32Array()
@@ -180,8 +185,10 @@ func spawn_hostile(info: Dictionary) -> bool:
     })
     var registered: bool = register_node(id, "virus", body, combat_stats, {
         "radius": 0.44 if boss else 0.27,
-        "external_movement": true, "attack_range": float(balance_draft["enemy_attack_range"]),
-        "preferred_min_range": 0.0, "preferred_max_range": 0.85,
+        "external_movement": true,
+        "attack_range": float(info.get("attack_range", balance_draft["enemy_attack_range"])),
+        "preferred_min_range": float(info.get("preferred_min_range", 0.0)),
+        "preferred_max_range": float(info.get("preferred_max_range", 0.85)),
         "projectile_speed": float(balance_draft["projectile_speed"]),
         "projectile_radius": 0.12,
         "attack_definition": {"damage_type": "physical",
@@ -234,18 +241,24 @@ func _player_command() -> Dictionary:
             if vector.length_squared() > 0.000001:
                 aim_world = player.global_position + vector.normalized() * 100.0
     var movement: Vector2 = _key_direction()
+    var held_dash: bool = Input.is_key_pressed(KEY_SPACE)
+    var dash_press: bool = held_dash and not _dash_key_down
+    _dash_key_down = held_dash
     var command: Dictionary = {
         "move": movement, "aim_world": aim_world,
         "fire": not enemies.is_empty(), "external_movement": true,
-        "dash": Input.is_key_pressed(KEY_SPACE)
+        "dash": dash_press
     }
     # Temporary customizable fallback, not a finalized GDD key binding.
-    if Input.is_key_pressed(KEY_Q):
-        command["skill_slot"] = 0
-    elif Input.is_key_pressed(KEY_E):
-        command["skill_slot"] = 1
-    elif Input.is_key_pressed(KEY_C):
-        command["skill_slot"] = 2
+    var held_skills: Array[bool] = [
+        Input.is_key_pressed(KEY_Q), Input.is_key_pressed(KEY_E),
+        Input.is_key_pressed(KEY_C)
+    ]
+    for index in range(3):
+        if held_skills[index] and not _skill_keys_down[index]:
+            command["skill_slot"] = index
+            break
+    _skill_keys_down = held_skills
     command.merge(pending_input, true)
     return command
 

@@ -237,7 +237,18 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
                         break
             if not other_found:
                 continue
-        executable.append(command)
+        var effective: Dictionary = command.duplicate(true)
+        var efficiency: float = clampf(float(_context.get(
+            "on_hit_damage_efficiency", 1.0)), 0.0, 1.0)
+        if efficiency < 1.0 and str(effective.get("type", "")) == "damage" and (
+                str(_context.get("kind", "")) in ["on_hit", "on_crit", "on_hit_proc"]) and (
+                _context.get("source_tags", []).has("plugin_attack")):
+            var attack: Dictionary = effective.get("attack", {})
+            for coefficient in ["base_damage", "ad_ratio", "ap_ratio"]:
+                if attack.has(coefficient):
+                    attack[coefficient] = float(attack[coefficient]) * efficiency
+            effective["attack"] = attack
+        executable.append(effective)
     if executable.is_empty():
         return {"ok": true, "commands_applied": 0}
     var applied: Dictionary = c_sink.apply(executable, next)
@@ -382,6 +393,11 @@ func after_fixed_step(raw_events: Array[Dictionary]) -> Array[Dictionary]:
     generated_in_last_step = 0
     if not enabled or not fault.is_empty():
         return []
+    # No equipped plugins: don't rebuild 100-actor target snapshots for
+    # hundreds of basic-attack events that cannot trigger C effects.
+    if c_engine.levels.is_empty():
+        pending.clear()
+        return notices.duplicate(true)
     var living_buffs: Array = []
     for buff in _auxiliary.get("buffs", []):
         if combat.fixed_tick < int(buff.get("expires_tick", 0)):

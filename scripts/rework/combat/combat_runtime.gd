@@ -273,7 +273,11 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
             Vector3(actor["position"]) + Vector3(aim.x, 0.0, aim.y)))
         firing = bool(input.get("fire", true))
     else:
-        var opponent: String = _closest_opponent(actor_id)
+        var opponent: String = str(settings.get("primary_player_id", ""))
+        if opponent.is_empty() or not actors.has(opponent) or (
+                not bool(actors[opponent]["alive"])) or (
+                actors[opponent]["team"] == actor["team"]):
+            opponent = _closest_opponent(actor_id)
         if opponent.is_empty():
             return
         var decision: Dictionary = AI.decide(actor, actors[opponent])

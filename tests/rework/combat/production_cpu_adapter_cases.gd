@@ -119,6 +119,32 @@ static func run(check: Callable, scene_root: Node) -> void:
         check.call(battle.effects.outstanding_events() == 0,
             "C multi-step proc chain drained without runaway feedback")
     battle.reset()
+    battle.begin_encounter(player, camera, {}, "extra-bullet-efficiency")
+    battle.spawn_hostile({"actor_id":"E_PRIMARY", "position":Vector3(2,0,0)})
+    battle.spawn_hostile({"actor_id":"E_CHAIN", "position":Vector3(4,0,0)})
+    check.call(battle.configure_plugins({"nv_c_chain_lightning":1}, 246),
+        "C derived projectile can trigger real B chain lightning")
+    var original_target: float = float(battle.simulation.snapshot("E_CHAIN")["stats"]["health"])
+    battle.simulation.bus.submit_root({
+        "kind":"damage", "actor_id":"VACCINE", "target_id":"E_PRIMARY",
+        "source_tags":["plugin_attack", "derived_attack"],
+        "allowed_proc_triggers":["on_hit"],
+        "proc_path":["test_extra|VACCINE|E_PRIMARY"],
+        "on_hit_damage_efficiency":0.7,
+        "attack":{"damage_type":"physical", "base_damage":1.0,
+            "is_on_hit":true, "can_crit":false}
+    })
+    battle.simulation.presentation.clear()
+    var derived: Array[Dictionary] = battle.simulation.bus.drain_batch(512,
+        Callable(battle.simulation, "_resolve_event"))
+    battle.effects.notices.clear()
+    battle.effects.after_fixed_step(derived)
+    var resulting_target: float = float(battle.simulation.snapshot("E_CHAIN")["stats"]["health"])
+    check.call(close_to(original_target - resulting_target, 8.4),
+        "GDD 70 percent on-hit efficiency scales proc magic damage, not bullet damage")
+    check.call(battle.effects.fault.is_empty(),
+        "derived projectile C/B proc path accepted without circular trigger")
+    battle.reset()
     battle.begin_encounter(player, camera, {}, "solo-lightning")
     battle.spawn_hostile({"actor_id":"SOLO", "position":Vector3(2,0,0)})
     check.call(battle.configure_plugins({"nv_c_chain_lightning":1}, 234),
