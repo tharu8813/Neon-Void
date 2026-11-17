@@ -74,7 +74,8 @@ func _run() -> void:
     pilot.call("_toggle_management")
     check(panel.visible and paused and bool(panel.get("can_edit")),
         "Tab management pauses game and allows editing in hub")
-    check(panel.get_node_or_null("VBoxContainer/TabContainer") != null,
+    var visible_tabs: TabContainer = panel.get("tabs") as TabContainer
+    check(visible_tabs != null and visible_tabs.get_tab_count() == 4,
         "four-tab management UI is built")
     var draft: Dictionary = panel.get("allocation_draft")
     check(draft.is_empty() and int(initial["snapshot"]["vaccine"]["unspent_fragments"]) == 500,
@@ -108,14 +109,21 @@ func _run() -> void:
     v = stored["snapshot"]["vaccine"]
     check(v["archive"].has("nv_c_move_speed") and v["carried"].is_empty(),
         "single plugin returned to protected DB via E")
-    panel.set("selected_skills", ["skill_beta", "skill_alpha", ""])
+    panel.call("_select_skill", 2, 0)
+    panel.call("_select_skill", 1, 1)
+    panel.call("_select_skill", 0, 2)
+    check(panel.get("selected_skills") == ["skill_beta", "skill_alpha", ""],
+        "slot selector maintains correct B/E skill IDs")
     panel.call("_request_skills")
     var equipped: Dictionary = _state(path)
     v = equipped["snapshot"]["vaccine"]
     check(v["equipped_skills"] == ["skill_beta", "skill_alpha"],
-        "three-slot UI E-commits known-skill order")
+        "three-slot E save mismatch: " + str(v["equipped_skills"]) + " / local=" +
+            str(panel.get("selected_skills")) + " / message=" +
+            str(pilot.get("message_label").text) + " / frozen=" + str(pilot.get("frozen")))
     var rev_equipped: int = int(equipped["revision"])
-    panel.set("selected_skills", ["skill_alpha", "skill_alpha", ""])
+    panel.call("_select_skill", 1, 0)
+    panel.call("_select_skill", 1, 1)
     panel.call("_request_skills")
     check(int(_state(path).get("revision", -1)) == rev_equipped,
         "duplicate skill slots rejected before E request")
