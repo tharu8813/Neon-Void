@@ -198,6 +198,14 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
         var old: Dictionary = m.obtained_plugins[plugin_id]
         if old.rarity != rarity or level <= int(old.level):
             return _reject("invalid_plugin_level")
+    if offer_source == "levelup" and m.environment_rolls.has(Checkpoint.KEY):
+        var expected_level: int = 1
+        if output.vaccine.carried.has(plugin_id):
+            expected_level = int(output.vaccine.carried[plugin_id].level) + 1
+        if m.obtained_plugins.has(plugin_id):
+            expected_level = int(m.obtained_plugins[plugin_id].level) + 1
+        if level != expected_level:
+            return _reject("checkpoint_plugin_level_mismatch")
     if not _accept_receipt(output.vaccine, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     if offer_source == "levelup" and m.environment_rolls.has(Checkpoint.KEY):
