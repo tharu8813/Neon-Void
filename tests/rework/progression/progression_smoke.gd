@@ -52,7 +52,7 @@ func _run() -> void:
     s = accepted(s, Rules.objective_completed(s, "vaccine-A", 1, "run-1",
         "objective-1", "CPU.objective-1"), "objective reward")
     s = accepted(s, Rules.hardware_cleaned(s, "vaccine-A", 1, "run-1",
-        "clean-cpu", "CPU"), "hardware clean XP")
+        "world:run-1:CPU:clean", "CPU"), "hardware clean XP")
     check(not Rules.hardware_cleaned(s, "vaccine-A", 1, "run-1",
         "clean-cpu-again", "CPU").ok, "same hardware cannot double-pay")
     check(not Rules.extract(s, "vaccine-A", 1, "run-1",
