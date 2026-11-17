@@ -14,6 +14,14 @@ const Bindings = preload("res://scripts/input/legacy_bindings.gd")
 const Migration = preload("res://scripts/persistence/migration_service.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
+# Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
+# interaction radii. The Godot hub is not an extra start/selection menu.
+const BASE_TERMINALS := {
+    "deploy": {"position": Vector2(1580.0, 780.0), "radius": 112.0, "label": "OS DEPLOYMENT"},
+    "database": {"position": Vector2(820.0, 610.0), "radius": 94.0, "label": "ANTIVIRUS DATABASE"},
+    "diagnostics": {"position": Vector2(820.0, 1000.0), "radius": 94.0, "label": "DIAGNOSTICS"},
+    "settings": {"position": Vector2(1540.0, 1030.0), "radius": 94.0, "label": "SETTINGS TERMINAL"}
+}
 const ARENA_SPAWN: Vector2 = Vector2(195.0, 360.0)
 const GATES := {
     "CPU": Vector2(1200.0, 270.0),
@@ -38,10 +46,12 @@ const STATUS_STATION: Vector2 = Vector2(1200.0, 780.0)
 var sim: RefCounted = Combat.new(42)
 var campaign: RefCounted = Campaign.new("preview_not_deployed", 42)
 var software: RefCounted = Software.new()
-var mode: String = "title"
+var mode: String = "base"
 var paused: bool = true
 var purify_uses: int = 3
 var hub_position: Vector2 = HUB_SPAWN
+var hub_marker_groups: Dictionary = {}
+var _base_menu_dismiss_resume: bool = false
 var enemy_visuals: Dictionary = {}
 var hud_frames: int = 0
 var score: int = 0
@@ -68,7 +78,7 @@ func _ready() -> void:
     actor.set("auto_tick", false)
     actor.call("set_input_source", controls)
     actor.set("camera_source", camera_3d)
-    actor.set("simulation_enabled", false)
+    actor.set("simulation_enabled", true)
     actor.get_node("PlayerVisual").visible = false
     actor.call("set_logical_position", HUB_SPAWN)
     camera_3d.set("follow_target", actor)
@@ -84,6 +94,7 @@ func _ready() -> void:
     ui.connect("software_card_requested", _on_card_selected)
     ui.connect("pause_requested", _pause_gameplay)
     ui.connect("resume_requested", _resume_gameplay)
+    ui.connect("menu_dismissed", _on_menu_dismissed)
     ui.connect("binding_change_requested", _on_binding_change)
     ui.connect("setting_change_requested", _on_setting_change)
     # Headless scene imports and smoke tests must never initialize real user data.
@@ -110,14 +121,15 @@ func _ready() -> void:
     _set_world(false)
     _update_visuals()
     _update_hud()
-    ui.call("set_gameplay_active", false)
-    ui.call("open_menu", "title")
-    controls.call("set_enabled", false)
+    # Python's normal launch starts in the freely walkable antivirus base.
+    # No new slot is created and no legacy JSON is touched at application boot.
+    _resume_gameplay()
     if not last_error.is_empty():
+        _pause_gameplay()
         ui.call("show_error", last_error)
 
 func start_new_run() -> bool:
-    if mode != "title" and mode != "dead":
+    if mode not in ["base", "dead"]:
         return false
     if persistence_enabled:
         if not last_error.is_empty():
@@ -187,8 +199,10 @@ func start_new_run() -> bool:
             run_boss_kills, deployed_level, run_frames)
         var initial: Dictionary = SaveBridge.persist_checkpoint(save_slot, first, 0)
         if not initial.get("applied", false) or not _reload_save():
-            mode = "title"
-            actor.set("simulation_enabled", false)
+            mode = "base"
+            actor.call("set_logical_position", HUB_SPAWN)
+            actor.set("velocity_px", Vector2.ZERO)
+            _set_world(false)
             _pause_gameplay()
             ui.call("show_error", "OS 최초 체크포인트 저장 실패. 배포를 취소했습니다.")
             return false
@@ -201,6 +215,7 @@ func _set_world(combat_world: bool) -> void:
     arena_floor.visible = combat_world
     hub_floor.visible = not combat_world
     gate_container.visible = not combat_world
+    _sync_hub_markers()
     camera_3d.set("hub_mode", not combat_world)
     actor.set("hub_mode", not combat_world)
     camera_3d.call("follow_logical", actor.get("logical_position"))
@@ -229,7 +244,7 @@ func start_next_wave() -> bool:
     return true
 
 func retreat_to_hub() -> void:
-    if mode in ["title", "hub", "dead", "reward"] or _pending_wave or _pending_boss_receipts:
+    if mode in ["base", "title", "hub", "dead", "reward"] or _pending_wave or _pending_boss_receipts:
         return
     # The wave in progress is intentionally abandoned. Confirmed waves,
     # infection and resources must be on disk before changing the world.
@@ -246,7 +261,7 @@ func retreat_to_hub() -> void:
     _resume_gameplay()
 
 func _physics_process(delta: float) -> void:
-    if paused or mode not in ["hub", "combat", "between", "clean"]:
+    if paused or mode not in ["base", "hub", "combat", "between", "clean"]:
         return
     actor.call("simulate_tick", delta,
         controls.call("movement_vector"),
@@ -266,7 +281,8 @@ func _physics_process(delta: float) -> void:
             _game_over()
         elif campaign.failed:
             _close_failed_run("abandoned")
-    run_frames += 1
+    if mode != "base":
+        run_frames += 1
     _update_visuals()
     hud_frames += 1
     if hud_frames >= 6:
@@ -411,6 +427,19 @@ func _on_skill_requested(skill: String) -> void:
         return
     PlayerBridge.try_cast(sim, actor, skill)
 
+func nearest_base_terminal(point: Vector2) -> String:
+    # Match Python WorldSession.nearest: nearest reachable node, not the first
+    # dictionary entry. F must never interact with an out-of-range terminal.
+    var nearest: String = ""
+    var nearest_distance: float = INF
+    for id in BASE_TERMINALS:
+        var data: Dictionary = BASE_TERMINALS[id]
+        var distance: float = point.distance_to(data["position"])
+        if distance <= float(data["radius"]) and distance < nearest_distance:
+            nearest_distance = distance
+            nearest = str(id)
+    return nearest
+
 func _on_interact() -> void:
     if paused:
         return
@@ -418,6 +447,22 @@ func _on_interact() -> void:
         start_next_wave()
     elif mode == "clean":
         retreat_to_hub()
+    elif mode == "base":
+        var terminal: String = nearest_base_terminal(actor.get("logical_position"))
+        if terminal.is_empty():
+            return
+        _base_menu_dismiss_resume = true
+        _pause_gameplay()
+        match terminal:
+            "deploy":
+                var pending: Variant = saved_state.get("os_checkpoint.json")
+                ui.call("open_menu", "checkpoint" if pending != null else "deployment")
+            "database":
+                ui.call("open_menu", "database")
+            "diagnostics":
+                ui.call("open_menu", "profile")
+            "settings":
+                ui.call("open_menu", "settings")
     elif mode == "hub":
         var p: Vector2 = actor.get("logical_position")
         for sid in GATES:
@@ -487,6 +532,8 @@ func _on_menu_action(action: String, payload: Dictionary) -> void:
                 ui.call("show_error", "저장된 OS를 안전하게 복구할 수 없었습니다.")
         "discard_checkpoint":
             abandon_checkpoint()
+        "return_base":
+            return_to_base()
         _:
             ui.call("show_error", "현재 연결되지 않은 명령: " + action)
 
@@ -524,9 +571,17 @@ func _pause_gameplay() -> void:
     controls.call("set_enabled", false)
     ui.call("set_gameplay_active", false)
 
+func _on_menu_dismissed() -> void:
+    # Closing a base terminal's modal returns to the world. Programmatic
+    # close_menu() from resume/deploy must not recurse into this callback.
+    if _base_menu_dismiss_resume and mode == "base":
+        _base_menu_dismiss_resume = false
+        _resume_gameplay()
+
 func _resume_gameplay() -> void:
     if mode in ["title", "dead", "reward"]:
         return
+    _base_menu_dismiss_resume = false
     paused = false
     ui.call("close_menu")
     ui.call("set_gameplay_active", true)
@@ -576,7 +631,7 @@ func _hud_snapshot() -> Dictionary:
         "dash_charges": actor.get("charges"), "dash_max": actor.get("dash_max"),
         "pulse_cd": state.get("pulse_cd", 0.0), "guard_cd": state.get("guard_cd", 0.0),
         "boss_hp": boss_hp, "boss_maxhp": boss_maxhp, "boss_name": boss_name,
-        "sector": campaign.active_sector if not campaign.active_sector.is_empty() else "OS HUB",
+        "sector": "ANTIVIRUS HUB" if mode == "base" else (campaign.active_sector if not campaign.active_sector.is_empty() else "OS HUB"),
         "wave": campaign.active_wave,
         "status": mode,
         "infection": campaign.infection, "integrity": campaign.integrity,
@@ -606,6 +661,10 @@ func _update_hud() -> void:
     ui.call("update_game_state", _hud_snapshot())
 
 func _make_hub_markers() -> void:
+    var os_group := Node3D.new()
+    os_group.name = "OSStations"
+    gate_container.add_child(os_group)
+    hub_marker_groups["hub"] = os_group
     var markers: Dictionary = GATES.duplicate(true)
     markers["PURIFY"] = PURIFY_STATION
     markers["STATUS"] = STATUS_STATION
@@ -621,13 +680,45 @@ func _make_hub_markers() -> void:
         marker.material_override = material
         var p: Vector2 = markers[id]
         marker.position = Vector3(p.x * WORLD_SCALE, 0.06, p.y * WORLD_SCALE)
-        gate_container.add_child(marker)
+        os_group.add_child(marker)
         var tag: Label3D = Label3D.new()
         tag.text = str(SectorCatalog.SECTORS[id]["name"]) if GATES.has(id) else str(id)
         tag.font_size = 32
         tag.pixel_size = 0.006
         tag.position = Vector3(p.x * WORLD_SCALE, 0.45, p.y * WORLD_SCALE)
-        gate_container.add_child(tag)
+        os_group.add_child(tag)
+    var base_group := Node3D.new()
+    base_group.name = "AntivirusBaseTerminals"
+    gate_container.add_child(base_group)
+    hub_marker_groups["base"] = base_group
+    for id in BASE_TERMINALS:
+        var data: Dictionary = BASE_TERMINALS[id]
+        var position_2d: Vector2 = data["position"]
+        var platform := MeshInstance3D.new()
+        var platform_shape := CylinderMesh.new()
+        platform_shape.top_radius = 0.60
+        platform_shape.bottom_radius = 0.60
+        platform_shape.height = 0.12
+        platform.mesh = platform_shape
+        var platform_color := StandardMaterial3D.new()
+        platform_color.albedo_color = Color("#164659")
+        platform_color.emission_enabled = true
+        platform_color.emission = Color("#0e6270")
+        platform.material_override = platform_color
+        platform.position = Vector3(position_2d.x * WORLD_SCALE, 0.06, position_2d.y * WORLD_SCALE)
+        base_group.add_child(platform)
+        var terminal_label := Label3D.new()
+        terminal_label.text = str(data["label"])
+        terminal_label.font_size = 32
+        terminal_label.pixel_size = 0.006
+        terminal_label.position = Vector3(position_2d.x * WORLD_SCALE, 0.45, position_2d.y * WORLD_SCALE)
+        base_group.add_child(terminal_label)
+    _sync_hub_markers()
+
+func _sync_hub_markers() -> void:
+    for id in hub_marker_groups:
+        var group: Node3D = hub_marker_groups[id]
+        group.visible = mode == str(id)
 
 func _make_enemy_visual(kind: String, boss: bool, radius: float) -> MeshInstance3D:
     var visual: MeshInstance3D = MeshInstance3D.new()
@@ -820,12 +911,7 @@ func abandon_checkpoint() -> bool:
             ui.call("show_error", "기존 OS를 안전하게 종료하지 못했습니다: " +
                 str(closed.get("reason", "readback_failed")))
             return false
-    sim.abort_wave()
-    mode = "title"
-    actor.set("simulation_enabled", false)
-    _pause_gameplay()
-    ui.call("open_menu", "title")
-    _update_hud()
+    return_to_base()
     return true
 
 func extract_software(uid: String) -> bool:
@@ -837,12 +923,21 @@ func extract_software(uid: String) -> bool:
         ui.call("show_error", "영구 소프트웨어 보존과 기록을 안전하게 완료하지 못했습니다: " +
             str(archived.get("reason", "readback_failed")))
         return false
-    mode = "title"
-    actor.set("simulation_enabled", false)
-    _pause_gameplay()
-    ui.call("open_menu", "title")
-    _update_hud()
+    return_to_base()
     return true
+
+func return_to_base() -> void:
+    # Called only after E has committed the terminal receipt or after an
+    # already-closed death. Never erase or synthesize checkpoint/XP state.
+    sim.abort_wave()
+    mode = "base"
+    actor.set("simulation_enabled", true)
+    actor.call("set_logical_position", HUB_SPAWN)
+    actor.set("velocity_px", Vector2.ZERO)
+    _set_world(false)
+    _resume_gameplay()
+    _update_visuals()
+    _update_hud()
 
 func _commit_options(candidate: Dictionary) -> bool:
     var validation: Dictionary = SaveBridge.Validator.convert("settings.json", candidate)
@@ -892,7 +987,7 @@ func select_archived_software(uid: String) -> bool:
     return true
 
 func begin_legacy_import() -> bool:
-    if not persistence_enabled or save_slot.is_empty() or mode != "title":
+    if not persistence_enabled or save_slot.is_empty() or mode != "base":
         return false
     if DirAccess.dir_exists_absolute(save_slot) or FileAccess.file_exists(save_slot):
         ui.call("show_error", "기존 Godot 저장 슬롯이 이미 존재합니다. 안전을 위해 가져오기로 덮어쓸 수 없습니다.")
@@ -933,7 +1028,7 @@ func _legacy_folder_selected(folder: String) -> void:
     controls.call("apply_bindings", saved_state["settings.json"]["bindings"])
     _apply_runtime_settings(saved_state["settings.json"])
     _update_hud()
-    ui.call("open_menu", "title")
+    ui.call("open_menu", "deployment")
 
 func _save_hub_checkpoint() -> bool:
     # A side-effect-free new snapshot is validated and committed as a single
