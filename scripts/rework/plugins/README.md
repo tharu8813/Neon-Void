@@ -27,3 +27,7 @@ E consumes choose_card receipt_id for an atomic exactly-once persisted selection
 ## B PR #100 alignment review
 
 B owns events.gd submit_root, submit_proc and drain. C must pass B's exact signature fields: effect_id, actor_id, target_id, tick, source_tags, trigger_kind, proc_path and icd_ticks. C policy uses the same signature semantics only for validation/preview and never runs a second event queue. B's allowed_proc_triggers list is the authority for derived attacks; C's data-only can_trigger_on_hit_effects=false is a conservative default pending per-plugin policy decisions. B accepts repeated effect IDs on **different targets** within one ancestry. Conversion of C trigger names to B event kind values is an integration review task for A/B/C, not implied executable code.
+
+## Per-plugin chained hit permissions (data-only proposals)
+
+Catalog proc_permissions now has explicit allowed_proc_triggers and can_trigger_on_hit_effects per plugin. GDD permits legal chain lightning -> explosion -> disassembly; C proposes opt-ins for chain lightning, hit explosion, 4-shot proc volley, rare extra bullet and laser. All others default deny; **the specific opt-in list is an unapproved proposal for A/B review**. Exact GDD on-hit effectiveness values are machine-readable: four-shot extra bullets 70%, rare extra bullet 80%, laser 70%. B executes and enforces these semantics only after explicit mapping; no automatic damage is introduced by this PR.

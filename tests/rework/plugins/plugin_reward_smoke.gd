@@ -178,7 +178,16 @@ func _run() -> void:
 	var lightning: Dictionary = Catalog.find_by_id("nv_c_chain_lightning", entries)
 	if not _check(Policy.may_emit_tag(lightning, "proc_damage") and Policy.may_trigger_from_source(lightning, ["basic_attack"]), "proc event permissions"):
 		return
-	if not _check(not Policy.derived_attack_may_proc(lightning) and not Policy.may_trigger_from_source(lightning, ["dot"]), "no implicit proc chaining"):
+	if not _check(Policy.derived_attack_may_proc(lightning) and not Policy.may_trigger_from_source(lightning, ["dot"]), "chain approved as provisional opt-in / source denied"):
+		return
+	var safe_passive: Dictionary = Catalog.find_by_id("nv_c_periodic_shield", entries)
+	if not _check(not Policy.derived_attack_may_proc(safe_passive), "unlisted derived attacks default to denied"):
+		return
+	var extra: Dictionary = Catalog.find_by_id("nv_r_extra_bullet", entries)
+	if not _check(Policy.derived_attack_may_proc(extra) and is_equal_approx(float(extra["proc_permissions"]["on_hit_damage_efficiency"]), 0.80), "80% on-hit efficiency preserved as data"):
+		return
+	var laser: Dictionary = Catalog.find_by_id("nv_l_laser", entries)
+	if not _check(Policy.derived_attack_may_proc(laser) and is_equal_approx(float(laser["proc_permissions"]["on_hit_damage_efficiency"]), 0.70), "laser 70% on-hit efficiency data"):
 		return
 	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, maxed, empty, levels, proc path")
 	quit(0)
