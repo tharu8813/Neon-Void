@@ -72,6 +72,14 @@ func _build() -> void:
         material.albedo_color = Color(0.15, 0.4, 0.8)
         gate.material_override = material
         holder.add_child(gate)
+        var sign := Label3D.new()
+        sign.name = region_id + "GateNameplate"
+        sign.text = region_id + "  [F]"
+        sign.font_size = 44
+        sign.pixel_size = 0.006
+        sign.rotation_degrees = Vector3(-90, 0, 0)
+        sign.position = Model.GATES[region_id]["position"] + Vector3.UP * 0.9
+        holder.add_child(sign)
     for enemy in Model.INTRO:
         var anchor := Marker3D.new()
         anchor.name = str(enemy["id"])

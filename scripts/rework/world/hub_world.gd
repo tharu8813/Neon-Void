@@ -56,6 +56,14 @@ func _build() -> void:
         marker.material_override = accent
         marker.position = position + Vector3.UP * 0.6
         holder.add_child(marker)
+        var sign := Label3D.new()
+        sign.name = terminal_id + "Nameplate"
+        sign.text = str(data["label"]) + "  [F]"
+        sign.font_size = 42
+        sign.pixel_size = 0.006
+        sign.rotation_degrees = Vector3(-90, 0, 0)
+        sign.position = position + Vector3.UP * 1.4
+        holder.add_child(sign)
         _collider(holder, terminal_id + "Collider", marker.position, mesh.size)
 
 func _wall(holder: Node3D, label: String, position: Vector3, dimensions: Vector3) -> void:
