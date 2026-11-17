@@ -439,6 +439,13 @@ func _test_mission_checkpoint(root_dir: String) -> void:
         "same CPU region cannot regenerate with different seed")
     check(not Gateway.transact_command(slot, region).applied,
         "world map receipt is exactly once")
+    var direct_map_rollback: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.mission.generated_map_seeds["CPU"] = 111
+        next.vaccine.mission.environment_rolls["e_checkpoint_v1"].regions.CPU.seed = 111
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, direct_map_rollback).reason == "invalid_transition",
+        "direct save writer cannot rewrite committed region seed or generator")
+
 
     var xp: Dictionary = base.duplicate(true)
     xp.merge({"action": "mission_xp", "receipt_id": "kill:01", "amount": 100}, true)
@@ -532,6 +539,16 @@ func _test_mission_checkpoint(root_dir: String) -> void:
         "second card of already-claimed offer cannot be retried")
     check(not Gateway.transact_command(slot, picked).applied,
         "C replay after ACK loss cannot grant another plugin level")
+    var direct_claim_rollback: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.mission.claimed_offer_ids.clear()
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, direct_claim_rollback).reason == "invalid_transition",
+        "even direct storage callers cannot erase claimed card screen IDs")
+    var direct_plugin_rollback: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.mission.obtained_plugins.erase("plugin_delta")
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, direct_plugin_rollback).reason == "invalid_transition",
+        "even direct storage callers cannot erase earned temporary plugins")
     var post_pick: Dictionary = Gateway.inspect_slot(slot)
     check(post_pick.reward_snapshot.offer == null \
         and post_pick.reward_snapshot.pity_counter == 1 \
@@ -550,6 +567,11 @@ func _test_mission_checkpoint(root_dir: String) -> void:
         "learn_plugin_ids": ["plugin_delta"]}, true)
     check(Gateway.transact_command(slot, prepare).applied,
         "pending terminal user learning choice durably staged")
+    var wrong_prepare: Dictionary = prepare.duplicate(true)
+    wrong_prepare.receipt_id = "terminal:illegal:1"
+    wrong_prepare.learn_plugin_ids = ["plugin_not_obtained"]
+    check(not Gateway.transact_command(slot, wrong_prepare).applied,
+        "unfulfillable extraction learning request is never checkpointed")
     var pending: Dictionary = Gateway.inspect_slot(slot)
     check(pending.reason == "terminal_intent_requires_reconciliation",
         "uncommitted extraction intent never auto-finalized at startup")
