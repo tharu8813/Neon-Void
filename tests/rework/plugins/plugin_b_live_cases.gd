@@ -155,6 +155,73 @@ func run() -> bool:
 	check(not processed_again.get("ok",false),"cannot dispatch without authoritative B parent")
 	check(int(combo.counters["damage_events"])==before_repeat,
 		"failed direct C dispatch does not double damage")
+	# Actual B swept collision: one laser pierces TWO distinct physical enemies.
+	var laser_run = new_encounter("nv_l_laser")
+	laser_run._spawn("P",Vector2.RIGHT,{"damage_type":"physical",
+		"base_damage":11.0,"can_crit":false,"is_on_hit":true},["basic_attack","projectile_hit"])
+	for i in range(3):
+		laser_run.step_fixed({"P":{"fire":false,"move":Vector2.ZERO}})
+	check(float(laser_run.snapshot("E1")["stats"]["health"])<1000.0
+		and float(laser_run.snapshot("E2")["stats"]["health"])<1000.0,
+		"laser B physical collision actually pierces both targets")
+	# Real B projectile homing changes velocity, not just a JSON shape.
+	var homing_run = new_encounter("nv_r_homing")
+	homing_run._spawn("P",Vector2.UP,{"damage_type":"physical",
+		"base_damage":3.0,"can_crit":false,"is_on_hit":true},["basic_attack","projectile_hit"])
+	homing_run.step_fixed({"P":{"fire":false,"move":Vector2.ZERO}})
+	check(homing_run.projectiles.size()>0
+		and float(homing_run.projectiles[0]["velocity"].x)>0.0,
+		"homing shot physically steers toward the target on B tick")
+	# Boomerang uses B physical projectile lifecycle; returns unlock firing.
+	var boom_run = new_encounter("nv_l_boomerang")
+	boom_run.set_actor_position("E1",Vector3(70,0,0))
+	boom_run.set_actor_position("E2",Vector3(90,0,0))
+	boom_run._spawn("P",Vector2.RIGHT,{"damage_type":"physical",
+		"base_damage":1.0,"can_crit":false,"is_on_hit":true},["basic_attack","projectile_hit"])
+	check(int(boom_run.outstanding_boomerangs.get("P",0))==1,
+		"boomerang registered outstanding physical projectile")
+	var old_shots: int = int(boom_run.counters["shots"])
+	boom_run.actors["P"]["fire_credit"] = 1.0
+	boom_run._fire_if_ready("P",Vector2.RIGHT)
+	check(int(boom_run.counters["shots"])==old_shots,
+		"blocked attack while B boomerang is in flight")
+	for i in range(65):
+		boom_run.step_fixed({"P":{"fire":false,"move":Vector2.ZERO}})
+	check(int(boom_run.outstanding_boomerangs.get("P",0))==0,
+		"boomerang B physics return releases attack gate")
+	# B statuses must deal actual per-tick damage, not merely be installed.
+	var dot_run = new_encounter("nv_r_disassembly")
+	fire_event(dot_run,"damage",["plugin","plugin_attack","proc_damage","projectile_hit"])
+	var dot_base: float = float(dot_run.snapshot("E1")["stats"]["health"])
+	dot_run.step_fixed({"P":{"fire":false,"move":Vector2.ZERO}})
+	check(float(dot_run.snapshot("E1")["stats"]["health"])<dot_base,
+		"disassembly DoT reduces real B HP on the next fixed tick")
+	# Critical root generates on_hit+on_crit, but target ICD must avoid a
+	# doubled chain-lightning hit on the same target in that single root.
+	var critical_run = new_encounter("nv_c_chain_lightning")
+	critical_run.actors["P"]["stats"]["crit_chance"] = 1.0
+	critical_run.bus.submit_root({"kind":"damage","trigger_kind":"on_hit",
+		"actor_id":"P","target_id":"E1","source_tags":["basic_attack","projectile_hit"],
+		"allowed_proc_triggers":["on_hit","on_crit"],"attack":{
+			"damage_type":"physical","base_damage":10.0,"can_crit":true}})
+	critical_run.bus.drain_batch(512,Callable(critical_run,"_resolve_event"))
+	check(float(critical_run.snapshot("E2")["stats"]["health"])==988.0,
+		"critical on_hit/on_crit source triggers only ONE 12-damage lightning")
+	# Measured bounded load on a mixed full-catalogue build, no fake sink.
+	var crowd = new_encounter("nv_c_move_speed")
+	var all: Dictionary = {}
+	for plugin in plugins:
+		all[str(plugin["plugin_id"])] = 1
+	check(crowd.attach_plugins("P",all,419),"all 27 plugins attach at first level")
+	var started_us: int = Time.get_ticks_usec()
+	for frame in range(16):
+		crowd.step_fixed({"P":{"fire":true,"aim_world":Vector3(5,0,0),
+			"move":Vector2.ZERO}})
+	var total_us: int = Time.get_ticks_usec()-started_us
+	print("C B FULL-LOAD 27: 16 ticks, %d us total, %d B damage, max queued=%d" %
+		[total_us,int(crowd.counters["damage_events"]),int(crowd.bus.metrics.get("max_pending",0))])
+	check(crowd.bus.pending.size()<int(crowd.settings["event_work_per_tick"]),
+		"27-equipped fixed tick event backlog is not growing unbounded")
 	check(dispatch_total<2000 and max_pending<512,
 		"bounded real B event throughput 27 catalog tests")
 	verified.clear()
