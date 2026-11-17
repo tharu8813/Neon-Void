@@ -4,6 +4,7 @@ extends RefCounted
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Rules = preload("res://scripts/rework/progression/progression_rules.gd")
+const Recovery = preload("res://scripts/rework/persistence/mission_recovery.gd")
 
 static func initialize(slot_id: String, vaccine_id: String, config: Dictionary = {}) -> Dictionary:
     var path: String = Store.default_slot_path(slot_id)
@@ -18,6 +19,17 @@ static func snapshot(slot_path: String) -> Dictionary:
         return loaded
     return {"ok": true, "revision": loaded.revision,
         "snapshot": loaded.state.duplicate(true)}
+
+static func inspect_slot(slot_path: String) -> Dictionary:
+    ## Safe for the hub/UI to call before creating a world instance.
+    return Recovery.inspect_slot(slot_path)
+
+static func reconcile_receipt(slot_path: String, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String,
+        offer_id: String = "") -> Dictionary:
+    ## Read-only C/A retry handshake; never grants a reward during inspection.
+    return Recovery.reconcile_receipt(slot_path, vaccine_id,
+        generation, run_id, receipt_id, offer_id)
 
 static func transact_command(slot_path: String, command: Dictionary,
         expected_revision: int = -1, fault_at: String = "") -> Dictionary:
