@@ -33,6 +33,8 @@ func _run() -> void:
         "whole-number JSON float stat allocation accepted after reload")
     check(Balance.stat_cost_fragments({"max_hp": 1.5}) == -1,
         "fractional stat allocations rejected")
+    check(not Balance.valid_config({"fragments_per_vaccine_level": 0}),
+        "cannot disable permanent stat point on vaccine level-up")
     check(State.valid_id("run-a:1:0"), "C colon-delimited card receipts accepted")
     check(not State.valid_slot_id("invalid:filename"), "unsafe filesystem slot rejected")
     check(Balance.needed_xp(1, false) == 100, "mission level XP draft")
