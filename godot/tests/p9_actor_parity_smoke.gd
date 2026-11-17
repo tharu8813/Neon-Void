@@ -64,6 +64,11 @@ func _run() -> void:
             view.call("sync_state", snapshot, true)
             verify(is_zero_approx(view.get_node("Silhouette").rotation.y),
                 "reduced effects stops boss spin: " + kind)
+        if str(kind) in ["shooter", "splitter"]:
+            var old_yaw: float = view.get_node("Silhouette").rotation.y
+            view.call("sync_state", snapshot, false)
+            verify(view.get_node("Silhouette").rotation.y != old_yaw,
+                "cosmetic spin without C elapsed mutation: " + kind)
         if str(kind) == "rusher":
             verify(view.get_node("StatusRing").visible, "windup warning ring")
             snapshot["state"] = 0
