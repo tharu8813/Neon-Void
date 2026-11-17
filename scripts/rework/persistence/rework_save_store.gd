@@ -9,7 +9,7 @@ const FORMAT: int = 1
 const MAX_BYTES: int = 16 * 1024 * 1024
 
 static func default_slot_path(slot_id: String) -> String:
-    if not Model.valid_id(slot_id):
+    if not Model.valid_slot_id(slot_id):
         return ""
     return ProjectSettings.globalize_path(
         "user://rework/v1/rework-slot-" + slot_id)
