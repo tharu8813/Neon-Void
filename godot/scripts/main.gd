@@ -13,6 +13,8 @@ const CheckpointRules = preload("res://scripts/progression/checkpoint_rules.gd")
 const Bindings = preload("res://scripts/input/legacy_bindings.gd")
 const Migration = preload("res://scripts/persistence/migration_service.gd")
 const HubGeometry = preload("res://scripts/world/hub_geometry.gd")
+const ActorShapes = preload("res://scripts/visuals/legacy_actor_shapes.gd")
+const EnemyVisual = preload("res://scripts/visuals/legacy_enemy_visual.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 # Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
@@ -54,6 +56,10 @@ var hub_position: Vector2 = HUB_SPAWN
 var hub_marker_groups: Dictionary = {}
 var _base_menu_dismiss_resume: bool = false
 var enemy_visuals: Dictionary = {}
+var avatar_material: StandardMaterial3D
+var avatar_hit_material: StandardMaterial3D
+var avatar_aura: MeshInstance3D
+var avatar_dash: MeshInstance3D
 var hud_frames: int = 0
 var score: int = 0
 var run_kills: int = 0
@@ -76,6 +82,7 @@ var _import_dialog: FileDialog = null
 func _ready() -> void:
     assert(camera_3d.projection == Camera3D.PROJECTION_ORTHOGONAL)
     assert(arena_floor.mesh != null and player_visual.mesh != null)
+    _setup_player_visual()
     actor.set("auto_tick", false)
     actor.call("set_input_source", controls)
     actor.set("camera_source", camera_3d)
@@ -736,34 +743,58 @@ func _sync_hub_markers() -> void:
         var group: Node3D = hub_marker_groups[id]
         group.visible = mode == str(id)
 
-func _make_enemy_visual(kind: String, boss: bool, radius: float) -> MeshInstance3D:
-    var visual: MeshInstance3D = MeshInstance3D.new()
-    var sphere: SphereMesh = SphereMesh.new()
-    sphere.radius = maxf(0.06, radius * WORLD_SCALE)
-    sphere.height = 2.0 * sphere.radius
-    visual.mesh = sphere
-    var material: StandardMaterial3D = StandardMaterial3D.new()
-    material.albedo_color = Color(1.0, 0.29, 0.20) if boss else Color(0.72, 0.32, 0.90)
-    material.roughness = 0.32
-    material.metallic = 0.23
-    visual.material_override = material
+func _setup_player_visual() -> void:
+    # Use Python draw_player hull in top-down XZ. Keep B's hidden collision
+    # scene untouched; its original radius and aiming rules remain authoritative.
+    player_visual.mesh = ActorShapes.mesh_for("player", 13.0)
+    avatar_material = ActorShapes.lit_material(ActorShapes.color_for("player"))
+    avatar_hit_material = ActorShapes.lit_material(Color("#6b8f9c"))
+    player_visual.material_override = avatar_material
+    avatar_aura = MeshInstance3D.new()
+    avatar_aura.name = "IdentityRing"
+    avatar_aura.mesh = ActorShapes.ring_mesh(0.25)
+    avatar_aura.material_override = ActorShapes.lit_material(Color("#237a92"))
+    avatar_aura.position.y = -0.032
+    player_visual.add_child(avatar_aura)
+    avatar_dash = MeshInstance3D.new()
+    avatar_dash.name = "DashRing"
+    avatar_dash.mesh = ActorShapes.ring_mesh(0.31, 0.030)
+    avatar_dash.material_override = ActorShapes.lit_material(Color("#6ff2ff"))
+    avatar_dash.position.y = -0.030
+    avatar_dash.visible = false
+    player_visual.add_child(avatar_dash)
+
+func _make_enemy_visual(kind: String, boss: bool, radius: float) -> Node3D:
+    # The boss flag must agree with C's catalog; never invent a different
+    # render-only enemy identity from a generic boss/sphere fallback.
+    assert(ActorShapes.COLORS.has(kind), "Missing original Python enemy color")
+    var visual: Node3D = EnemyVisual.new()
+    visual.call("configure", kind, radius)
+    assert(bool(visual.get("boss")) == boss, "C boss identity mismatch")
     enemy_container.add_child(visual)
     return visual
 
 func _update_visuals() -> void:
     var p: Vector3 = actor.global_position
     player_visual.position = p + Vector3(0.0, 0.13, 0.0)
+    player_visual.rotation.y = -float(actor.get("aim_radians"))
+    player_visual.material_override = avatar_hit_material if float(actor.get("invulnerability_t")) > 0.0 \
+        and int(run_frames / 3) % 2 == 0 else avatar_material
+    avatar_dash.visible = float(actor.get("dash_t")) > 0.0
     var active_keys: Dictionary = {}
+    var settings: Dictionary = saved_state.get("settings.json", {})
+    var reduced_motion: bool = bool(settings.get("reduced_effects", false))
     if mode == "combat":
         for enemy in sim.enemies:
             var id: int = int(enemy["id"])
             active_keys[id] = true
-            var visual: MeshInstance3D = enemy_visuals.get(id)
+            var visual: Node3D = enemy_visuals.get(id)
             if visual == null:
                 visual = _make_enemy_visual(str(enemy["kind"]), bool(enemy["boss"]), float(enemy["radius"]))
                 enemy_visuals[id] = visual
             var pos: Vector2 = enemy["pos"]
-            visual.position = Vector3(pos.x * WORLD_SCALE, 0.13, pos.y * WORLD_SCALE)
+            visual.position = Vector3(pos.x * WORLD_SCALE, 0.115, pos.y * WORLD_SCALE)
+            visual.call("sync_state", enemy, reduced_motion)
     for id in enemy_visuals.keys():
         if not active_keys.has(id):
             enemy_visuals[id].queue_free()
@@ -773,10 +804,11 @@ func _update_visuals() -> void:
     if mode == "combat":
         for bullet in sim.bullets:
             locations.append(bullet["pos"])
-            tints.append(Color(0.3, 0.9, 1.0))
+            # Original Python C_BULLET (#ccff4d), not P9 placeholder cyan.
+            tints.append(Color("#ccff4d"))
         for bullet in sim.enemy_bullets:
             locations.append(bullet["pos"])
-            tints.append(Color(1.0, 0.43, 0.23))
+            tints.append(Color("#ff9fbb"))
     projectiles.call("set_projectiles", locations, tints)
 
 func _deployed_base() -> Dictionary:
