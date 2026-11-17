@@ -141,8 +141,8 @@ static func _lock_owner(slot_path: String) -> Dictionary:
     var info: Dictionary = parsed.data
     if info.get("format") != 1 or typeof(info.get("token")) != TYPE_STRING \
             or str(info.token).length() != 32 or not str(info.token).is_valid_hex_number() \
-            or typeof(info.get("pid")) != TYPE_INT or int(info.pid) <= 0 \
-            or typeof(info.get("created_unix")) != TYPE_INT or int(info.created_unix) <= 0:
+            or not Validator._integer(info.get("pid"), 1, 2147483647) \
+            or not Validator._integer(info.get("created_unix"), 1):
         return {"ok": false, "reason": "owner_invalid"}
     return {"ok": true, "pid": info.pid, "created_unix": info.created_unix, "token": info.token}
 
