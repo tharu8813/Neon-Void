@@ -77,7 +77,7 @@ func _run() -> void:
     var after_inspection: Dictionary = Gateway.snapshot(slot_path)
     check(bool(after_inspection.get("ok", false))
         and int(after_inspection.get("revision", -1)) == int(before.get("revision", -2)),
-        "opening/refeshing inspector never writes E state")
+        "opening/refreshing inspector never writes E state")
     paused = false
     root.remove_child(pilot)
     pilot.queue_free()
@@ -109,6 +109,13 @@ func _run() -> void:
     check(not committed.get("can_retry", true)
         and not committed.get("safe_to_resume", true),
         "committed receipt does not silently resume B/C or grant again")
+    var stale: Dictionary = choice.duplicate(true)
+    stale["run_id"] = "different-current-run"
+    var stale_report: Dictionary = View.inspect(slot_path, stale)
+    check(stale_report.get("receipt_status") == "unverified"
+        and not stale_report.get("rare_bonus_verified", true)
+        and not stale_report.get("can_retry", true),
+        "vaccine-wide receipt from another run cannot be misattributed")
     var missing: Dictionary = choice.duplicate(true)
     missing["receipt_id"] = "readonly-run:999:0"
     missing["offer_id"] = "readonly-run:999"
