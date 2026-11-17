@@ -94,8 +94,11 @@ func _run() -> void:
     require(fx.bursts.is_empty() and fx.last_warning_count == 0,
         "effect rings expire and warnings clear without modifying C")
     game.call("retreat_to_hub")
-    require(not fx.visible and fx.friendly_trails.multimesh.visible_instance_count == 0,
-        "combat FX fully hidden and cleared in OS hub")
+    require(fx.visible and fx.friendly_trails.multimesh.visible_instance_count == 0
+        and fx.hostile_trails.multimesh.visible_instance_count == 0,
+        "OS hub retains only safe purification feedback, no combat bullet FX")
+    require(game.get_node("LegacySectorExit").visible == false,
+        "Python sector EXIT is hidden outside combat arena")
     game.queue_free()
     if failures == 0:
         print("P9 3D FX / PYTHON ORIGINAL AUDIO PARITY PASS (headless structural only)")
