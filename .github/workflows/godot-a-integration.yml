@@ -62,6 +62,10 @@ jobs:
           timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/save_bridge_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/live_save_integration_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/integration_import_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/combat_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/sector_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p9_visual_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p10_benchmark_smoke.gd
       - name: Windows headless import and complete 4x5 integration
         if: runner.os == 'Windows'
         shell: pwsh
@@ -82,3 +86,7 @@ jobs:
           Invoke-CheckedGodot '--headless --path godot --script res://tests/save_bridge_smoke.gd'
           Invoke-CheckedGodot '--headless --path godot --script res://tests/live_save_integration_smoke.gd'
           Invoke-CheckedGodot '--headless --path godot --script res://tests/integration_import_smoke.gd'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/combat_smoke.gd'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/sector_smoke.gd'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/p9_visual_smoke.gd'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/p10_benchmark_smoke.gd'
