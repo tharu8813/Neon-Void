@@ -339,6 +339,26 @@ func _run() -> void:
     pilot.queue_free()
     await process_frame
     _delete_only_fixture(fixture_path)
+    # This pre-existing D CPU smoke is listed by A's Linux/Windows godot-ci
+    # workflow. Chain the four opt-in D-only 3D world regression scripts here,
+    # avoiding any cross-owner workflow edits. Child Godot exits synchronously.
+    for script_path in [
+        "res://tests/rework/world/gpu_playable_smoke.gd",
+        "res://tests/rework/world/ram_playable_smoke.gd",
+        "res://tests/rework/world/ssd_playable_smoke.gd",
+        "res://tests/rework/world/hdd_playable_smoke.gd"
+    ]:
+        var process_output: Array = []
+        var command := PackedStringArray([
+            "--headless", "--path", ProjectSettings.globalize_path("res://"),
+            "--script", script_path
+        ])
+        var status: int = OS.execute(OS.get_executable_path(), command, process_output, true)
+        if status != 0:
+            printerr("World hardware smoke output [", script_path, "]: ",
+                str(process_output).substr(0, 3500))
+        check(status == 0, "cross-platform real Godot headless smoke: " + script_path)
     if failures == 0:
         print("CPU VERTICAL SLICE PASS: hub -> real B combat intro -> CPU walkable maze -> two goals -> boss -> unlock -> ACK -> hub")
+        print("D FOUR HARDWARE PLAYABLE PREVIEW SMOKES PASS")
     quit(0 if failures == 0 else 1)
