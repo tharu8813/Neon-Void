@@ -75,9 +75,13 @@ func checkpoint_hardware_entry(fact: Dictionary) -> Dictionary:
     var generator: String = str(fact.get("generator_id", ""))
     var seed: int = int(fact.get("map_seed", -1))
     var plan: Variant = fact.get("region_plan")
-    if region != "CPU" or receipt != run_id + ":" + region + ":map-checkpoint" \
+    # E #118 supports all five GDD hardware IDs; D only enters a region
+    # when its owner-created scene is available. This bridge cannot invent one.
+    if not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(region) \
+            or receipt != run_id + ":" + region + ":map-checkpoint" \
             or generator.is_empty() or seed <= 0 \
             or seed > 9007199254740991 or typeof(plan) != TYPE_DICTIONARY \
+            or str(plan.get("id", "")) != region \
             or int(plan.get("map_seed", -1)) != seed:
         return _fail("invalid_map_checkpoint_identity", fact)
     return _commit("checkpoint_region", receipt, {
