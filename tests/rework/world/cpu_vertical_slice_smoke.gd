@@ -26,6 +26,25 @@ func _hit_to_death(world: Variant, enemy_id: String, max_hits: int = 40) -> bool
         world.combat._apply_hit(enemy_id, "smoke:%s:%d" % [enemy_id, i])
     return not world.combat.enemies.has(enemy_id)
 
+func _kill_formal_actor(world_combat: Variant, actor_id: String,
+        player_node: Node3D, max_ticks: int = 220) -> bool:
+    ## Never calls the D legacy _apply_hit fixture; every HP transition goes
+    ## through B's 60Hz projectile collision and damage/event pipeline.
+    if not world_combat.enemies.has(actor_id):
+        return false
+    for tick in range(max_ticks):
+        if not world_combat.enemies.has(actor_id):
+            return true
+        var target: Vector3 = world_combat.enemies[actor_id]["node"].global_position
+        var commands: Dictionary = {
+            "VACCINE": {"move": Vector2.ZERO, "aim_world": target, "fire": true}
+        }
+        for hostile_id in world_combat.enemies.keys():
+            commands[str(hostile_id)] = {"move": Vector2.ZERO,
+                "aim_world": player_node.global_position, "fire": false}
+        world_combat.live.advance_test_tick(commands)
+    return not world_combat.enemies.has(actor_id)
+
 func _delete_only_fixture(folder: String) -> void:
     var directory: DirAccess = DirAccess.open(folder)
     if directory == null:
@@ -195,6 +214,80 @@ func _run() -> void:
     if bool(saved_again.get("ok", false)):
         check(int(saved_again["snapshot"]["vaccine"]["mission"]["mission_xp"]) ==
             saved_xp, "B death is not replayed into E reward ledger")
+    # Complete the actual B -> D CPU objectives -> E clean/extract path, with
+    # a test-only high-AD B actor to avoid 8-12 minute balance duration in CI.
+    # It changes fixture B statistics, NEVER the game combat/damage formula.
+    var b_actor_stats: Dictionary = production.live.bridge.simulation.actors["VACCINE"]["stats"]
+    b_actor_stats["attack_damage"] = 150.0
+    b_actor_stats["attack_speed"] = 20.0
+    for actor_id in ["intro-1", "intro-2"]:
+        check(_kill_formal_actor(production, actor_id, persisted_world.player),
+            "formal B intro enemy death " + actor_id)
+    check(persisted_world.board.board.gates_unlocked(),
+        "actual B deaths unlock motherboard gates")
+    persisted_world.player.global_position = Board.GATES["CPU"]["position"] + Vector3.UP * 0.5
+    check(persisted_world.interact().get("region_id", "") == "CPU",
+        "A persisted pilot enters CPU through physical gate")
+    check(str(persisted_world.get("current_mode")) == "cpu",
+        "B formal runtime recreated for CPU encounter")
+    var core_position: Vector3 = persisted_world.hardware.objective_world("secure_core")
+    var intrusion_position: Vector3 = persisted_world.hardware.objective_world("stop_intruders")
+    persisted_world.player.global_position = core_position + Vector3.UP * 0.5
+    check(persisted_world.interact().get("objective_id", "") == "secure_core",
+        "formal CPU core objective physically activated")
+    for tick in range(2400):
+        persisted_world.cpu_session.tick_player(core_position)
+    check(bool(persisted_world.world_state.progress["CPU"]["objectives"]["secure_core"]),
+        "E-bound CPU defense objective completed after actual ticks")
+    check(not persisted_world.world_state.is_extraction_open("CPU"),
+        "boss and extraction still locked")
+    persisted_world.player.global_position = intrusion_position + Vector3.UP * 0.5
+    check(persisted_world.interact().get("objective_id", "") == "stop_intruders",
+        "formal CPU invasion objective physically activated")
+    check(production.enemies.size() == 10,
+        "ten CPU virus actors registered in real B encounter")
+    # Reconfigure this test actor after the CPU scene registered a new B run.
+    b_actor_stats = production.live.bridge.simulation.actors["VACCINE"]["stats"]
+    b_actor_stats["attack_damage"] = 150.0
+    b_actor_stats["attack_speed"] = 20.0
+    for index in range(10):
+        var actor_id: String = "CPU-VIRUS-%02d" % index
+        check(_kill_formal_actor(production, actor_id, persisted_world.player),
+            "formal CPU B projectile verified death " + actor_id)
+        var offer_panel: Control = pilot.get("offer_panel") as Control
+        if offer_panel != null and offer_panel.visible:
+            pilot.call("_choose_card", 0)
+            check(not bool(pilot.get("frozen")),
+                "A C/E plugin reward committed after real B kill")
+    check(persisted_world.cpu_session.objectives.all_objectives_completed(),
+        "both CPU objectives verified by real ticks and B kills")
+    check(production.enemies.has("CPU-BOSS"), "B boss spawned after all objectives")
+    check(not persisted_world.world_state.is_extraction_open("CPU"),
+        "CPU cannot extract while real boss alive")
+    check(_kill_formal_actor(production, "CPU-BOSS", persisted_world.player, 360),
+        "B authoritative boss death (no synthetic _apply_hit)")
+    check(persisted_world.world_state.is_extraction_open("CPU"),
+        "real B boss death marks CPU clean")
+    check(persisted_world.hardware.extraction_open, "CPU extraction physically opens")
+    saved = EGateway.snapshot(fixture_path)
+    check(bool(saved.get("ok", false)) and
+        saved["snapshot"]["vaccine"]["mission"]["hardware_cleaned_ids"].has("CPU"),
+        "E persists D CPU cleanse emitted from B boss death")
+    persisted_world.player.global_position = persisted_world.hardware.extraction_world() + Vector3.UP * 0.5
+    check(persisted_world.interact().get("type", "") == "hardware_extraction_requested",
+        "real clean-world extraction requires on-foot interaction")
+    var learn_panel: Control = pilot.get("learn_panel") as Control
+    check(learn_panel.visible and paused,
+        "A presents durable 0-2 learning selection before extraction")
+    pilot.call("_finish_extraction")
+    saved = EGateway.snapshot(fixture_path)
+    check(bool(saved.get("ok", false)) and not bool(pilot.get("frozen")),
+        "real CPU extraction E transaction succeeded")
+    if bool(saved.get("ok", false)):
+        check(saved["snapshot"]["vaccine"]["mission"] == null,
+            "E closes real B-derived CPU mission only once")
+        check(str(persisted_world.get("current_mode")) == "hub",
+            "A E-acknowledged CPU extraction returns to real hub")
     paused = false
     root.remove_child(pilot)
     pilot.queue_free()
