@@ -92,7 +92,20 @@ static func run(check: Callable, scene_root: Node) -> void:
     check.call(float(battle.simulation.snapshot("VACCINE")["mana"]) < before_mana,
         "actual C-compatible skill spends mana after 60Hz regeneration")
     check.call(spawn_notices.size() > 0, "projectile spawn reaches presentation signal")
-    check.call(battle.diagnostics()["tick"] >= 2, "fixed-tick clock advanced")
+    check.call(battle.learn_active_skill({"id":"shield_dash", "mana_cost":5.0,
+        "cooldown_ticks":60}, 1, true), "second active slot learned")
+    check.call(battle.learn_active_skill({"id":"signal_burst", "mana_cost":12.0,
+        "cooldown_ticks":120, "attack":{"damage_type":"true",
+        "base_damage":3.0}}, 2, true), "third active slot learned")
+    var before_slot_three: float = float(battle.simulation.snapshot("VACCINE")["mana"])
+    battle.set_combat_input({"fire":false, "skill_slot":2,
+        "aim_world": Vector3(4,0,0)})
+    var third_notices: Array[Dictionary] = battle.advance_production_tick()
+    check.call(float(battle.simulation.snapshot("VACCINE")["mana"]) < before_slot_three and
+        third_notices.any(func(e: Dictionary) -> bool:
+            return str(e.get("kind", "")) == "skill_cast"),
+        "third skill slot casts through live bridge with mana and event")
+    check.call(battle.diagnostics()["tick"] >= 3, "fixed-tick clock advanced")
     battle.reset()
     check.call(battle.enemies.is_empty() and not battle.running and
         battle.simulation.actors.is_empty(), "reset clears actors and combat physics")
@@ -179,6 +192,19 @@ static func run(check: Callable, scene_root: Node) -> void:
         "crowd canary preserves stable enemy registry and C runtime")
     print("B PRODUCTION LOAD CANARY: 100 live enemies, 250 projectiles, 5 ticks; elapsed_us=", elapsed,
         " (not a measured Windows FPS guarantee)")
+    battle.reset()
+    player.global_position = Vector3(0, 0.5, 0)
+    battle.begin_encounter(player, camera, {}, "death-proof")
+    var player_actor: Dictionary = battle.simulation.actors["VACCINE"]
+    player_actor["stats"]["health"] = 1.0
+    check.call(battle.spawn_hostile({"actor_id":"CLOSE_ENEMY",
+        "position":Vector3(0.4,0,0)}), "melee-range attacker registered")
+    battle.set_combat_input({"fire":false, "move":Vector2.ZERO})
+    battle.advance_production_tick()
+    check.call(battle.game_over and deaths.size() == 1,
+        "real enemy shot causes one player death callback")
+    check.call(not hp.is_empty() and close_to(hp.back(), 0.0),
+        "player death publishes final zero HP for D/A HUD")
     battle.reset()
     host.queue_free()
 
