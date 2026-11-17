@@ -16,7 +16,21 @@ var seed: int = 42
 var last_error: String = ""
 var enemies: Dictionary:
     get:
-        return bridge.enemies if bridge != null else {}
+        if bridge == null:
+            return {}
+        # D preview exposes each CharacterBody under the "node" key.
+        # B production owns the same physical body under "body".
+        # Return a READ-ONLY view; B remains the authoritative actor owner.
+        var view: Dictionary = {}
+        for id in bridge.enemies:
+            var info: Dictionary = bridge.enemies[id].duplicate()
+            if not info.has("node") and info.has("body"):
+                info["node"] = info["body"]
+            view[id] = info
+        return view
+var map_plan: Dictionary:
+    get:
+        return bridge.map_plan if bridge != null else {}
 
 func _ready() -> void:
     bridge = Production.new()
@@ -83,6 +97,19 @@ func actor_snapshot(actor_id: String) -> Dictionary:
     if bridge == null:
         return {}
     return bridge.simulation.snapshot(actor_id)
+
+func advance_test_tick(commands: Dictionary) -> Array[Dictionary]:
+    ## Deterministic headless D regression adapter, NOT a damage/XP shortcut.
+    ## Every hit goes through B's real projectile physics, HP and event ledger.
+    if bridge == null or not bridge.running:
+        return []
+    if bridge.player != null and is_instance_valid(bridge.player):
+        bridge.simulation.set_actor_position("VACCINE", bridge.player.global_position)
+    bridge.set_combat_input(commands.get("VACCINE", {}))
+    for actor_id in commands:
+        if str(actor_id) != "VACCINE":
+            bridge.set_input(str(actor_id), commands[actor_id])
+    return bridge.advance_production_tick()
 
 func diagnostics() -> Dictionary:
     if bridge == null:
