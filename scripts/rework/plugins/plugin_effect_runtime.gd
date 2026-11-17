@@ -174,8 +174,9 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 		# B supplies per-attack derived permissions. Do not let a derived attack
 		# masquerade as a new basic attack and launch an unbounded loop.
 		var derived: bool = source.has("plugin_attack") or source.has("derived_attack")
-		if derived and kind in ["on_hit", "on_crit", "on_hit_proc"] and not Policy.derived_attack_may_proc(entry):
-			continue
+		# Downstream permission belongs to the PARENT event. The plugin\'s
+		# can_trigger_on_hit_effects controls its OWN children, not whether the
+		# plugin may react to a legal derived hit (e.g. disassembly after lightning).
 		if derived and kind in ["on_hit", "on_crit", "on_hit_proc"] and not event.get("allowed_proc_triggers", []).has("on_hit"):
 			continue
 		if effect_kind in ["chain_lightning","hit_explosion"] and not source.has("basic_attack") and not (derived and event.get("allowed_proc_triggers",[]).has("on_hit")):
