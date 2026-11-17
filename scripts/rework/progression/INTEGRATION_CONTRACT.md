@@ -32,8 +32,8 @@ All regular commands except `choose_new_vaccine` carry `action`, `vaccine_id`, `
 | `die` | `run_id`, `receipt_id` | D/B through A |
 | `archive_plugin`, `withdraw_plugin` | `plugin_id`, `receipt_id` (hub only) | A UI |
 | `reallocate_stats` | `receipt_id`, `allocations` stat ID -> purchased increments (hub only) | A UI |
-| `learn_skill` | `receipt_id`, `skill_id` | B via A |
-| `equip_skills` | `receipt_id`, `equipped` array up to 3 known IDs | A/B |
+| `learn_skill` | `receipt_id`, `skill_id`, optional `equip_on_discovery` (up to 3 known/new IDs) | B via A |
+| `equip_skills` | `receipt_id`, `equipped` array up to 3 known IDs (hub only) | A/B |
 | `choose_new_vaccine` | `new_vaccine_id` (only after final destruction) | A UI |
 
 Example D event:
@@ -59,7 +59,7 @@ Level-up plugin offers are counted in `mission.pending_plugin_offers`. A C selec
 - Successful extraction requires at least one cleaned hardware; five cleaned hardware additionally grant 220 XP [draft v0.1]. Hardware cleared grants 120 permanent XP, objective completed 15 [draft v0.1]. D/B separately send mission XP, so no double-counting.
 - New mission resets mission level to 1. Existing carried learned plugins stay physically carried until deposited. Death deletes all carried; DB-stored ones survive while copies remain.
 - On death 1,2,3, copies remaining 2,1,0; death 4 destroys only the vaccine object and sets `selection_required=true`. A must switch to the selection screen. Old generation events are rejected after a new vaccine is selected.
-- Newly learnable plugins on successful extraction: common/rare only, max 2, level preserved. They remain in carried inventory; hub deposit is an explicit operation. Legendary/mythic are never archived.
+- Newly discovered skills may be equipped during a mission **only in the same `learn_skill` transaction** using `equip_on_discovery`. Other loadout swaps are hub-only.\n- Newly learnable plugins on successful extraction: common/rare only, max 2, level preserved. They remain in carried inventory; hub deposit is an explicit operation. Legendary/mythic are never archived.
 - Archive and carried are mutually exclusive maps. Repeated copies are not synthesized. Memory cap is not artificially enforced beyond save safety limits.
 
 ## Storage guarantees and failure semantics
