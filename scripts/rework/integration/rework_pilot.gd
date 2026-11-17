@@ -541,27 +541,63 @@ func _on_enemy_defeated(actor_id: String, receipt: String) -> void:
     _maybe_open_offer()
     _refresh()
 
-## Only an E-authenticated snapshot can authorize plugin levels for B/C.
-## The B runtime is never allowed to infer a grant from an unsaved UI card.
+## E → A → B: both permanent growth/3 learned skills AND C plugin levels
+## must be authorized from the SAME verified E revision before the B 60Hz
+## encounter's first physics tick. Every hardware transition resets B, so
+## this function must be called again after the E map checkpoint and D entry.
 func _sync_authorized_build_from_E() -> bool:
+    if frozen or bridge == null or bool(bridge.frozen):
+        return false
     var loaded: Dictionary = Gateway.snapshot(slot_path)
     if not bool(loaded.get("ok", false)):
         _halt("authorized_loadout_snapshot_failed")
         return false
     var saved: Dictionary = loaded.get("snapshot", {})
-    var vaccine: Dictionary = saved.get("vaccine", {})
-    if vaccine.is_empty() or vaccine.get("mission") == null:
+    var raw_vaccine: Variant = saved.get("vaccine", null)
+    if bool(saved.get("selection_required", false)) or not (raw_vaccine is Dictionary):
+        _halt("authorized_loadout_vaccine_missing")
+        return false
+    var vaccine: Dictionary = raw_vaccine
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary):
         _halt("authorized_loadout_mission_missing")
+        return false
+    var mission: Dictionary = mission_value
+    if current_run_id.is_empty() or str(mission.get("run_id", "")) != current_run_id \
+            or str(world.get("current_run_id")) != current_run_id \
+            or str(bridge.run_id) != current_run_id \
+            or str(vaccine.get("vaccine_id", "")) != str(bridge.vaccine_id) \
+            or int(saved.get("generation", -1)) != int(bridge.generation) \
+            or int(loaded.get("revision", -1)) < 1:
+        _halt("E_B_progression_identity_diverged")
+        return false
+    var combat: Variant = world.get("combat")
+    if combat == null or str(combat.get("mode")) != "formal":
+        _halt("B_growth_requires_formal_world")
+        return false
+    var live: Variant = combat.get("live")
+    if live == null or live.bridge == null or live.bridge.run_id != current_run_id:
+        _halt("B_growth_encounter_mismatch")
+        return false
+    # B's one-shot public method checks the E payload, player baseline and
+    # learned/equipped registry IDs. A NEVER constructs a substitute profile.
+    var growth_ack: Dictionary = live.configure_authorized_progression(loaded)
+    if not bool(growth_ack.get("ok", false)) \
+            or int(growth_ack.get("revision", -1)) != int(loaded["revision"]) \
+            or str(growth_ack.get("vaccine_id", "")) != str(bridge.vaccine_id) \
+            or int(growth_ack.get("generation", -1)) != int(bridge.generation):
+        _halt("B_E_growth_ack_rejected:" + str(growth_ack.get("reason", "identity_mismatch")))
         return false
     var levels: Dictionary = {}
     var carried: Dictionary = vaccine.get("carried", {})
     for plugin_id in carried:
         levels[str(plugin_id)] = int(carried[plugin_id].get("level", 0))
-    var obtained: Dictionary = vaccine["mission"].get("obtained_plugins", {})
+    var obtained: Dictionary = mission.get("obtained_plugins", {})
     for plugin_id in obtained:
         levels[str(plugin_id)] = int(obtained[plugin_id].get("level", 0))
-    var combat: Variant = world.get("combat")
-    if combat == null or not bool(combat.configure_authorized_build(levels, [], [])):
+    # Existing C effect bridge is still authoritative. A never duplicates
+    # C numeric plugin instances or injects ad-hoc skill definitions.
+    if not bool(combat.configure_authorized_build(levels, [], [])):
         _halt("B_C_initial_authorized_build_rejected")
         return false
     return true
