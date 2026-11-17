@@ -568,6 +568,10 @@ func _on_setting_change(key: String, value: Variant) -> void:
 
 func _pause_gameplay() -> void:
     paused = true
+    # ESC/P and O also open modal screens in the antivirus base. Closing them
+    # must restore free movement unless startup discovered unsafe save data.
+    if mode == "base" and last_error.is_empty():
+        _base_menu_dismiss_resume = true
     controls.call("set_enabled", false)
     ui.call("set_gameplay_active", false)
 
@@ -645,6 +649,7 @@ func _hud_snapshot() -> Dictionary:
         "score": score, "run_kills": run_kills,
         "checkpoint_valid": checkpoint != null,
         "checkpoint_summary": cp_name,
+        "import_available": persistence_enabled and not save_slot.is_empty() and not DirAccess.dir_exists_absolute(save_slot),
         "database": {
             "antivirus_level": int(database.get("antivirus_level", 1)),
             "xp": int(db_xp.get("current", 0)),
