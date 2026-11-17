@@ -25,7 +25,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var backdrop := ColorRect.new()
-	backdrop.color = Color("#050a17ea")
+	backdrop.color = Color("#030912ed")
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(backdrop)
@@ -70,8 +70,8 @@ func _notification(what: int) -> void:
 
 func _resize_panel() -> void:
 	_panel.custom_minimum_size = Vector2(
-		minf(720.0, maxf(300.0, size.x - 28.0)),
-		minf(625.0, maxf(250.0, size.y - 28.0)))
+		minf(760.0, maxf(300.0, size.x - 28.0)),
+		minf(583.0, maxf(250.0, size.y - 28.0)))
 
 func update_state(snapshot: Dictionary) -> void:
 	state = snapshot.duplicate(true)
