@@ -73,6 +73,14 @@ Level-up plugin offers are counted in `mission.pending_plugin_offers`. A C selec
 - Storage bound: 16 MiB JSON envelope per slot. No arbitrary DB item-count limit, but excessively large saves fail safely. Store JSON integers are limited to 2^53-1 to avoid IEEE-754 rounding.
 - No automatic migration. Any future import must be opt-in, copy-first and separately reviewed by A.
 
+## Actual C/D branch compatibility (requires A to wire)
+
+- **C #102:** `PluginOfferEngine.choose_card(slot)` returns `{offer_id, receipt_id, plugin_id, rarity, level, learnable}`; `receipt_id` is `run_id:offer_index:slot`. E accepts colons and rejects two different claims carrying the same `offer_id` within one mission. A appends the chosen `offer_source` (levelup, hardware or event); keep C's receipt string unchanged.
+- **D #101:** `ExtractionState.world_fact` type `objective_completed` maps to E `objective_completed` with `objective_id = region_id + "." + objective_id` to avoid collisions; `hardware_cleansed` maps to E `hardware_cleaned` with `hardware_id = region_id`. The D `boss_defeated` signal is **not** a separate E clean reward: D already emits one hardware clean after validating its boss and objectives.
+- **D terminal events:** `mission_extracted` maps to E `extract` only *after* the player has chosen 0–2 eligible newly learned plugins; `mission_failed` maps to E `die`. Reuse the exact D `receipt_id` (`world:<run_id>:extraction` or `world:<run_id>:death`) and the current vaccine/generation from E snapshot.
+- **Failed commit handoff:** C `choose_card` and D `request_extraction/report_death` can advance their *in-memory* states before E has acknowledged durable persistence. A must retain the immutable event payload until E reports `applied=true`, and on failure freeze/reconcile the session rather than dropping the reward, advancing UI, or rerolling another receipt. E's receipt ledger is not a substitute for integration-side acknowledgement handling.
+- **Mission seeds:** D controls distinct mission/map/encounter seed generation. E persists the top-level run seed and cleaned IDs; granular world metadata fields are reserved for the A/D integration adapter and are not yet wired.
+
 ## [미확정] integration decisions for A
 
 1. Recovery of an **already learned** plugin also found among new mission rewards, and whether this affects the 2-new-learning quota. Current code rejects duplicate learning, rather than duplicating or merging.
