@@ -42,7 +42,7 @@ func _refresh() -> void:
 	for i in range(start, mini(start + page_size, _entries.size())):
 		var item: Dictionary = _entries[i]
 		var line := Label.new()
-		line.text = "%s  Lv.%d/%d  ·  %s" % [item["name"], int(_levels[item["id"]]), int(item["max_stack"]), item["description"]]
+		line.text = "%s  Lv.%d/%d  ·  %s" % [item["name"], int(_levels[item["id"]]), int(item["max_stack"]), Catalog.description_for_display(str(item["id"]))]
 		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_body.add_child(line)
 	var pages: int = maxi(1, ceili(float(_entries.size()) / float(page_size)))
