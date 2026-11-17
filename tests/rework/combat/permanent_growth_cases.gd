@@ -8,6 +8,7 @@ const Registry = preload("res://scripts/rework/skills/skill_registry.gd")
 const Production = preload("res://scripts/rework/combat/production_cpu_adapter.gd")
 const Damage = preload("res://scripts/rework/combat/damage.gd")
 const Stats = preload("res://scripts/rework/combat/stats.gd")
+const Statuses = preload("res://scripts/rework/combat/statuses.gd")
 
 static func _near(a: float, b: float) -> bool:
     return absf(a - b) <= 0.0001
@@ -250,8 +251,7 @@ static func run(check: Callable, root: Node) -> void:
     check.call(recast_notes.any(func(note: Dictionary) -> bool:
         return str(note.get("kind", "")) == "skill_cast"),
         "after haste-adjusted cooldown the same real active skill casts again")
-    var Effects = preload("res://scripts/rework/combat/statuses.gd")
-    Effects.apply(battle.simulation.actors["VACCINE"]["status_state"],
+    Statuses.apply(battle.simulation.actors["VACCINE"]["status_state"],
         {"id":"test_silence","flags":["silenced"],"duration_ticks":3})
     var silenced: Array = _advance(battle, 1, 1)
     check.call(silenced.any(func(note: Dictionary) -> bool:
