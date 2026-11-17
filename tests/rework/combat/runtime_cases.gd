@@ -254,6 +254,33 @@ static func run(check: Callable) -> void:
         if str(note.get("kind", "")) == "skill_cast":
             casts += 1
     check.call(casts == 1, "one skill cast presentation event")
+    # P2 load canary: scheduling caps are never damage/event deletion caps.
+    var flood = Events.new()
+    flood.set_tick(11)
+    for n in range(2048):
+        flood.submit_root({"kind": "noop", "actor_id": "P",
+            "target_id": "target-" + str(n)})
+    var processed_total: int = 0
+    var batches: int = 0
+    while not flood.pending.is_empty() and batches < 100:
+        processed_total += flood.drain_batch(32).size()
+        batches += 1
+    check.call(processed_total == 2048 and flood.pending.is_empty() and
+        batches == 64, "2048 FIFO events survived quota without drops")
+    check.call(int(flood.metrics["max_pending"]) == 2048,
+        "backpressure measurement counts only pending work")
+    var crowd: Dictionary = {}
+    for index in range(400):
+        crowd["crowd-" + str(index)] = {
+            "position": Vector3(float(index % 20) * 5.0, 0.0,
+                float(floori(float(index) / 20.0)) * 5.0),
+            "radius": 0.3, "alive": true, "team": "virus"
+        }
+    var crowd_grid: Dictionary = Grid.build(crowd, 3.0)
+    var nearby: Array[String] = Grid.segment_candidates(crowd_grid,
+        Vector3.ZERO, Vector3(2, 0, 0), 0.1)
+    check.call(nearby.has("crowd-0") and nearby.size() < 12,
+        "spatial hash narrows 400 actors to local swept-hit candidates")
     var bridge = Bridge.new()
     check.call(bridge is Node3D and bridge.simulation != null,
         "scene attachable Node3D bridge instantiates without modifying root")
