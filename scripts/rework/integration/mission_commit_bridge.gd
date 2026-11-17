@@ -2,8 +2,8 @@ extends RefCounted
 ## A-owned integration boundary: world and plugin events must be persisted by E
 ## before UI/VFX acknowledges success. This does not yet wire a playable scene.
 ##
-## IMPORTANT: C/D currently mutate their own in-memory objects before returning
-## a choice/extraction fact. If E rejects the durable commit, freeze this bridge
+## C plugin offers now prepare before durable commit, then confirm only on E ACK.
+## D world facts are durable before presentation. On rejection, freeze this bridge
 ## and require explicit reconciliation. Never display or pay a rejected reward.
 signal transaction_committed(result: Dictionary)
 signal reconciliation_required(reason: String, event: Dictionary)
@@ -107,6 +107,33 @@ func commit_plugin_choice(choice: Dictionary, offer_source: String = "levelup") 
         "level": int(choice["level"]),
         "offer_source": offer_source
     })
+
+## The safe A entry point for C's new prepare -> E durable -> confirm protocol.
+## Raw commit_plugin_choice() remains a low-level persistence primitive only.
+func choose_and_commit_plugin(offers: RefCounted, slot: int,
+        offer_source: String = "levelup") -> Dictionary:
+    if frozen:
+        return {"ok": false, "reason": "reconciliation_required"}
+    if offers == null or not offers.has_method("prepare_card") or not offers.has_method("confirm_card"):
+        return {"ok": false, "reason": "invalid_offer_engine"}
+    var prepared: Dictionary = offers.prepare_card(slot)
+    if prepared.is_empty():
+        return {"ok": false, "reason": "no_selectable_card"}
+    var receipt: String = str(prepared.get("receipt_id", ""))
+    var persisted: Dictionary = commit_plugin_choice(prepared, offer_source)
+    if not bool(persisted.get("ok", false)):
+        # Even an error can mean E committed and the ACK was lost; never cancel
+        # or generate a different receipt until a verified E snapshot reconciles.
+        offers.confirm_card(receipt, {"applied": false, "receipt_id": receipt})
+        return persisted
+    var confirmed: Dictionary = offers.confirm_card(receipt, {
+        "applied": true, "receipt_id": receipt,
+        "revision": persisted.get("revision", -1)
+    })
+    if not bool(confirmed.get("ok", false)):
+        return _fail("plugin_E_C_confirmation_diverged", prepared)
+    return {"ok": true, "receipt_id": receipt,
+        "revision": persisted.get("revision", -1), "plugin": confirmed}
 
 func commit_terminal_fact(fact: Dictionary, learn_plugin_ids: Array = []) -> Dictionary:
     if frozen:
