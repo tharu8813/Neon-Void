@@ -146,7 +146,7 @@ func _run() -> void:
         var script: Variant = load(path)
         check(script is Script and script.can_instantiate(),
             "B skill/growth parse failure at: " + path)
-        if script is Script:
+        if script is Script and script.can_instantiate():
             loaded[path] = script
     var growth_cases: Variant = loaded.get(
         "res://tests/rework/combat/permanent_growth_cases.gd", null)
