@@ -46,7 +46,8 @@ func _run() -> void:
 			"move_speed":5.0,"attack_speed":2.0,"projectile_speed_mult":1.0,"projectile_size":10},
 		"targets":{"virus-1":{"health":100.0,"armor":0.0,"magic_resist":0.0},
 			"virus-2":{"health":100.0,"armor":0.0,"magic_resist":0.0}},
-		"target_statuses":{},"projectiles":[],"buffs":[],"generated_events":[]
+		"target_statuses":{},"target_positions":{"virus-1":Vector2.ZERO,"virus-2":Vector2(2,0)},
+		"projectiles":[],"buffs":[],"generated_events":[]
 	}
 	var tested: Dictionary = {}
 	var mapping: Dictionary = {
@@ -77,12 +78,14 @@ func _run() -> void:
 			e["plugin_id"] = uid
 			var first: Dictionary = instance.process(e, sample.duplicate(true), Callable(self, "fake_sink"))
 			check(first.get("ok",false),"event accepted: "+uid)
-			if kind not in ["proc_volley","kill_power","breakable_sprint"]:
+			if kind not in ["proc_volley","kill_power","breakable_sprint","fever"]:
 				check(first.get("commands",[]).size()>0,"real command emitted: "+uid)
 			elif kind=="kill_power":
 				check(float(instance.derived_stats(sample["actor_stats"])["attack_damage"]) > 5.0,"kill power gained AD")
 			elif kind=="breakable_sprint":
 				check(not bool(instance.state_snapshot()["sprint_active"]),"sprint breaks on damage")
+			elif kind=="fever":
+				check(int(instance.state_snapshot()["fever_gauge"])>0,"fever gauge charged")
 			if first.get("commands",[]).size()>0:
 				var dup: Dictionary = instance.process(e,sample.duplicate(true),Callable(self,"fake_sink"))
 				check(dup.get("duplicate",false) and dup.get("commands",[]).is_empty(),"idempotence: "+uid)
@@ -150,7 +153,7 @@ func _run() -> void:
 		var b_world: Dictionary = sample.duplicate(true)
 		var b_command: Dictionary = hit1["commands"][0]
 		var real: Dictionary = Sink.apply([b_command],b_world)
-		check(real.get("ok",false) and float(b_world["targets"]["virus-1"]["health"])<100.0,
+		check(real.get("ok",false) and float(b_world["targets"]["virus-2"]["health"])<100.0,
 			"real B Damage.calculate+apply_damage changes target HP")
 		var status: Dictionary = {"type":"status","plugin_id":"nv_r_disassembly",
 			"target_id":"virus-2","definition":{"id":"nv_r_disassembly","duration_ticks":240,
