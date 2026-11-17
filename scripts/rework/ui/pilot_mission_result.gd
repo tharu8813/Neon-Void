@@ -56,8 +56,13 @@ func _text(value: String, size_pt: int, color: Color) -> Label:
     return label
 
 func _recenter() -> void:
+    update_layout()
+
+func update_layout() -> void:
+    if get_viewport() == null:
+        return
     var vp: Vector2 = get_viewport().get_visible_rect().size
-    var width: float = minf(590.0, maxf(320.0, vp.x - 36.0))
+    var width: float = minf(590.0, maxf(260.0, vp.x - 36.0))
     custom_minimum_size.x = width
     position = Vector2(maxf(0.0, (vp.x - width) * 0.5),
         maxf(0.0, (vp.y - 300.0) * 0.5))
