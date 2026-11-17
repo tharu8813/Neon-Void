@@ -34,7 +34,9 @@ static func valid_config(config: Dictionary) -> bool:
             return false
     var effective: Dictionary = DEFAULTS.duplicate()
     effective.merge(config, true)
-    if effective.mission_xp_base < 1 or effective.vaccine_xp_base < 1             or effective.fragments_per_point < 1:
+    if effective.mission_xp_base < 1 or effective.vaccine_xp_base < 1 \
+            or effective.fragments_per_point < 1 \
+            or effective.fragments_per_vaccine_level < 1:
         return false
     if effective.death_base_percent > effective.death_max_percent             or effective.death_max_percent > 100:
         return false
