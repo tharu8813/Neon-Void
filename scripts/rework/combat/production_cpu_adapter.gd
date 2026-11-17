@@ -12,6 +12,9 @@ const Statuses = preload("res://scripts/rework/combat/statuses.gd")
 const AI = preload("res://scripts/rework/combat/enemy_ai.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const CAdapter = preload("res://scripts/rework/combat/c_effect_adapter.gd")
+const Growth = preload("res://scripts/rework/combat/permanent_growth.gd")
+const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
+const SkillSlots = preload("res://scripts/rework/skills/skill_slots.gd")
 const PLAYER_ID := "VACCINE"
 
 var player: CharacterBody3D = null
@@ -29,6 +32,10 @@ var last_health: float = -1.0
 var last_mana: float = -1.0
 var last_plugin_fault: String = ""
 var last_combat_overflow: int = 0
+var progression_error: String = ""
+var _baseline_player_stats: Dictionary = {}
+var _authorized_progression: Dictionary = {}
+var _staged_progression: Dictionary = {}
 var _reported_deaths: Dictionary = {}
 var _projectile_kinds: Dictionary = {}
 var _old_projectiles: Dictionary = {}
@@ -65,7 +72,9 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         config: Dictionary = {}) -> bool:
     ## Backwards-compatible with D old 4-argument demo AND new formal
     ## 5-argument router. A/D can validate a failed encounter initialization.
+    var staged: Dictionary = _staged_progression.duplicate(true)
     reset()
+    _staged_progression = staged
     if player_node == null or camera_node == null or new_run_id.is_empty():
         return false
     player = player_node
@@ -81,6 +90,7 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         "projectile_radius_scale": 0.01
     })
     var stats: Dictionary = Stats.make(balance_draft.get("player_stats", {}))
+    _baseline_player_stats = stats.duplicate(true)
     var attack: Dictionary = {
         "damage_type": "physical",
         "base_damage": float(balance_draft["player_attack_base_damage"]),
@@ -108,6 +118,13 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         _old_player_speed = float(player.get("walk_speed"))
     player_stats = simulation.actors[PLAYER_ID]["stats"]
     game_over = false
+    if not _staged_progression.is_empty():
+        var approved: Dictionary = _staged_progression.duplicate(true)
+        _staged_progression.clear()
+        var installed: Dictionary = _install_authorized_progression(approved)
+        if not bool(installed.get("ok", false)):
+            reset()
+            return false
     _emit_resource_changes(true)
     return running and simulation.actors.has(PLAYER_ID)
 
@@ -154,6 +171,10 @@ func reset() -> void:
     last_mana = -1.0
     last_plugin_fault = ""
     last_combat_overflow = 0
+    progression_error = ""
+    _baseline_player_stats.clear()
+    _authorized_progression.clear()
+    _staged_progression.clear()
     game_over = false
     effects = CAdapter.new()
     simulation.begin(0, {"encounter_id": "cleared"})
@@ -216,6 +237,115 @@ func spawn_hostile(info: Dictionary) -> bool:
     enemies[id] = {"body": body, "boss": boss, "speed": speed}
     return true
 
+func _parse_authorized_progression(loaded: Dictionary) -> Dictionary:
+    ## Caller A MUST pass an unmodified, successfully read E Gateway.snapshot.
+    ## This is a B schema check, not a signature or filesystem authenticity check.
+    if loaded.get("ok") != true or not loaded.has("snapshot") or (
+            not loaded["snapshot"] is Dictionary):
+        return {"ok": false, "reason": "E_snapshot_not_confirmed"}
+    var revision: Variant = loaded.get("revision", -1)
+    if not (revision is int) or revision < 0:
+        return {"ok": false, "reason": "invalid_E_revision"}
+    var state: Dictionary = loaded["snapshot"]
+    if state.get("selection_required", true) != false:
+        return {"ok": false, "reason": "vaccine_selection_pending"}
+    var generation: Variant = state.get("generation", -1)
+    if not (generation is int) or generation < 1:
+        return {"ok": false, "reason": "invalid_E_generation"}
+    if not state.get("vaccine") is Dictionary:
+        return {"ok": false, "reason": "missing_E_vaccine"}
+    var vaccine: Dictionary = state["vaccine"]
+    var id: String = str(vaccine.get("vaccine_id", ""))
+    if id.is_empty() or vaccine.get("alive") != true:
+        return {"ok": false, "reason": "invalid_or_destroyed_vaccine"}
+    var stats_check: Dictionary = Growth.validate_allocations(
+        vaccine.get("invested_stats", null))
+    if not bool(stats_check.get("ok", false)):
+        return stats_check
+    var skills_check: Dictionary = SkillRegistry.validate_loadout(
+        vaccine.get("known_skills", null), vaccine.get("equipped_skills", null))
+    if not bool(skills_check.get("ok", false)):
+        return skills_check
+    var checked: Dictionary = Growth.compile(Stats.make(
+        balance_draft.get("player_stats", {})), vaccine["invested_stats"])
+    if not bool(checked.get("ok", false)):
+        return checked
+    return {"ok": true, "vaccine_id": id, "generation": generation,
+        "revision": revision, "invested_stats": vaccine["invested_stats"].duplicate(true),
+        "known_skills": vaccine["known_skills"].duplicate(true),
+        "equipped_skills": vaccine["equipped_skills"].duplicate(true)}
+
+func configure_authorized_progression(e_gateway_snapshot: Dictionary) -> Dictionary:
+    ## For A only, after durable E readback. No UI draft is ever accepted as a
+    ## separate investment input. During a running region, before tick 1 only.
+    var checked: Dictionary = _parse_authorized_progression(e_gateway_snapshot)
+    if not bool(checked.get("ok", false)):
+        progression_error = str(checked.get("reason", "invalid_E_progression"))
+        return {"ok": false, "reason": progression_error}
+    if running and simulation.fixed_tick > 0:
+        progression_error = "in_mission_progression_change_denied"
+        return {"ok": false, "reason": progression_error}
+    if running:
+        return _install_authorized_progression(checked)
+    _staged_progression = checked.duplicate(true)
+    progression_error = ""
+    return {"ok": true, "staged": true}
+
+func _install_authorized_progression(approved: Dictionary) -> Dictionary:
+    if not running or not simulation.actors.has(PLAYER_ID) or (
+            simulation.fixed_tick > 0):
+        return {"ok": false, "reason": "must_apply_before_first_tick"}
+    var calculated: Dictionary = Growth.compile(_baseline_player_stats,
+        approved["invested_stats"])
+    if not bool(calculated.get("ok", false)):
+        progression_error = str(calculated.get("reason", "invalid_growth"))
+        return calculated
+    var validation: Dictionary = SkillRegistry.validate_loadout(
+        approved["known_skills"], approved["equipped_skills"])
+    if not bool(validation.get("ok", false)):
+        progression_error = str(validation.get("reason", "invalid_loadout"))
+        return validation
+    var next_slots = SkillSlots.new()
+    next_slots.configure(calculated["stats"])
+    for index in range(approved["equipped_skills"].size()):
+        var uid: String = str(approved["equipped_skills"][index])
+        if not next_slots.learn(SkillRegistry.definition(uid)) or (
+                not next_slots.equip(index, uid, true)):
+            progression_error = "skill_install_failed:" + uid
+            return {"ok": false, "reason": progression_error}
+    var actor: Dictionary = simulation.actors[PLAYER_ID]
+    # Replace from immutable encounter baseline, never increment current stats.
+    actor["stats"] = calculated["stats"].duplicate(true)
+    actor["skills"] = next_slots
+    actor["status_state"]["tenacity"] = float(actor["stats"]["tenacity"])
+    _authorized_progression = approved.duplicate(true)
+    progression_error = ""
+    player_stats = actor["stats"]
+    _emit_resource_changes(true)
+    return {"ok": true, "revision": approved["revision"],
+        "vaccine_id": approved["vaccine_id"],
+        "generation": approved["generation"]}
+
+func actor_snapshot(actor_id: String = PLAYER_ID) -> Dictionary:
+    var state: Dictionary = simulation.snapshot(actor_id)
+    if state.is_empty():
+        return {}
+    if actor_id == PLAYER_ID:
+        state["shield"] = effects.shield_value()
+        state["stats"]["shield"] = state["shield"]
+        state["authorized_progression"] = _authorized_progression.duplicate(true)
+    return state
+
+func skill_snapshot() -> Dictionary:
+    if not simulation.actors.has(PLAYER_ID):
+        return {}
+    var actor: Dictionary = simulation.actors[PLAYER_ID]
+    return actor["skills"].read_only_state(simulation.fixed_tick,
+        int(simulation._effective_stats(actor).get("skill_haste", 0)))
+
+func authorized_growth_snapshot() -> Dictionary:
+    return _authorized_progression.duplicate(true)
+
 func configure_shield_policy(policy: Dictionary) -> bool:
     ## A owns the unresolved GDD numbers, B owns deterministic application.
     return effects.configure_shield_policy(policy)
@@ -229,6 +359,11 @@ func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
 
 func learn_active_skill(definition: Dictionary, slot: int,
         progression_authorized: bool) -> bool:
+    ## Legacy B regression support. Production E-authorized builds must arrive
+    ## through configure_authorized_progression instead.
+    if not _authorized_progression.is_empty():
+        progression_error = "direct_skill_change_requires_E_readback"
+        return false
     return simulation.learn_skill(PLAYER_ID, definition, slot, progression_authorized)
 
 func set_combat_input(command: Dictionary) -> void:
@@ -558,6 +693,9 @@ func diagnostics() -> Dictionary:
         "proc_metrics": simulation.bus.metrics.duplicate(true),
         "pending_C_events": effects.outstanding_events(),
         "C_shields": effects.shield_diagnostics(),
+        "progression_error": progression_error,
+        "authorized_progression": _authorized_progression.duplicate(true),
+        "skill_slots": skill_snapshot(),
         "fixed_tick_profile": simulation.profiling_snapshot(),
         "C_fault": effects.fault
     }
