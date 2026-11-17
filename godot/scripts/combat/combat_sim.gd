@@ -4,6 +4,7 @@ extends RefCounted
 signal wave_ready(boss_defeated: bool)
 signal enemy_died(enemy_id: int, kind: String)
 signal player_hit(damage: float, infection: float)
+signal shard_collected(value: int, location: Vector2)
 
 const Rules = preload("res://scripts/combat/combat_rules.gd")
 const Catalog = preload("res://scripts/enemies/enemy_catalog.gd")
@@ -12,10 +13,15 @@ const DT: float = 1.0 / 60.0
 const ARENA: Vector2 = Vector2(1280.0, 720.0)
 
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+# Pickups use a separate deterministic RNG, preserving existing C spawn/crit rolls.
+var shard_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var player: Dictionary = {}
 var enemies: Array[Dictionary] = []
 var bullets: Array[Dictionary] = []
 var enemy_bullets: Array[Dictionary] = []
+var shards: Array[Dictionary] = []
+var drone_angle: float = 0.0
+var drone_cd: float = 0.0
 var spawn_queue: Array[Dictionary] = []
 var telegraphs: Array[Dictionary] = []
 var events: Array[Dictionary] = []
@@ -33,6 +39,7 @@ var frames: int = 0
 
 func _init(seed_value: int = 42) -> void:
     rng.seed = seed_value
+    shard_rng.seed = seed_value ^ 0x53485244
     player = {
         "pos": Vector2(640, 360), "radius": 13.0,
         "hp": 100.0, "max_hp": 100.0, "mana": 100.0, "max_mana": 100.0,
@@ -41,6 +48,7 @@ func _init(seed_value: int = 42) -> void:
         "stats": {"rate": 5.4, "dmg": 10.0, "bspeed": 880.0,
         "pierce": 0, "split": 0, "homing": 0.0, "explode": 0.0,
         "ricochet": 0, "crit": 0.05, "chain": 0, "rear": 0,
+        "drone": 0, "magnet": 82.0,
         "armor": 4.0, "armor_pen": 0.0, "mana_regen": 6.0,
         "hp_regen": 0.0, "burn_chance": 0.0, "burn_dps": 0.0,
         "toxin_chance": 0.0, "toxin_dps": 0.0, "life_on_hit": 0.0,
@@ -70,6 +78,7 @@ func begin_wave(wave_index: int, schedule: Array, expected_boss: String = "") ->
     enemies.clear()
     bullets.clear()
     enemy_bullets.clear()
+    shards.clear()
     spawn_queue.clear()
     telegraphs.clear()
     events.clear()
@@ -89,6 +98,7 @@ func abort_wave() -> void:
     enemies.clear()
     bullets.clear()
     enemy_bullets.clear()
+    shards.clear()
     spawn_queue.clear()
     telegraphs.clear()
     wave_empty_time = 0.0
@@ -139,7 +149,9 @@ func step_fixed() -> void:
     _step_enemies()
     _step_telegraphs()
     _auto_fire()
+    _step_drones()
     _step_bullets()
+    _step_shards()
     _step_contacts()
     if spawn_queue.is_empty() and enemies.is_empty():
         wave_empty_time += DT
@@ -272,16 +284,60 @@ func _auto_fire() -> void:
     if int(stats["rear"]) > 0:
         _fire_friendly(player["pos"], aim + PI, 0.7)
 
-func _fire_friendly(origin: Vector2, angle: float, mult: float = 1.0) -> void:
+func _fire_friendly(origin: Vector2, angle: float, mult: float = 1.0,
+        radius_mult: float = 1.0) -> void:
     var stats: Dictionary = player["stats"]
     bullets.append({
         "pos": origin, "vel": Vector2.RIGHT.rotated(angle) * float(stats["bspeed"]),
-        "damage": float(stats["dmg"]) * mult, "radius": 3.6, "life": 1.4,
+        "damage": float(stats["dmg"]) * mult, "radius": 3.6 * radius_mult, "life": 1.4,
         "pierce": int(stats["pierce"]), "homing": float(stats["homing"]),
         "explode": float(stats["explode"]), "ricochet": int(stats["ricochet"]),
         "crit": float(stats["crit"]), "chain": int(stats["chain"]),
         "pen": float(stats["armor_pen"]), "hits": [], "dead": false
     })
+
+func _step_drones() -> void:
+    # Frozen Python game.py:update_drones. Autonomous shots use the same
+    # player projectile path and consume no new combat RNG on zero drones.
+    var n: int = int(player["stats"].get("drone", 0))
+    if n <= 0:
+        return
+    drone_angle += DT * 1.9
+    drone_cd -= DT
+    if drone_cd > 0.0:
+        return
+    drone_cd = 0.55
+    for i in range(n):
+        var direction: Vector2 = Vector2.RIGHT.rotated(drone_angle + TAU * float(i) / float(n))
+        var origin: Vector2 = Vector2(player["pos"]) + direction * 52.0
+        var victim: Dictionary = nearest_enemy(origin, 460.0)
+        if victim.is_empty():
+            continue
+        var angle: float = (Vector2(victim["pos"]) - origin).angle()
+        _fire_friendly(origin, angle, 0.62, 0.8)
+
+func _step_shards() -> void:
+    # Original collectible: 14s lifetime, 1500px/s² magnet pull, 1.2/s
+    # damping, and a pickup within player radius+8.
+    var kept: Array[Dictionary] = []
+    var magnet: float = maxf(0.0, float(player["stats"].get("magnet", 82.0)))
+    var player_pos: Vector2 = player["pos"]
+    var collect_radius: float = float(player["radius"]) + 8.0
+    for shard in shards:
+        shard["life"] = float(shard["life"]) - DT
+        var displacement: Vector2 = player_pos - Vector2(shard["pos"])
+        var distance: float = maxf(0.0001, displacement.length())
+        var velocity: Vector2 = shard["vel"]
+        if magnet > 0.0 and distance < magnet:
+            velocity += displacement / distance * (1.0 - distance / magnet) * 1500.0 * DT
+        shard["pos"] = Vector2(shard["pos"]) + velocity * DT
+        shard["vel"] = velocity * (1.0 - 1.2 * DT)
+        if distance < collect_radius:
+            shard_collected.emit(int(shard["value"]), player_pos)
+            continue
+        if float(shard["life"]) > 0.0:
+            kept.append(shard)
+    shards = kept
 
 func _step_bullets() -> void:
     for bullet in bullets:
@@ -438,6 +494,14 @@ func _kill_enemy(enemy: Dictionary) -> void:
         boss_defeated = true
     enemy_died.emit(int(enemy["id"]), kind)
     events.append({"type": "enemy_killed", "id": enemy["id"], "kind": kind})
+    # Keep drop randomness separate from C's established enemy/spawn/crit RNG.
+    var eligible: bool = kind != "mini" or shard_rng.randf() < 0.30
+    if eligible and shard_rng.randf() < 0.55 and shards.size() < 128:
+        shards.append({
+            "pos": Vector2(enemy["pos"]),
+            "vel": Vector2(shard_rng.randf_range(-90.0, 90.0),
+                shard_rng.randf_range(-90.0, 90.0)),
+            "life": 14.0, "value": int(float(enemy["score"]) * 0.6)})
     var stats: Dictionary = player["stats"]
     if float(stats["lifesteal"]) > 0.0:
         player["hp"] = minf(float(player["max_hp"]), float(player["hp"]) + float(stats["lifesteal"]) * 0.5)
