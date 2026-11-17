@@ -80,7 +80,7 @@ static func new_mission(run_id: String, seed: int, config: Dictionary = {}) -> D
     }
 
 static func _valid_mission(mission: Variant) -> bool:
-    if typeof(mission) != TYPE_DICTIONARY or mission.size() != 14             or not valid_id(mission.get("run_id")) or not natural(mission.get("seed")):
+    if typeof(mission) != TYPE_DICTIONARY or mission.size() != 15             or not valid_id(mission.get("run_id")) or not natural(mission.get("seed")):
         return false
     for key in ["mission_level", "mission_xp", "pending_plugin_offers",
                 "uncommitted_vaccine_xp", "uncommitted_point_fragments",
@@ -98,7 +98,7 @@ static func _valid_mission(mission: Variant) -> bool:
     return true
 
 static func _valid_vaccine(vaccine: Variant, config: Dictionary) -> bool:
-    if typeof(vaccine) != TYPE_DICTIONARY or vaccine.size() != 15:
+    if typeof(vaccine) != TYPE_DICTIONARY or vaccine.size() != 16:
         return false
     if not valid_id(vaccine.get("vaccine_id")) or vaccine.get("alive") != true             or not natural(vaccine.get("copies_remaining"), 3)             or not natural(vaccine.get("level"), 1000000) or vaccine.level < 1             or not natural(vaccine.get("xp")) or not natural(vaccine.get("total_xp"))             or not natural(vaccine.get("earned_fragments"))             or not natural(vaccine.get("unspent_fragments")):
         return false
