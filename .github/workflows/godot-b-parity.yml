@@ -3,7 +3,7 @@ name: Godot B parity
 on:
   pull_request:
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-b-parity.yml'
   workflow_dispatch:
 
@@ -52,10 +52,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
-          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/p2_camera_parity.gd
-          if [ -f 'godot/tests/p3_player_parity.gd' ]; then
-            timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/p3_player_parity.gd
+          timeout 90 "$NEON_GODOT" --headless --path . --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path . --script res://tests/p2_camera_parity.gd
+          if [ -f 'tests/p3_player_parity.gd' ]; then
+            timeout 90 "$NEON_GODOT" --headless --path . --script res://tests/p3_player_parity.gd
           fi
       - name: Import and execute parity smoke (Windows, checked exit codes)
         if: runner.os == 'Windows'
@@ -74,8 +74,8 @@ jobs:
               if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
             } finally { $p.Dispose() }
           }
-          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p2_camera_parity.gd'
-          if (Test-Path 'godot/tests/p3_player_parity.gd') {
-            Invoke-CheckedGodot '--headless --path godot --script res://tests/p3_player_parity.gd'
+          Invoke-CheckedGodot '--headless --path . --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p2_camera_parity.gd'
+          if (Test-Path 'tests/p3_player_parity.gd') {
+            Invoke-CheckedGodot '--headless --path . --script res://tests/p3_player_parity.gd'
           }

@@ -22,7 +22,14 @@ def data_directory(*, frozen: bool | None = None,
     if frozen is None:
         frozen = bool(getattr(sys, "frozen", False))
     if not frozen:
-        return str(Path(__file__).resolve().parent.parent)
+        source_root = Path(__file__).resolve().parent.parent
+        # The Godot-root layout moved Python sources under python/.
+        # Preserve the historical repository-root JSON location so existing
+        # saves stay visible without a risky automatic migration.
+        repo_root = source_root.parent
+        if source_root.name == "python" and (repo_root / "project.godot").is_file():
+            return str(repo_root)
+        return str(source_root)
 
     home_dir = Path(home) if home is not None else Path.home()
     appdata = local_appdata if local_appdata is not None else os.environ.get("LOCALAPPDATA")

@@ -11,6 +11,9 @@ on:
 jobs:
   tests:
     name: Tests
+    defaults:
+      run:
+        working-directory: python
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

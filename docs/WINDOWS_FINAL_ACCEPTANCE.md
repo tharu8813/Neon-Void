@@ -44,7 +44,7 @@ A real screenshot comparison, not headless camera coordinate unit tests, closes 
 - In Task Manager/GPU-Z, observe **GPU 3D** engine utilization during combat and heavy projectile loads. Headless CI cannot prove it. Record idle and combat CPU/GPU use, render framerate, p50/p95/p99 frametime and memory/VRAM in a comparable windowed 1920×1080 setup.
 - Test the heaviest projectile and enemy wave (especially NETWORK GRID), D HUD, text readability, glow, player/enemy identification, effects reductions, and whether 3D lighting occludes aim targets. Compare with the Python gameplay baseline.
 - Run an uninterrupted **30–60 minute** session through the full deployment → sectors → CLEAN → extraction → new deployment cycle. Log crashes, mismatched hitboxes, stuck input, save errors, lost assets, and frame hitches.
-- The standalone `godot/benchmarks/p10_benchmark.tscn` arithmetic benchmark does **not** replace rendered-frame measurement on a physical Windows GPU.
+- The standalone `benchmarks/p10_benchmark.tscn` arithmetic benchmark does **not** replace rendered-frame measurement on a physical Windows GPU.
 
 ## 6. Final release decision
 

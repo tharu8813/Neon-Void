@@ -3,13 +3,13 @@ name: Godot 4 port checks
 on:
   pull_request:
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-ci.yml'
       - '.gitignore'
   push:
     branches: [main]
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-ci.yml'
       - '.gitignore'
   workflow_dispatch:
@@ -63,9 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           "$NEON_GODOT" --version
-          "$NEON_GODOT" --headless --path godot --editor --import --quit
-          "$NEON_GODOT" --headless --path godot --script res://tests/port_smoke.gd
-          "$NEON_GODOT" --headless --path godot --quit-after 3
+          "$NEON_GODOT" --headless --path . --editor --import --quit
+          "$NEON_GODOT" --headless --path . --script res://tests/port_smoke.gd
+          "$NEON_GODOT" --headless --path . --quit-after 3
       - name: Windows editor import, script smoke and scene boot (real exit codes)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -78,9 +78,9 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $arguments" }
           }
           Invoke-CheckedGodot '--version'
-          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/port_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --quit-after 3'
+          Invoke-CheckedGodot '--headless --path . --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/port_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --quit-after 3'
 
   windows-export:
     # Automated Windows export is required for Godot PRs.
@@ -134,10 +134,10 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "Process failed with exit code $($p.ExitCode): $binary $arguments" }
           }
           Invoke-CheckedProcess $env:NEON_GODOT '--version'
-          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --editor --import --quit'
-          New-Item -ItemType Directory -Path 'godot/build' -Force | Out-Null
-          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path godot --export-release "Windows Desktop" build/NeonVoid3D.exe'
-          $exe = (Resolve-Path 'godot/build/NeonVoid3D.exe').Path
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
+          New-Item -ItemType Directory -Path 'build' -Force | Out-Null
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoid3D.exe'
+          $exe = (Resolve-Path 'build/NeonVoid3D.exe').Path
           if ((Get-Item $exe).Length -le 0) { throw 'Empty Windows export' }
           Invoke-CheckedProcess $exe '--headless --quit-after 3'
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
@@ -145,6 +145,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: NeonVoid3D-windows-export-smoke
-          path: godot/build/NeonVoid3D.exe
+          path: build/NeonVoid3D.exe
           if-no-files-found: error
           retention-days: 7

@@ -17,4 +17,4 @@ bitstreams yet. Screenshots, mouse hit-testing, DPI and end-to-end combat parity
 require #57/#58/#61 and real Windows QA.
 
 Checks: python -m unittest tests.test_godot_software_parity
-and godot --headless --path godot --script res://tests/software_smoke.gd
+and godot --headless --path . --script res://tests/software_smoke.gd

@@ -3,12 +3,12 @@ name: Godot A integrated gameplay checks
 on:
   pull_request:
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-a-integration.yml'
   push:
     branches: [main]
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-a-integration.yml'
   workflow_dispatch:
 
@@ -57,21 +57,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/integration_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/save_bridge_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/live_save_integration_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/integration_import_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/combat_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/sector_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p9_visual_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p9_actor_parity_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p9_fx_audio_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p0_final_code_parity_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p4_drone_shard_score_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p4_temporal_parity_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p9_legacy_atmosphere_smoke.gd
-          timeout 80 "$NEON_GODOT" --headless --path godot --script res://tests/p10_benchmark_smoke.gd
+          timeout 90 "$NEON_GODOT" --headless --path . --editor --import --quit
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/integration_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/save_bridge_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/live_save_integration_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/integration_import_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/combat_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/sector_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p9_visual_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p9_actor_parity_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p9_fx_audio_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p0_final_code_parity_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p4_drone_shard_score_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p4_temporal_parity_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p9_legacy_atmosphere_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p10_benchmark_smoke.gd
       - name: Windows headless import and complete 4x5 integration
         if: runner.os == 'Windows'
         shell: pwsh
@@ -87,18 +87,18 @@ jobs:
               if ($p.ExitCode -ne 0) { throw "Godot failed: $argsText (exit $($p.ExitCode))" }
             } finally { $p.Dispose() }
           }
-          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/integration_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/save_bridge_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/live_save_integration_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/integration_import_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/combat_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/sector_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p9_visual_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p9_actor_parity_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p9_fx_audio_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p0_final_code_parity_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p4_drone_shard_score_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p4_temporal_parity_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p9_legacy_atmosphere_smoke.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/p10_benchmark_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/integration_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/save_bridge_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/live_save_integration_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/integration_import_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/combat_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/sector_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p9_visual_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p9_actor_parity_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p9_fx_audio_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p0_final_code_parity_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p4_drone_shard_score_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p4_temporal_parity_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p9_legacy_atmosphere_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p10_benchmark_smoke.gd'

@@ -3,8 +3,8 @@ name: Godot P10 benchmark math
 on:
   pull_request:
     paths:
-      - 'godot/benchmarks/**'
-      - 'godot/tests/p10_benchmark_smoke.gd'
+      - 'benchmarks/**'
+      - 'tests/p10_benchmark_smoke.gd'
       - '.github/workflows/godot-a-benchmark.yml'
   workflow_dispatch:
 
@@ -34,5 +34,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$NEON_GODOT" --headless --path godot --editor --import --quit
-          "$NEON_GODOT" --headless --path godot --script res://tests/p10_benchmark_smoke.gd
+          "$NEON_GODOT" --headless --path . --editor --import --quit
+          "$NEON_GODOT" --headless --path . --script res://tests/p10_benchmark_smoke.gd

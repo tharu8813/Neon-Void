@@ -3,22 +3,22 @@ name: Godot C combat and sector parity
 on:
   pull_request:
     paths:
-      - 'godot/scripts/combat/**'
-      - 'godot/scripts/enemies/**'
-      - 'godot/scripts/sectors/**'
-      - 'godot/scenes/combat/**'
-      - 'godot/tests/combat_smoke.gd'
-      - 'godot/tests/sector_smoke.gd'
+      - 'scripts/combat/**'
+      - 'scripts/enemies/**'
+      - 'scripts/sectors/**'
+      - 'scenes/combat/**'
+      - 'tests/combat_smoke.gd'
+      - 'tests/sector_smoke.gd'
       - '.github/workflows/godot-c-parity.yml'
   push:
     branches: [main]
     paths:
-      - 'godot/scripts/combat/**'
-      - 'godot/scripts/enemies/**'
-      - 'godot/scripts/sectors/**'
-      - 'godot/scenes/combat/**'
-      - 'godot/tests/combat_smoke.gd'
-      - 'godot/tests/sector_smoke.gd'
+      - 'scripts/combat/**'
+      - 'scripts/enemies/**'
+      - 'scripts/sectors/**'
+      - 'scenes/combat/**'
+      - 'tests/combat_smoke.gd'
+      - 'tests/sector_smoke.gd'
       - '.github/workflows/godot-c-parity.yml'
   workflow_dispatch:
 
@@ -63,11 +63,11 @@ jobs:
       - name: Import and run C deterministic regressions
         shell: pwsh
         run: |
-          & $env:NEON_GODOT --headless --path godot --editor --import --quit
+          & $env:NEON_GODOT --headless --path . --editor --import --quit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:NEON_GODOT --headless --path godot --script res://tests/combat_smoke.gd
+          & $env:NEON_GODOT --headless --path . --script res://tests/combat_smoke.gd
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (Test-Path 'godot/tests/sector_smoke.gd') {
-            & $env:NEON_GODOT --headless --path godot --script res://tests/sector_smoke.gd
+          if (Test-Path 'tests/sector_smoke.gd') {
+            & $env:NEON_GODOT --headless --path . --script res://tests/sector_smoke.gd
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

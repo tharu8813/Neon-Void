@@ -30,11 +30,11 @@ P1 root is `res://scenes/main.tscn` Node3D `Main`, with `Camera3D`, `ArenaFloor`
 
 | Team | Issue scope | Owned new paths |
 |---|---|---|
-| A | #53 #54 #62 #63 | `godot/project.godot`, `godot/scenes/main.tscn`, `godot/scripts/{main,runtime_config}.gd`, `godot/visuals/**`, `godot/fx/**`, `godot/benchmarks/**`, `godot/TEAM_CONTRACT.md`, `godot/tests/port_smoke.gd`, Godot workflow and QA docs |
-| B | #55 P2, #56 P3 | `godot/scripts/{camera,player}/**`, `godot/scenes/{camera,player}/**`, `godot/tests/{camera,player}/**` |
-| C | #57 P4, #58 P5 | `godot/scripts/{combat,world}/**`, `godot/scenes/{combat,world}/**`, `godot/tests/{combat,world}/**` |
-| D | #59 P6, #60 P7 | `godot/scripts/{software,ui}/**`, `godot/scenes/{software,ui}/**`, `godot/tests/{software,ui}/**` |
-| E | #61 P8 | `godot/scripts/persistence/**`, `godot/tests/persistence/**` and synthetic migration fixtures only |
+| A | #53 #54 #62 #63 | `project.godot`, `scenes/main.tscn`, `scripts/{main,runtime_config}.gd`, `visuals/**`, `fx/**`, `benchmarks/**`, `TEAM_CONTRACT.md`, `tests/port_smoke.gd`, Godot workflow and QA docs |
+| B | #55 P2, #56 P3 | `scripts/{camera,player}/**`, `scenes/{camera,player}/**`, `tests/{camera,player}/**` |
+| C | #57 P4, #58 P5 | `scripts/{combat,world}/**`, `scenes/{combat,world}/**`, `tests/{combat,world}/**` |
+| D | #59 P6, #60 P7 | `scripts/{software,ui}/**`, `scenes/{software,ui}/**`, `tests/{software,ui}/**` |
+| E | #61 P8 | `scripts/persistence/**`, `tests/persistence/**` and synthetic migration fixtures only |
 
 If another team needs to edit a path owned by someone else, propose an API on the owner PR; A performs a later integration commit. No silent shared-file changes, force pushes, or modifications to frozen Python logic. Existing branches take precedence; announce conflicts on Epic #52.
 
