@@ -7,6 +7,7 @@ const MAX_FRIENDLY: int = 1024
 const MAX_HOSTILE: int = 320
 const MAX_WARNINGS: int = 96
 const MAX_BURSTS: int = 12
+const MAX_FLOAT_TEXT: int = 40
 const FRIENDLY := Color("#ccff4d")
 const HOSTILE := Color("#ff9fbb")
 const WARN := Color("#e8ae50")
@@ -16,6 +17,8 @@ var hostile_trails: MultiMeshInstance3D
 var warning_pool: Array[MeshInstance3D] = []
 var burst_pool: Array[MeshInstance3D] = []
 var bursts: Array[Dictionary] = []
+var damage_pool: Array[Label3D] = []
+var damage_labels: Array[Dictionary] = []
 var warning_safe_material: StandardMaterial3D
 var warning_danger_material: StandardMaterial3D
 var last_warning_count: int = 0
@@ -46,6 +49,17 @@ func _ready() -> void:
         pulse.visible = false
         add_child(pulse)
         burst_pool.append(pulse)
+    # Legacy game.py's FText pool is also capped at 40.
+    for i in range(MAX_FLOAT_TEXT):
+        var number := Label3D.new()
+        number.name = "DamageNumber%d" % i
+        number.font_size = 18
+        number.pixel_size = 0.005
+        number.rotation.x = -PI / 2.0
+        number.no_depth_test = true
+        number.visible = false
+        add_child(number)
+        damage_pool.append(number)
 
 func _glow(tint: Color) -> StandardMaterial3D:
     var surface := StandardMaterial3D.new()
@@ -127,6 +141,37 @@ func sync_battle(friendly: Array, hostile: Array, telegraphs: Array,
         warning_pool[i].visible = false
     last_warning_count = displayed
     _advance_bursts(1.0 / 60.0, reduced)
+    _advance_damage(1.0 / 60.0, reduced)
+
+func show_damage(logical_position: Vector2, amount: float) -> void:
+    if amount <= 0.0 or damage_labels.size() >= MAX_FLOAT_TEXT:
+        return
+    damage_labels.append({
+        "pos": logical_position,
+        "text": "%d" % int(roundf(amount)),
+        "remaining": 0.68,
+    })
+
+func _advance_damage(delta: float, reduced: bool) -> void:
+    var retained: Array[Dictionary] = []
+    for entry in damage_labels:
+        var remaining: float = float(entry["remaining"]) - delta
+        if remaining <= 0.0:
+            continue
+        entry["remaining"] = remaining
+        retained.append(entry)
+    damage_labels = retained
+    for i in range(MAX_FLOAT_TEXT):
+        var label: Label3D = damage_pool[i]
+        label.visible = i < damage_labels.size()
+        if not label.visible:
+            continue
+        var entry: Dictionary = damage_labels[i]
+        var p: Vector2 = entry["pos"]
+        var remaining: float = float(entry["remaining"])
+        label.text = str(entry["text"])
+        label.position = Vector3(p.x * SCALE, 0.37, (p.y - (1.0 - remaining / 0.68) * (0.0 if reduced else 38.0)) * SCALE)
+        label.modulate = Color(1.0, 0.82, 0.44, minf(1.0, remaining / 0.28))
 
 func add_burst(logical_position: Vector2, kind: String = "impact") -> void:
     if bursts.size() >= MAX_BURSTS:
@@ -159,7 +204,8 @@ func add_burst(logical_position: Vector2, kind: String = "impact") -> void:
     instance.material_override = _glow(color)
     instance.position = Vector3(logical_position.x * SCALE, 0.055, logical_position.y * SCALE)
     instance.visible = true
-    bursts.append({"node": instance, "elapsed": 0.0, "duration": duration, "radius": radius})
+    bursts.append({"node": instance, "pos": logical_position, "tint": color,
+        "elapsed": 0.0, "duration": duration, "radius": radius})
 
 func _advance_bursts(delta: float, reduced: bool) -> void:
     var surviving: Array[Dictionary] = []
@@ -171,26 +217,22 @@ func _advance_bursts(delta: float, reduced: bool) -> void:
             continue
         burst["elapsed"] = age
         surviving.append(burst)
-    # Reassign pooled nodes only here, so removals never duplicate a node
-    # or keep the oldest index occupied indefinitely.
+    # Re-index the pool after expiration using the *stored* coordinates.
+    # Reusing the previous mesh's position would teleport surviving pulses.
     bursts = surviving
     for i in range(MAX_BURSTS):
         var mesh: MeshInstance3D = burst_pool[i]
-        if i >= bursts.size():
-            mesh.visible = false
+        mesh.visible = i < bursts.size()
+        if not mesh.visible:
             continue
         var value: Dictionary = bursts[i]
-        var node: MeshInstance3D = value["node"]
-        if node != mesh:
-            # Preserve each pulse's color when shifting the pool after expiry.
-            var material: Material = node.material_override
-            mesh.material_override = material
-            bursts[i]["node"] = mesh
         var progress: float = float(value["elapsed"]) / maxf(0.01, float(value["duration"]))
-        var px: float = float(value["radius"]) * (1.0 + (0.15 if reduced else 0.75) * progress) * SCALE
-        mesh.position = Vector3(node.position.x, 0.055, node.position.z)
-        mesh.scale = Vector3(px, 1.0, px)
-        mesh.visible = true
+        var radius: float = float(value["radius"]) * (1.0 + (0.15 if reduced else 0.75) * progress) * SCALE
+        var pos: Vector2 = value["pos"]
+        mesh.position = Vector3(pos.x * SCALE, 0.055, pos.y * SCALE)
+        mesh.scale = Vector3(radius, 1.0, radius)
+        mesh.material_override = _glow(value["tint"])
+        bursts[i]["node"] = mesh
 
 func clear_battle() -> void:
     friendly_trails.multimesh.visible_instance_count = 0
@@ -200,4 +242,7 @@ func clear_battle() -> void:
     for ring in burst_pool:
         ring.visible = false
     bursts.clear()
+    for label in damage_pool:
+        label.visible = false
+    damage_labels.clear()
     last_warning_count = 0
