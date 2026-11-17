@@ -11,6 +11,8 @@ var _seed: int = 0
 var _run_id: String = ""
 var _offer_sequence: int = 0
 var _pending: Dictionary = {}
+var _prepared: Dictionary = {}
+var _commit_uncertain: bool = false
 var levels: Dictionary = {}
 var missed_screens: int = 0
 var rerolls_remaining: int = 0
@@ -37,6 +39,8 @@ func begin_mission(seed_value: int, initial_levels: Dictionary = {}, run_id: Str
 	_started = true
 	_offer_sequence = 0
 	_pending.clear()
+	_prepared.clear()
+	_commit_uncertain = false
 	levels = initial_levels.duplicate(true)
 	missed_screens = 0
 	rerolls_remaining = maxi(0, int(_settings.get("base_rerolls", 3)))
@@ -63,6 +67,8 @@ func offer_snapshot() -> Dictionary:
 	snapshot["rerolls_remaining"] = rerolls_remaining
 	snapshot["missed_screens"] = missed_screens
 	snapshot["active"] = not _pending.is_empty()
+	snapshot["prepared"] = _prepared.duplicate(true)
+	snapshot["reconciliation_required"] = _commit_uncertain
 	return snapshot
 
 func roll_offer(context: Dictionary = {}) -> Dictionary:
@@ -88,7 +94,7 @@ func roll_offer(context: Dictionary = {}) -> Dictionary:
 	return offer_snapshot()
 
 func reroll_card(slot: int) -> Dictionary:
-	if _pending.is_empty() or rerolls_remaining <= 0 or slot < 0 or slot >= 3:
+	if _pending.is_empty() or not _prepared.is_empty() or _commit_uncertain or rerolls_remaining <= 0 or slot < 0 or slot >= 3:
 		return {}
 	var cards: Array = _pending["cards"]
 	# All-eligible-candidates-exhausted cards cannot be rerolled at a cost.
@@ -102,8 +108,17 @@ func reroll_card(slot: int) -> Dictionary:
 	rerolls_remaining -= 1
 	return offer_snapshot()
 
+## Kept as a compatibility name for A's integration test: now PREPARES only.
+## Never grant an inventory level before E confirms durable plugin_picked.
 func choose_card(slot: int) -> Dictionary:
-	if _pending.is_empty() or slot < 0 or slot >= 3:
+	return prepare_card(slot)
+
+func prepare_card(slot: int) -> Dictionary:
+	if _pending.is_empty() or _commit_uncertain or slot < 0 or slot >= 3:
+		return {}
+	if not _prepared.is_empty():
+		if int(_prepared.get("slot",-1)) == slot:
+			return _prepared["choice"].duplicate(true)
 		return {}
 	var cards: Array = _pending["cards"]
 	var card: Dictionary = cards[slot]
@@ -111,21 +126,52 @@ func choose_card(slot: int) -> Dictionary:
 	if plugin_id.is_empty() or not is_eligible(plugin_id):
 		return {}
 	var entry: Dictionary = get_entry(plugin_id)
-	var new_level: int = int(levels.get(plugin_id, 0)) + 1
 	var choice: Dictionary = {
 		"offer_id": _pending["offer_id"],
 		"receipt_id": str(_pending["offer_id"]) + ":" + str(slot),
 		"plugin_id": plugin_id,
 		"rarity": entry["rarity"],
-		"level": new_level,
+		"level": int(levels.get(plugin_id, 0)) + 1,
 		"learnable": Catalog.is_learnable(entry)
 	}
-	levels[plugin_id] = new_level
+	_prepared = {"slot":slot,"choice":choice.duplicate(true)}
+	return choice.duplicate(true)
+
+func confirm_card(receipt_id: String, durable_ack: Dictionary) -> Dictionary:
+	if _prepared.is_empty():
+		return {"ok":false,"reason":"no_pending_choice"}
+	var chosen: Dictionary = _prepared["choice"]
+	if receipt_id != str(chosen["receipt_id"]):
+		return {"ok":false,"reason":"receipt_mismatch"}
+	# A must normalize E's applied result + the exact sent receipt ID.
+	if not bool(durable_ack.get("applied",false)) or str(durable_ack.get("receipt_id","")) != receipt_id:
+		_commit_uncertain = true
+		return {"ok":false,"reason":"requires_E_reconciliation"}
+	if not is_eligible(str(chosen["plugin_id"])):
+		_commit_uncertain = true
+		return {"ok":false,"reason":"level_divergence_requires_reconciliation"}
+	levels[str(chosen["plugin_id"])] = int(chosen["level"])
+	_prepared.clear()
+	_commit_uncertain = false
 	_settle_offer()
-	return choice
+	var confirmed: Dictionary = chosen.duplicate(true)
+	confirmed["ok"] = true
+	return confirmed
+
+func reconcile_card(receipt_id: String, E_verified: Dictionary) -> Dictionary:
+	## This function is only for an E-verified persisted snapshot result.
+	## Never infer receipt absence from timeout or a failed network response.
+	if _prepared.is_empty() or receipt_id != str(_prepared["choice"]["receipt_id"]):
+		return {"ok":false,"reason":"unknown_prepared_receipt"}
+	if bool(E_verified.get("receipt_committed",false)):
+		return confirm_card(receipt_id, {"applied":true,"receipt_id":receipt_id})
+	if bool(E_verified.get("receipt_definitely_absent",false)):
+		_commit_uncertain = false
+		return {"ok":true,"retry_same_receipt":true}
+	return {"ok":false,"reason":"unverified_reconciliation"}
 
 func dismiss_offer() -> bool:
-	if _pending.is_empty():
+	if _pending.is_empty() or not _prepared.is_empty() or _commit_uncertain:
 		return false
 	_settle_offer()
 	return true
@@ -214,3 +260,5 @@ func _settle_offer() -> void:
 		else:
 			missed_screens += 1
 	_pending.clear()
+	_prepared.clear()
+	_commit_uncertain = false

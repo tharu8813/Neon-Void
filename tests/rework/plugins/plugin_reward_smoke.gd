@@ -14,6 +14,15 @@ func _check(ok: bool, label: String) -> bool:
 		return false
 	return true
 
+func _durable_claim(engine: RefCounted, slot: int) -> Dictionary:
+	var prepared: Dictionary = engine.choose_card(slot)
+	if prepared.is_empty():
+		return {}
+	if engine.levels.get(prepared["plugin_id"],0) == int(prepared["level"]):
+		return {}
+	return engine.confirm_card(str(prepared["receipt_id"]), {
+		"applied":true,"receipt_id":prepared["receipt_id"],"revision":1})
+
 func _run() -> void:
 	var entries: Array[Dictionary] = Catalog.entries()
 	if not _check(entries.size() == 27 and Catalog.validate(entries).is_empty(), "catalog validation"):
@@ -57,7 +66,7 @@ func _run() -> void:
 		return
 	if not _check(first.rerolls_remaining == 1, "reroll budget"):
 		return
-	var chosen: Dictionary = first.choose_card(0)
+	var chosen: Dictionary = _durable_claim(first, 0)
 	if not _check(not chosen.is_empty() and chosen["level"] == 1 and chosen["receipt_id"] == str(offer["offer_id"]) + ":0", "claim receipt and level"):
 		return
 	if not _check(first.choose_card(0).is_empty(), "no double claim"):
@@ -138,7 +147,7 @@ func _run() -> void:
 		var cards: Array = single.roll_offer()["cards"]
 		if not _check(cards[0]["plugin_id"] == common_only[0]["plugin_id"] and cards[0]["plugin_id"] == cards[1]["plugin_id"], "same screen duplicates provisional policy"):
 			return
-		var claim: Dictionary = single.choose_card(0)
+		var claim: Dictionary = _durable_claim(single, 0)
 		if not _check(int(claim["level"]) == next_level, "duplicate level increment"):
 			return
 	var capped: Dictionary = single.roll_offer()
