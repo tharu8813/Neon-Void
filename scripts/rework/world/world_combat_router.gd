@@ -60,6 +60,13 @@ func configure_authorized_build(levels: Dictionary, instances: Array,
     ## A obtains these exclusively from E-authorized snapshots or reward ACKs.
     return live.configure_authorized_build(levels, instances, skills)
 
+func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
+    ## The E receipt is already durably committed by A. Never grant a
+    ## transient plugin to the B runtime before this step.
+    return mode == "formal" and live != null \
+        and live.has_method("upgrade_plugin_after_ack") \
+        and bool(live.upgrade_plugin_after_ack(plugin_id, level))
+
 func actor_snapshot(actor_id: String) -> Dictionary:
     return live.actor_snapshot(actor_id) if mode == "formal" else {}
 
