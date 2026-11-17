@@ -36,6 +36,19 @@ func _run() -> void:
     var hub: PanelContainer = Hub.new()
     vp.add_child(hub)
     await process_frame
+    # Test the populated 22-stat, plugin and skill tabs, not an empty shell.
+    hub.show_saved({"ok": true, "revision": 8, "snapshot": {
+        "selection_required": false, "balance": {},
+        "vaccine": {
+            "level": 4, "xp": 20, "copies_remaining": 2,
+            "earned_fragments": 400, "unspent_fragments": 400,
+            "invested_stats": {}, "known_skills": ["alpha", "beta"],
+            "equipped_skills": ["alpha"],
+            "archive": {"nv_c_move_speed": {"rarity": "common", "level": 2}},
+            "carried": {}, "mission": null
+        }
+    }}, true)
+    await process_frame
     for dimensions in [
         Vector2i(1280, 720), Vector2i(1024, 768),
         Vector2i(1920, 1080), Vector2i(800, 600)
