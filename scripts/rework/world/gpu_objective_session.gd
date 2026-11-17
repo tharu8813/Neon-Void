@@ -8,7 +8,7 @@ signal boss_spawned(actor_id: String)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
-const Environment = preload("res://scripts/rework/world/environment_rules.gd")
+const EnvironmentRules = preload("res://scripts/rework/world/environment_rules.gd")
 var run_id: String = ""
 var world_state: Variant
 var region_plan: Dictionary = {}
@@ -120,7 +120,7 @@ func _spawn_overload_wave() -> void:
                 reserved = reserved or objective["cell"] == cell
             if not reserved:
                 candidates.append(cell)
-    var descriptor: Dictionary = Environment.describe(
+    var descriptor: Dictionary = EnvironmentRules.describe(
         region_plan, [], int(region_plan["encounter_seed"]))
     wave_target_count = ceili(8.0 * float(descriptor.get("enemy_spawn_multiplier", 1.0)))
     if candidates.size() < wave_target_count:
