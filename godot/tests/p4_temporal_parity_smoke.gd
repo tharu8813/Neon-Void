@@ -70,6 +70,43 @@ func _test() -> void:
     verify(is_equal_approx(float(boss.current_time_scale()), 1.0),
         "new wave cannot inherit stale hitstop from previous boss")
 
+    # Source Python on_bullet_hit emits hit, critical, explosion and chain
+    # feedback when the actual corresponding C mechanics have occurred.
+    var feedback: Variant = Combat.new(42)
+    feedback.begin_wave(1, [], "")
+    feedback.set_player_snapshot({"stats": {
+        "crit": 1.0, "chain": 1, "explode": 42.0, "dmg": 10.0,
+    }})
+    var eid: int = feedback.spawn_enemy("guardian", Vector2(420, 360))
+    feedback.spawn_enemy("guardian", Vector2(520, 360))
+    var effects: Array[String] = []
+    feedback.visual_event.connect(func(kind: String, _start: Vector2,
+            _end: Vector2, _value: float) -> void:
+        effects.append(kind))
+    feedback._fire_friendly(Vector2(418, 360), 0.0)
+    var bullet: Dictionary = feedback.bullets[0]
+    feedback._on_bullet_hit(bullet, feedback.get_enemy(eid))
+    verify(effects == ["critical", "explosion", "chain"],
+        "C emits only the actual critical, explosion and chained events")
+    var fx_script: GDScript = load("res://scripts/visuals/legacy_combat_fx.gd")
+    var fx: Node3D = fx_script.new()
+    root.add_child(fx)
+    fx.call("add_chain_arc", Vector2(418, 360), Vector2(520, 360))
+    fx.call("add_explosion", Vector2(418, 360), 42.0)
+    fx.call("show_critical", Vector2(420, 360))
+    fx.call("sync_battle", [], [], [], [], false, [])
+    verify(fx.chain_pool[0].visible and fx.chain_arcs.size() == 1,
+        "real C chain event renders one pooled electric beam")
+    verify(fx.bursts.size() == 1 and is_equal_approx(float(fx.bursts[0]["radius"]), 42.0),
+        "explosion ring uses exact actual gameplay radius")
+    verify(fx.damage_labels.size() == 1 and fx.damage_pool[0].text == "CRIT!",
+        "original critical-hit label displayed with pooled text")
+    for tick in range(20):
+        fx.call("sync_battle", [], [], [], [], false, [])
+    verify(fx.chain_arcs.is_empty() and not fx.chain_pool[0].visible,
+        "0.12-second chain lightning expires without stale meshes")
+    fx.queue_free()
+
     if failed == 0:
-        print("P4 PYTHON HITSTOP/SLOW 60HZ TIMING PARITY PASS (headless)")
+        print("P4 PYTHON HITSTOP/SLOW AND PROJECTILE FEEDBACK PARITY PASS (headless)")
     quit(1 if failed > 0 else 0)
