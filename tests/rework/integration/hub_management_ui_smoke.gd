@@ -40,6 +40,12 @@ func _state(path: String) -> Dictionary:
     check(bool(snap.get("ok", false)), "E authoritative snapshot readable")
     return snap
 
+func _labels(node: Node) -> String:
+    var output: String = node.text if node is Label else ""
+    for child in node.get_children():
+        output += " | " + _labels(child)
+    return output
+
 func _run() -> void:
     var id: String = "hub-ui-smoke-%d-%d" % [
         OS.get_process_id(), Time.get_ticks_usec()]
@@ -75,8 +81,18 @@ func _run() -> void:
     check(panel.visible and paused and bool(panel.get("can_edit")),
         "Tab management pauses game and allows editing in hub")
     var visible_tabs: TabContainer = panel.get("tabs") as TabContainer
-    check(visible_tabs != null and visible_tabs.get_tab_count() == 4,
-        "four-tab management UI is built")
+    check(visible_tabs != null and visible_tabs.get_tab_count() == 5,
+        "five-tab management UI includes real B combat detail")
+    panel.call("show_live_combat", {
+        "stats": {"attack_damage": 12.5, "crit_chance": 0.25, "max_mana": 80.0},
+        "mana": 33.0
+    })
+    var stat_details: VBoxContainer = panel.get("combat_body") as VBoxContainer
+    var detail_text: String = _labels(stat_details)
+    check(detail_text.contains("12.5") and detail_text.contains("25.0%")
+        and detail_text.contains("33.0")
+        and detail_text.contains("보호막: 공개된 B 데이터 없음"),
+        "combat detail uses B actor values and never invents missing shield")
     var draft: Dictionary = panel.get("allocation_draft")
     check(draft.is_empty() and int(initial["snapshot"]["vaccine"]["unspent_fragments"]) == 500,
         "stat draft begins from E, not fabricated UI points")
