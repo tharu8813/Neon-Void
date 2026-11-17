@@ -96,9 +96,14 @@ func _process(delta: float) -> void:
     _hud_elapsed = 0.0
     var combat: Variant = world.get("combat")
     if combat != null and str(combat.get("mode")) == "formal":
-        tactical_hud.render_combat_snapshot(combat.actor_snapshot("VACCINE"))
+        var actor: Dictionary = combat.actor_snapshot("VACCINE")
+        tactical_hud.render_combat_snapshot(actor)
+        if hub_panel != null and hub_panel.visible:
+            hub_panel.show_live_combat(actor)
     else:
         tactical_hud.render_combat_snapshot({})
+        if hub_panel != null and hub_panel.visible:
+            hub_panel.show_live_combat({})
     if mission_tracker != null:
         mission_tracker.render_world(world)
 
