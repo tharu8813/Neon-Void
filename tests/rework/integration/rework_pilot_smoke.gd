@@ -95,7 +95,8 @@ func _run() -> void:
     check(learning_panel.visible and paused,
         "A prompts for 0-2 plugin learning before E one-shot extraction")
     var checks: Array = pilot.get("learn_checks")
-    if checks.size() > 0:
+    var selectable_count: int = checks.size()
+    if selectable_count > 0:
         var first: CheckBox = checks[0]
         first.button_pressed = true
     pilot.call("_finish_extraction")
@@ -107,9 +108,9 @@ func _run() -> void:
             "E closed mission after durable extraction")
         check(str(world.get("current_mode")) == "hub",
             "D returns to hub only after E ACK")
-        check(snapshot["snapshot"]["vaccine"]["carried"].size() == checks.size(),
+        check(snapshot["snapshot"]["vaccine"]["carried"].size() == (1 if selectable_count > 0 else 0),
             "eligible selected plugin preserved in carried inventory")
-    if checks.size() > 0:
+    if selectable_count > 0:
         pilot.call("_deposit_carried")
         snapshot = Gateway.snapshot(slot_path)
         check(bool(snapshot.get("ok", false))
