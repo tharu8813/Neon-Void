@@ -18,6 +18,7 @@ const EnemyVisual = preload("res://scripts/visuals/legacy_enemy_visual.gd")
 const EnemyCatalog = preload("res://scripts/enemies/enemy_catalog.gd")
 const CombatFX = preload("res://scripts/visuals/legacy_combat_fx.gd")
 const LegacyAudio = preload("res://scripts/audio/legacy_audio.gd")
+const LegacyExit = preload("res://scripts/visuals/legacy_sector_exit.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 # Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
@@ -65,6 +66,10 @@ var avatar_aura: MeshInstance3D
 var avatar_dash: MeshInstance3D
 var visual_fx: Node3D
 var legacy_audio: Node
+var sector_exit: Node3D
+var _enemy_hp_previous: Dictionary = {}
+var combo_count: int = 0
+var combo_window: float = 0.0
 var _last_friendly_cooldown: float = 0.0
 var hud_frames: int = 0
 var score: int = 0
@@ -95,6 +100,9 @@ func _ready() -> void:
     legacy_audio = LegacyAudio.new()
     legacy_audio.name = "LegacyAudio"
     add_child(legacy_audio)
+    sector_exit = LegacyExit.new()
+    sector_exit.name = "LegacySectorExit"
+    add_child(sector_exit)
     actor.set("auto_tick", false)
     actor.call("set_input_source", controls)
     actor.set("camera_source", camera_3d)
@@ -201,6 +209,9 @@ func start_new_run() -> bool:
     _pending_offers.clear()
     purify_uses = 3
     score = 0
+    combo_count = 0
+    combo_window = 0.0
+    _enemy_hp_previous.clear()
     run_kills = 0
     run_boss_kills = 0
     run_frames = 0
@@ -234,12 +245,14 @@ func start_new_run() -> bool:
 
 func _set_world(combat_world: bool) -> void:
     arena_floor.visible = combat_world
+    sector_exit.visible = combat_world
     hub_floor.visible = not combat_world
     gate_container.visible = not combat_world
     _sync_hub_markers()
     if visual_fx != null:
-        visual_fx.visible = combat_world
-        if not combat_world:
+        # Hub purification feedback is rendered as an inert transient ring.
+        visual_fx.visible = combat_world or mode == "hub"
+        if mode == "base":
             visual_fx.call("clear_battle")
     camera_3d.set("hub_mode", not combat_world)
     actor.set("hub_mode", not combat_world)
@@ -265,6 +278,7 @@ func start_next_wave() -> bool:
         return false
     sim.begin_wave(int(plan["wave_index"]), plan["spawns"], str(plan["boss_kind"]))
     _last_friendly_cooldown = float(sim.player.get("fire_cd", 0.0))
+    _enemy_hp_previous.clear()
     mode = "combat"
     legacy_audio.call("play_effect", "wave")
     _resume_gameplay()
@@ -298,6 +312,10 @@ func _physics_process(delta: float) -> void:
     if bool(controls.get("pointer_valid")):
         actor.call("set_aim", controls.get("pointer_logical"), camera_3d.call("camera_top_left"))
     camera_3d.call("follow_logical", actor.get("logical_position"))
+    if combo_window > 0.0:
+        combo_window = maxf(0.0, combo_window - 1.0 / 60.0)
+        if combo_window <= 0.0:
+            combo_count = 0
     if mode == "combat":
         PlayerBridge.read_player(sim, actor)
         sim.set_player_snapshot({"stats": software.stats})
@@ -452,6 +470,10 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     run_kills += 1
     score += 10
     var boss_kill: bool = EnemyCatalog.is_boss(kind)
+    combo_count = combo_count + 1 if combo_window > 0.0 else 1
+    combo_window = 2.6
+    if combo_count % 10 == 0:
+        legacy_audio.call("play_effect", "combo", 0.15)
     legacy_audio.call("play_effect", "boom" if boss_kill else "kill", 0.06)
     if enemy_visuals.has(_enemy_id):
         var death_visual: Node3D = enemy_visuals[_enemy_id]
@@ -503,10 +525,13 @@ func nearest_base_terminal(point: Vector2) -> String:
 func _on_interact() -> void:
     if paused:
         return
+    # Python game.py::_handle_key requires F within 112 logical pixels of
+    # CPU_EXIT(100,360). A remote F must never abandon a running sector.
+    if mode in ["combat", "between", "clean"] and LegacyExit.can_interact(actor.get("logical_position")):
+        retreat_to_hub()
+        return
     if mode == "between":
         start_next_wave()
-    elif mode == "clean":
-        retreat_to_hub()
     elif mode == "base":
         var terminal: String = nearest_base_terminal(actor.get("logical_position"))
         if terminal.is_empty():
@@ -540,6 +565,10 @@ func purify() -> bool:
         return false
     var old_infection: float = float(campaign.infection)
     var old_integrity: float = float(campaign.integrity)
+    # Legacy game.py::interact_hub keeps charges if both recovery values
+    # are zero. Avoid an ineffective transaction and permanent charge loss.
+    if old_infection <= 0.0 and old_integrity >= 100.0:
+        return false
     campaign.purify(32.0)
     campaign.repair_integrity(9.0)
     purify_uses -= 1
@@ -551,10 +580,23 @@ func purify() -> bool:
         _pause_gameplay()
         ui.call("show_error", "정화 기록 저장 실패. 정화 횟수와 감염도를 되돌렸습니다.")
         return false
+    visual_fx.call("add_burst", PURIFY_STATION, "purify")
+    legacy_audio.call("play_effect", "up")
     _update_hud()
     return true
 
 func _on_system_pressed(key: String) -> void:
+    # Python handles M and display shortcuts outside gameplay pause logic.
+    if key == "m":
+        var current: Dictionary = saved_state.get("settings.json", SaveStore.fresh_state()["settings.json"])
+        _on_setting_change("muted", not bool(current.get("muted", false)))
+        return
+    if key == "f11" or key == "borderless":
+        var options: Dictionary = saved_state.get("settings.json", SaveStore.fresh_state()["settings.json"])
+        var current_mode: String = str(options.get("display_mode", "windowed"))
+        var target_mode: String = "borderless" if key == "borderless" else "fullscreen"
+        _on_setting_change("display_mode", "windowed" if current_mode == target_mode else target_mode)
+        return
     if paused:
         return
     match key:
