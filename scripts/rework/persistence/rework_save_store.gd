@@ -3,6 +3,7 @@ extends RefCounted
 ## Durable unit: one revisioned, checksummed envelope (all receipts and growth together).
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Fence = preload("res://scripts/rework/persistence/lifetime_fence.gd")
+const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const STATE_FILE := "state.json"
 const BACKUP_FILE := "state.json.bak"
 const RECOVERY_FILE := "state.json.recovery"
@@ -284,6 +285,29 @@ static func _monotonic_transition(previous: Dictionary, upcoming: Dictionary) ->
     if before.mission != null and after.mission == null \
             and not after.closed_runs.has(before.mission.run_id):
         return false
+    if before.mission != null and after.mission != null:
+        var earlier: Dictionary = before.mission
+        var later: Dictionary = after.mission
+        if earlier.run_id != later.run_id \
+                or int(later.mission_level) < int(earlier.mission_level) \
+                or int(later.uncommitted_vaccine_xp) < int(earlier.uncommitted_vaccine_xp) \
+                or int(later.uncommitted_point_fragments) < int(earlier.uncommitted_point_fragments):
+            return false
+        for collection in ["hardware_cleaned_ids", "objective_ids", "claimed_offer_ids"]:
+            for item in earlier[collection]:
+                if not later[collection].has(item):
+                    return false
+        for plugin_id in earlier.obtained_plugins:
+            if not later.obtained_plugins.has(plugin_id) \
+                    or later.obtained_plugins[plugin_id].rarity != earlier.obtained_plugins[plugin_id].rarity \
+                    or int(later.obtained_plugins[plugin_id].level) < int(earlier.obtained_plugins[plugin_id].level):
+                return false
+        for region in earlier.generated_map_seeds:
+            if not later.generated_map_seeds.has(region) \
+                    or later.generated_map_seeds[region] != earlier.generated_map_seeds[region]:
+                return false
+        if not Checkpoint.monotonic(earlier, later):
+            return false
     return true
 
 static func _transact_locked(slot_path: String, transition: Callable,
