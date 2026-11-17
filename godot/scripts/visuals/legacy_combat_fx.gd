@@ -10,6 +10,7 @@ const MAX_BURSTS: int = 12
 const MAX_FLOAT_TEXT: int = 40
 const MAX_SHARD_VISUALS: int = 128
 const MAX_DRONE_VISUALS: int = 8
+const MAX_CHAIN_ARCS: int = 24
 const FRIENDLY := Color("#ccff4d")
 const HOSTILE := Color("#ff9fbb")
 const WARN := Color("#e8ae50")
@@ -18,6 +19,8 @@ var friendly_trails: MultiMeshInstance3D
 var hostile_trails: MultiMeshInstance3D
 var shard_batch: MultiMeshInstance3D
 var drone_nodes: Array[MeshInstance3D] = []
+var chain_pool: Array[MeshInstance3D] = []
+var chain_arcs: Array[Dictionary] = []
 var warning_pool: Array[MeshInstance3D] = []
 var burst_pool: Array[MeshInstance3D] = []
 var bursts: Array[Dictionary] = []
@@ -41,6 +44,16 @@ func _ready() -> void:
         satellite.visible = false
         add_child(satellite)
         drone_nodes.append(satellite)
+    for i in range(MAX_CHAIN_ARCS):
+        var beam := MeshInstance3D.new()
+        beam.name = "ChainLightning%d" % i
+        var line_mesh := BoxMesh.new()
+        line_mesh.size = Vector3.ONE
+        beam.mesh = line_mesh
+        beam.material_override = _glow(Color("#9fe8ff"))
+        beam.visible = false
+        add_child(beam)
+        chain_pool.append(beam)
     warning_safe_material = _glow(WARN)
     warning_danger_material = _glow(DANGER)
     var ring := TorusMesh.new()
@@ -183,6 +196,50 @@ func sync_battle(friendly: Array, hostile: Array, telegraphs: Array,
     last_warning_count = displayed
     _advance_bursts(1.0 / 60.0, reduced)
     _advance_damage(1.0 / 60.0, reduced)
+    _advance_chain_arcs(1.0 / 60.0)
+
+func show_critical(logical_position: Vector2) -> void:
+    if damage_labels.size() >= MAX_FLOAT_TEXT:
+        return
+    damage_labels.append({
+        "pos": logical_position + Vector2(0.0, -24.0),
+        "text": "CRIT!", "remaining": 0.52,
+        "tint": Color("#fff5ad"),
+    })
+
+func add_chain_arc(source: Vector2, target: Vector2) -> void:
+    if chain_arcs.size() >= MAX_CHAIN_ARCS:
+        return
+    chain_arcs.append({
+        "start": source, "end": target, "remaining": 0.12,
+    })
+
+func _advance_chain_arcs(delta: float) -> void:
+    var kept: Array[Dictionary] = []
+    for entry in chain_arcs:
+        entry["remaining"] = float(entry["remaining"]) - delta
+        if float(entry["remaining"]) > 0.0:
+            kept.append(entry)
+    chain_arcs = kept
+    for i in range(MAX_CHAIN_ARCS):
+        var line: MeshInstance3D = chain_pool[i]
+        line.visible = i < chain_arcs.size()
+        if not line.visible:
+            continue
+        var item: Dictionary = chain_arcs[i]
+        var start: Vector2 = item["start"]
+        var target: Vector2 = item["end"]
+        var delta_2d: Vector2 = target - start
+        var center: Vector2 = (start + target) * 0.5
+        line.position = Vector3(center.x * SCALE, 0.23, center.y * SCALE)
+        line.rotation.y = atan2(delta_2d.x, delta_2d.y)
+        line.scale = Vector3(0.024, 0.018, maxf(0.002, delta_2d.length() * SCALE))
+
+func add_explosion(logical_position: Vector2, radius: float) -> void:
+    if radius <= 0.0 or bursts.size() >= MAX_BURSTS:
+        return
+    add_burst(logical_position, "explosion")
+    bursts[bursts.size() - 1]["radius"] = radius
 
 func show_damage(logical_position: Vector2, amount: float) -> void:
     if amount <= 0.0 or damage_labels.size() >= MAX_FLOAT_TEXT:
@@ -255,6 +312,10 @@ func add_burst(logical_position: Vector2, kind: String = "impact") -> void:
             color = Color("#7ef0ff")
             radius = 13.0
             duration = 0.20
+        "explosion":
+            color = Color("#ffd166")
+            radius = 48.0
+            duration = 0.28
     var instance: MeshInstance3D = burst_pool[bursts.size()]
     instance.material_override = _glow(color)
     instance.position = Vector3(logical_position.x * SCALE, 0.055, logical_position.y * SCALE)
@@ -295,6 +356,9 @@ func clear_battle() -> void:
     shard_batch.multimesh.visible_instance_count = 0
     for drone in drone_nodes:
         drone.visible = false
+    for beam in chain_pool:
+        beam.visible = false
+    chain_arcs.clear()
     for mark in warning_pool:
         mark.visible = false
     for ring in burst_pool:
