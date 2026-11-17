@@ -9,11 +9,14 @@ const RARITIES: Array[String] = ["common", "rare", "legendary", "mythic"]
 static func valid_id(value: Variant) -> bool:
     if typeof(value) != TYPE_STRING or value.is_empty() or value.length() > 100:
         return false
-    var allowed := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-."
+    var allowed := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.:"
     for i in value.length():
         if not allowed.contains(value.substr(i, 1)):
             return false
     return true
+
+static func valid_slot_id(value: Variant) -> bool:
+    return valid_id(value) and not value.contains(":")
 
 static func natural(value: Variant, limit: int = MAX_EXACT_INT) -> bool:
     if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
@@ -67,7 +70,7 @@ static func new_vaccine(vaccine_id: String) -> Dictionary:
     }
 
 static func new_slot(slot_id: String, vaccine_id: String, config: Dictionary = {}) -> Dictionary:
-    if not valid_id(slot_id) or not valid_id(vaccine_id) or not Balance.valid_config(config):
+    if not valid_slot_id(slot_id) or not valid_id(vaccine_id) or not Balance.valid_config(config):
         return {}
     return {
         "schema_version": VERSION, "slot_id": slot_id, "generation": 1,
@@ -81,7 +84,7 @@ static func new_mission(run_id: String, seed: int, config: Dictionary = {}) -> D
         "pending_plugin_offers": 0,
         "uncommitted_vaccine_xp": 0, "uncommitted_point_fragments": 0,
         "hardware_cleaned_ids": [], "objective_ids": [],
-        "obtained_plugins": {}, "generated_map_seeds": {},
+        "obtained_plugins": {}, "claimed_offer_ids": [], "generated_map_seeds": {},
         "mission_difficulty": {}, "environment_rolls": {},
         "rerolls_left": Balance.get_number("mission_start_rerolls", config),
         "pity_counter": 0
