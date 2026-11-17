@@ -68,6 +68,25 @@ func _run() -> void:
     var sectors: Array[String] = ["NETWORK", "CPU", "STORAGE", "MEMORY"]
     for sector_id in sectors:
         verify(bool(game.call("enter_sector", sector_id)), "enter " + sector_id)
+        if sector_id == "NETWORK":
+            # P1 presentation-only hover/telegraph flags must be grounded in
+            # real combat state, without changing C's auto-targeting rules.
+            var combat: RefCounted = game.get("sim")
+            combat.enemies.clear()
+            var hostile: int = combat.spawn_enemy("rootkit", Vector2(640, 360))
+            var inputs: Node = game.get_node("InputController")
+            inputs.call("set_pointer_logical", Vector2(640, 360))
+            var snap: Dictionary = game.call("_hud_snapshot")
+            verify(hostile > 0 and bool(snap.target_locked), "enemy under cursor lights aim reticle")
+            combat.telegraphs.append({"remaining": 0.18, "source_id": hostile, "action": {}})
+            snap = game.call("_hud_snapshot")
+            verify(int(snap.attack_warning_count) == 1 and bool(snap.attack_warning_urgent),
+                "nonboss imminent attack is announced in static HUD text")
+            inputs.call("set_pointer_logical", Vector2(120, 120))
+            snap = game.call("_hud_snapshot")
+            verify(not bool(snap.target_locked), "reticle returns neutral off-target")
+            combat.enemies.clear()
+            combat.telegraphs.clear()
         for wave_index in range(1, 6):
             var campaign = game.get("campaign")
             verify(int(campaign.active_wave) == wave_index, "correct wave " + sector_id + str(wave_index))
