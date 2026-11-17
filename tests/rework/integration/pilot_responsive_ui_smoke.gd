@@ -54,7 +54,9 @@ func _run() -> void:
         _within(status, viewport, "status %s" % dimensions)
         _within(hub, viewport, "hub %s" % dimensions)
         check(hub.position.y + hub.size.y <= viewport.y + 1.0,
-            "hub vertically centered without clipping at %s" % dimensions)
+            "hub vertically centered at %s, pos=%s size=%s min=%s tabs_min=%s" %
+            [dimensions, hub.position, hub.size, hub.get_combined_minimum_size(),
+                hub.get("tabs").get_combined_minimum_size()])
         if dimensions.x < 1100:
             check(tracker.position.y >= 160.0,
                 "narrow mission tracker moves below top tactical bars")
