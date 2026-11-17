@@ -8,12 +8,12 @@ func _fail(message: String) -> void:
 	quit(1)
 
 func _rect_matches(node: Control, rect: Rect2, ax: float = 0.0, ay: float = 0.0) -> bool:
-    return is_equal_approx(node.anchor_left, ax) and is_equal_approx(node.anchor_right, ax) and \
-        is_equal_approx(node.anchor_top, ay) and is_equal_approx(node.anchor_bottom, ay) and \
-        is_equal_approx(node.offset_left, rect.position.x) and \
-        is_equal_approx(node.offset_top, rect.position.y) and \
-        is_equal_approx(node.offset_right, rect.end.x) and \
-        is_equal_approx(node.offset_bottom, rect.end.y)
+	return is_equal_approx(node.anchor_left, ax) and is_equal_approx(node.anchor_right, ax) and \
+		is_equal_approx(node.anchor_top, ay) and is_equal_approx(node.anchor_bottom, ay) and \
+		is_equal_approx(node.offset_left, rect.position.x) and \
+		is_equal_approx(node.offset_top, rect.position.y) and \
+		is_equal_approx(node.offset_right, rect.end.x) and \
+		is_equal_approx(node.offset_bottom, rect.end.y)
 
 func _check() -> void:
 	var fixture: PackedScene = load("res://scenes/ui/ui_preview.tscn") as PackedScene
