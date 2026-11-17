@@ -12,6 +12,7 @@ const Progression = preload("res://scripts/progression/antivirus_progression.gd"
 const CheckpointRules = preload("res://scripts/progression/checkpoint_rules.gd")
 const Bindings = preload("res://scripts/input/legacy_bindings.gd")
 const Migration = preload("res://scripts/persistence/migration_service.gd")
+const HubGeometry = preload("res://scripts/world/hub_geometry.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 # Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
@@ -718,6 +719,16 @@ func _make_hub_markers() -> void:
         terminal_label.pixel_size = 0.006
         terminal_label.position = Vector3(position_2d.x * WORLD_SCALE, 0.45, position_2d.y * WORLD_SCALE)
         base_group.add_child(terminal_label)
+    var base_destinations: Array[Vector2] = []
+    for id in BASE_TERMINALS:
+        base_destinations.append(BASE_TERMINALS[id]["position"])
+    HubGeometry.build(base_group, true, base_destinations)
+    var os_destinations: Array[Vector2] = []
+    for id in GATES:
+        os_destinations.append(GATES[id])
+    os_destinations.append(PURIFY_STATION)
+    os_destinations.append(STATUS_STATION)
+    HubGeometry.build(os_group, false, os_destinations)
     _sync_hub_markers()
 
 func _sync_hub_markers() -> void:
