@@ -3,6 +3,7 @@ extends RefCounted
 ## All commands require the current vaccine generation, guarding stale callbacks after destruction.
 const State = preload("res://scripts/rework/progression/state_model.gd")
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
+const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 
 static func _reject(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}
@@ -71,6 +72,65 @@ static func start_mission(state: Dictionary, vaccine_id: String, generation: int
         return _reject("run_already_known")
     v.mission = State.new_mission(run_id, seed, output.balance)
     return _finish(output, "mission_started")
+
+static func checkpoint_region(state: Dictionary, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String, region_id: String,
+        map_seed: int, generator_id: String) -> Dictionary:
+    var prepared: Dictionary = _prepare(state, vaccine_id, generation, run_id)
+    if not prepared.ok:
+        return prepared
+    var out: Dictionary = prepared.state
+    if not _accept_receipt(out.vaccine, receipt_id):
+        return _reject("duplicate_or_invalid_receipt")
+    var stored: Dictionary = Checkpoint.record_region(out.vaccine.mission,
+        region_id, map_seed, generator_id)
+    if not stored.ok:
+        return _reject(str(stored.reason))
+    return _finish(out, "region_checkpointed")
+
+static func checkpoint_offer(state: Dictionary, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String,
+        snapshot: Dictionary, rng_state_text: String) -> Dictionary:
+    var prepared: Dictionary = _prepare(state, vaccine_id, generation, run_id)
+    if not prepared.ok:
+        return prepared
+    var out: Dictionary = prepared.state
+    if not _accept_receipt(out.vaccine, receipt_id):
+        return _reject("duplicate_or_invalid_receipt")
+    var stored: Dictionary = Checkpoint.record_offer(out.vaccine.mission,
+        snapshot, rng_state_text)
+    if not stored.ok:
+        return _reject(str(stored.reason))
+    return _finish(out, "offer_checkpointed")
+
+static func prepare_terminal(state: Dictionary, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String,
+        outcome: String, terminal_receipt_id: String,
+        learn_plugin_ids: Array) -> Dictionary:
+    var prepared: Dictionary = _prepare(state, vaccine_id, generation, run_id)
+    if not prepared.ok:
+        return prepared
+    var out: Dictionary = prepared.state
+    if outcome == "extract":
+        var mission: Dictionary = out.vaccine.mission
+        if mission.hardware_cleaned_ids.is_empty():
+            return _reject("hardware_required")
+        if learn_plugin_ids.size() > 2 or not State._valid_ids(learn_plugin_ids, 2):
+            return _reject("invalid_learning_selection")
+        for plugin_id in learn_plugin_ids:
+            if not mission.obtained_plugins.has(plugin_id):
+                return _reject("plugin_not_obtained")
+            if not ["common", "rare"].has(mission.obtained_plugins[plugin_id].rarity):
+                return _reject("rarity_not_learnable")
+            if out.vaccine.archive.has(plugin_id) or out.vaccine.carried.has(plugin_id):
+                return _reject("already_learned_policy_pending")
+    if not _accept_receipt(out.vaccine, receipt_id):
+        return _reject("duplicate_or_invalid_receipt")
+    var stored: Dictionary = Checkpoint.prepare_terminal(out.vaccine.mission,
+        outcome, terminal_receipt_id, learn_plugin_ids)
+    if not stored.ok:
+        return _reject(str(stored.reason))
+    return _finish(out, "terminal_intent_checkpointed")
 
 static func add_mission_xp(state: Dictionary, vaccine_id: String, generation: int,
         run_id: String, receipt_id: String, amount: int) -> Dictionary:
@@ -151,8 +211,21 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
         var old: Dictionary = m.obtained_plugins[plugin_id]
         if old.rarity != rarity or level <= int(old.level):
             return _reject("invalid_plugin_level")
+    if offer_source == "levelup" and m.environment_rolls.has(Checkpoint.KEY):
+        var expected_level: int = 1
+        if output.vaccine.carried.has(plugin_id):
+            expected_level = int(output.vaccine.carried[plugin_id].level) + 1
+        if m.obtained_plugins.has(plugin_id):
+            expected_level = int(m.obtained_plugins[plugin_id].level) + 1
+        if level != expected_level:
+            return _reject("checkpoint_plugin_level_mismatch")
     if not _accept_receipt(output.vaccine, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
+    if offer_source == "levelup" and m.environment_rolls.has(Checkpoint.KEY):
+        var settled: Dictionary = Checkpoint.settle_choice(m, offer_key,
+            receipt_id, plugin_id, rarity)
+        if not settled.ok:
+            return _reject(str(settled.reason))
     m.obtained_plugins[plugin_id] = {"rarity": rarity, "level": level}
     m.claimed_offer_ids.append(offer_key)
     if offer_source == "levelup":
@@ -180,6 +253,8 @@ static func extract(state: Dictionary, vaccine_id: String, generation: int,
         # Fail closed rather than duplicate or silently merge.
         if v.archive.has(plugin_id) or v.carried.has(plugin_id):
             return _reject("already_learned_policy_pending")
+    if not Checkpoint.terminal_matches(m, "extract", receipt_id, learn_plugin_ids):
+        return _reject("terminal_intent_mismatch")
     if not _accept_receipt(v, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     var bonus: int = 0
@@ -205,6 +280,8 @@ static func die(state: Dictionary, vaccine_id: String, generation: int,
     var output: Dictionary = prepared.state
     var v: Dictionary = output.vaccine
     var m: Dictionary = v.mission
+    if not Checkpoint.terminal_matches(m, "die", receipt_id, []):
+        return _reject("terminal_intent_mismatch")
     if not _accept_receipt(v, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     if v.copies_remaining == 0:

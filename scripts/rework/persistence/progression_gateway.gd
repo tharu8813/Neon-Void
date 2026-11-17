@@ -4,6 +4,7 @@ extends RefCounted
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Rules = preload("res://scripts/rework/progression/progression_rules.gd")
+const Recovery = preload("res://scripts/rework/persistence/mission_recovery.gd")
 
 static func initialize(slot_id: String, vaccine_id: String, config: Dictionary = {}) -> Dictionary:
     var path: String = Store.default_slot_path(slot_id)
@@ -18,6 +19,17 @@ static func snapshot(slot_path: String) -> Dictionary:
         return loaded
     return {"ok": true, "revision": loaded.revision,
         "snapshot": loaded.state.duplicate(true)}
+
+static func inspect_slot(slot_path: String) -> Dictionary:
+    ## Safe for the hub/UI to call before creating a world instance.
+    return Recovery.inspect_slot(slot_path)
+
+static func reconcile_receipt(slot_path: String, vaccine_id: String,
+        generation: int, run_id: String, receipt_id: String,
+        offer_id: String = "") -> Dictionary:
+    ## Read-only C/A retry handshake; never grants a reward during inspection.
+    return Recovery.reconcile_receipt(slot_path, vaccine_id,
+        generation, run_id, receipt_id, offer_id)
 
 static func transact_command(slot_path: String, command: Dictionary,
         expected_revision: int = -1, fault_at: String = "") -> Dictionary:
@@ -44,6 +56,26 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
             if not Model.natural(command.get("seed")):
                 return {"ok": false, "reason": "invalid_seed"}
             return Rules.start_mission(state, vaccine_id, generation, run_id, int(command.seed))
+        "checkpoint_region":
+            if not Model.natural(command.get("map_seed")):
+                return {"ok": false, "reason": "invalid_map_seed"}
+            return Rules.checkpoint_region(state, vaccine_id, generation, run_id,
+                receipt_id, str(command.get("region_id", "")),
+                int(command.map_seed), str(command.get("generator_id", "")))
+        "checkpoint_offer":
+            if typeof(command.get("offer_snapshot")) != TYPE_DICTIONARY \
+                    or typeof(command.get("rng_state_text", "")) != TYPE_STRING:
+                return {"ok": false, "reason": "invalid_offer_checkpoint"}
+            return Rules.checkpoint_offer(state, vaccine_id, generation, run_id,
+                receipt_id, command.offer_snapshot,
+                str(command.get("rng_state_text", "")))
+        "prepare_terminal":
+            if typeof(command.get("learn_plugin_ids", [])) != TYPE_ARRAY:
+                return {"ok": false, "reason": "invalid_terminal_selection"}
+            return Rules.prepare_terminal(state, vaccine_id, generation, run_id,
+                receipt_id, str(command.get("outcome", "")),
+                str(command.get("terminal_receipt_id", "")),
+                command.get("learn_plugin_ids", []))
         "mission_xp":
             if not Model.natural(command.get("amount")):
                 return {"ok": false, "reason": "invalid_xp"}

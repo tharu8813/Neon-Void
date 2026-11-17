@@ -97,7 +97,9 @@ func _sync_projectile_visuals() -> void:
     if not projectile_factory.is_valid() and visual_nodes.is_empty():
         return
     var active: Dictionary = {}
-    for projectile in simulation.projectile_snapshots():
+    # Read-only direct iteration: no 250x deep-copy on each render tick.
+    # Factory receives its own copy and cannot mutate live projectile data.
+    for projectile in simulation.projectiles:
         var id: String = str(projectile["id"])
         active[id] = true
         if not visual_nodes.has(id) and projectile_factory.is_valid():

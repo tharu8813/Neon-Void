@@ -28,10 +28,18 @@ var settings: Dictionary = {
     "default_projectile_speed": 18.0,
     "projectile_radius_scale": 0.025,
     "default_projectile_lifetime_ticks": 120,
+    "attack_speed_cap": 30.0,  # BALANCE_DRAFT: GDD cap confirmed, number unapproved.
     "vamp_overlap_policy": "unresolved"
 }
 var counters: Dictionary = {}
 var plugin_hit_counts: Dictionary = {}
+## Optional injected world/C boundaries; absent in standalone B regression.
+var stat_provider: Callable = Callable()
+var attack_provider: Callable = Callable()
+var damage_absorber: Callable = Callable()
+var fire_gate_provider: Callable = Callable()
+var projectile_segment_filter: Callable = Callable()
+var last_processed_events: Array[Dictionary] = []
 
 func _init(seed_value: int = 42, config: Dictionary = {}) -> void:
     begin(seed_value, config)
@@ -43,6 +51,13 @@ func begin(seed_value: int, config: Dictionary = {}) -> void:
     fixed_tick = 0
     next_projectile_id = 0
     presentation.clear()
+    last_processed_events.clear()
+    # New mission may not inherit previous world's callbacks.
+    stat_provider = Callable()
+    attack_provider = Callable()
+    damage_absorber = Callable()
+    fire_gate_provider = Callable()
+    projectile_segment_filter = Callable()
     bus.reset()
     settings.merge(config, true)
     mission_id = str(settings.get("encounter_id", "simulation"))
@@ -66,6 +81,7 @@ func register_actor(actor_id: String, team: String, position: Vector3,
             "boss_control_resistance": float(stats.get("boss_control_resistance", 0.0))},
         "radius": maxf(0.01, float(options.get("radius", 0.5))),
         "player_controlled": bool(options.get("player_controlled", false)),
+        "external_movement": bool(options.get("external_movement", false)),
         "attack_definition": options.get("attack_definition", {
             "damage_type": "physical", "base_damage": 0.0, "ad_ratio": 1.0,
             "ap_ratio": 0.0, "can_crit": true, "is_on_hit": true
@@ -158,6 +174,10 @@ func _effective_stats(actor: Dictionary) -> Dictionary:
     var bonus: Dictionary = Plugins.passive_offsets(actor["plugins"])
     for key in bonus:
         merged[key] = float(merged.get(key, 0.0)) + float(bonus[key])
+    if stat_provider.is_valid():
+        var supplied: Variant = stat_provider.call(str(actor["id"]), merged.duplicate(true), fixed_tick)
+        if supplied is Dictionary:
+            return supplied
     return merged
 
 func _heal(actor_id: String, amount: float) -> float:
@@ -218,8 +238,13 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
 func _fire_if_ready(actor_id: String, aim: Vector2) -> void:
     var actor: Dictionary = actors[actor_id]
     var stats: Dictionary = _effective_stats(actor)
-    actor["fire_credit"] = float(actor["fire_credit"]) + maxf(0.0,
-        float(stats.get("attack_speed", 0.0))) * DT
+    if fire_gate_provider.is_valid() and not bool(fire_gate_provider.call(actor_id)):
+        actor["fire_credit"] = minf(1.0, float(actor["fire_credit"]))
+        return
+    var attacks_per_second: float = clampf(
+        float(stats.get("attack_speed", 0.0)), 0.0,
+        maxf(0.0, float(settings.get("attack_speed_cap", 30.0))))
+    actor["fire_credit"] = float(actor["fire_credit"]) + attacks_per_second * DT
     if bool(Statuses.active_flags(actor["status_state"]).get("stopped", false)):
         actor["fire_credit"] = minf(float(actor["fire_credit"]), 1.0)
         return
@@ -251,7 +276,11 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
             Vector3(actor["position"]) + Vector3(aim.x, 0.0, aim.y)))
         firing = bool(input.get("fire", true))
     else:
-        var opponent: String = _closest_opponent(actor_id)
+        var opponent: String = str(settings.get("primary_player_id", ""))
+        if opponent.is_empty() or not actors.has(opponent) or (
+                not bool(actors[opponent]["alive"])) or (
+                actors[opponent]["team"] == actor["team"]):
+            opponent = _closest_opponent(actor_id)
         if opponent.is_empty():
             return
         var decision: Dictionary = AI.decide(actor, actors[opponent])
@@ -272,7 +301,8 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
             bus.submit_root({"kind": "dash", "trigger_kind": "dash",
                 "actor_id": actor_id, "target_id": _closest_opponent(actor_id),
                 "source_tags": ["dash"], "allowed_proc_triggers": ["dash"]})
-    _move(actor_id, direction)
+    if not bool(actor.get("external_movement", false)):
+        _move(actor_id, direction)
     if bool(actor["player_controlled"]) and input.has("skill_slot"):
         var control: Dictionary = Statuses.active_flags(actor["status_state"])
         var stats: Dictionary = _effective_stats(actor)
@@ -305,9 +335,34 @@ func _step_projectiles() -> void:
     for p in projectiles:
         var start: Vector3 = p["position"]
         var velocity: Vector2 = p["velocity"]
+        if bool(p.get("homing", false)):
+            var homing_target: String = _closest_opponent(str(p["actor_id"]), start)
+            if not homing_target.is_empty():
+                var target_pos: Vector3 = actors[homing_target]["position"]
+                var desired: Vector2 = Vector2(target_pos.x - start.x, target_pos.z - start.z).normalized()
+                var speed: float = velocity.length()
+                var angular_rate: float = maxf(0.0, float(p.get("turn_rate_radians_per_second", 0.0)))
+                if speed > 0.00001 and desired.length_squared() > 0.0:
+                    var change: float = clampf(velocity.normalized().angle_to(desired),
+                        -angular_rate * DT, angular_rate * DT)
+                    velocity = velocity.rotated(change).normalized() * speed
+                    p["velocity"] = velocity
+        if str(p.get("shape", "")) == "boomerang":
+            if int(p.get("ttl", 0)) <= int(p.get("return_threshold", 0)):
+                velocity = -velocity if not bool(p.get("returning", false)) else velocity
+                p["returning"] = true
+                p["velocity"] = velocity
         var end: Vector3 = start + Vector3(velocity.x, 0.0, velocity.y) * DT
         p["ttl"] = int(p["ttl"]) - 1
         var ended: bool = false
+        var terrain_blocked: bool = false
+        if projectile_segment_filter.is_valid():
+            var clipped: Variant = projectile_segment_filter.call(
+                start, end, p.duplicate(true))
+            if clipped is Dictionary:
+                terrain_blocked = bool(clipped.get("blocked", false))
+                if clipped.has("position"):
+                    end = clipped["position"]
         var candidates: Array[Dictionary] = Grid.segment_hits(grid, actors,
             start, end, float(p["radius"]), str(p["team"]))
         counters["broadphase_candidates"] += candidates.size()
@@ -336,7 +391,7 @@ func _step_projectiles() -> void:
                     break
                 p["remaining_pierce"] = int(p["remaining_pierce"]) - 1
         p["position"] = end
-        if ended or int(p["ttl"]) <= 0:
+        if ended or terrain_blocked or int(p["ttl"]) <= 0:
             _retire(p)
         else:
             remaining.append(p)
@@ -451,6 +506,11 @@ func _resolve_event(event: Dictionary) -> Array:
         attack = command.get("attack", {})
         if not bool(defender["alive"]) or attacker["team"] == defender["team"]:
             return []
+    if attack_provider.is_valid():
+        var transformed: Variant = attack_provider.call(
+            actor_id, target_id, attack.duplicate(true), event.duplicate(true))
+        if transformed is Dictionary:
+            attack = transformed
     var source: Dictionary = _effective_stats(attacker)
     var target: Dictionary = _effective_stats(defender)
     var crit: bool = bool(attack.get("can_crit", false)) and Damage.roll_critical(
@@ -465,6 +525,10 @@ func _resolve_event(event: Dictionary) -> Array:
             float(event["proc_damage_efficiency"]))
     var result: Dictionary = Damage.calculate(source, target, attack, crit)
     var flags: Dictionary = Statuses.active_flags(defender["status_state"])
+    if damage_absorber.is_valid() and bool(result.get("ok", false)) and not bool(flags.get("invulnerable", false)):
+        var adjusted: Variant = damage_absorber.call(target_id, result.duplicate(true))
+        if adjusted is Dictionary:
+            result = adjusted
     var dealt: Dictionary = Damage.apply_damage(defender["stats"], result,
         bool(flags.get("invulnerable", false)))
     var actual: float = float(dealt.get("actual_damage", 0.0))
@@ -474,6 +538,9 @@ func _resolve_event(event: Dictionary) -> Array:
     event["actual_damage"] = actual
     event["target_id"] = target_id
     event["critical"] = crit
+    event["damage_type"] = str(attack.get("damage_type", "physical"))
+    event["is_dot"] = bool(attack.get("is_dot", false))
+    event["is_area"] = bool(attack.get("is_area", false))
     presentation.append({"kind": "hit", "actor_id": actor_id, "target_id": target_id,
         "amount": actual, "damage_type": str(attack.get("damage_type", "physical")),
         "critical": crit, "event_id": event["event_id"]})
@@ -509,6 +576,7 @@ func _resolve_event(event: Dictionary) -> Array:
     bus.submit_root({"kind": "damage_taken", "trigger_kind": "damage_taken",
         "actor_id": target_id, "target_id": actor_id,
         "source_tags": ["damage_taken"],
+        "actual_damage": actual,
         "health_fraction": float(defender["stats"]["health"]) /
             maxf(0.00001, float(defender["stats"]["max_health"])),
         "allowed_proc_triggers": ["damage_taken"]})
@@ -520,11 +588,19 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
     fixed_tick += 1
     bus.set_tick(fixed_tick)
     presentation.clear()
+    last_processed_events.clear()
     for actor_id in _ids():
         var actor: Dictionary = actors[actor_id]
         if not bool(actor["alive"]):
             continue
-        actor["skills"].tick()
+        # Refresh temporary stat-derived mana attributes without overwriting
+        # current mana or permanent skill progression every tick.
+        var mana_stats: Dictionary = _effective_stats(actor)
+        var slots: Variant = actor["skills"]
+        slots.max_mana = maxf(0.0, float(mana_stats.get("max_mana", slots.max_mana)))
+        slots.mana = minf(slots.mana, slots.max_mana)
+        slots.mana_regen = maxf(0.0, float(mana_stats.get("mana_regen", slots.mana_regen)))
+        slots.tick()
         if not actor["plugins"].is_empty():
             bus.submit_root({"kind": "periodic", "trigger_kind": "periodic",
                 "actor_id": str(actor_id), "target_id": str(actor_id),
@@ -544,5 +620,5 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
         _step_actor(str(actor_id), inputs.get(actor_id, {}))
     _step_projectiles()
     var quota: int = maxi(1, int(settings.get("event_work_per_tick", 512)))
-    bus.drain_batch(quota, Callable(self, "_resolve_event"))
+    last_processed_events = bus.drain_batch(quota, Callable(self, "_resolve_event"))
     return presentation.duplicate(true)
