@@ -495,7 +495,8 @@ func _present_wave_reward() -> void:
         _pending_boss_receipts = false
     mode = "reward"
     _pause_gameplay()
-    ui.call("show_reward_cards", _pending_offers, software.levels)
+    ui.call("show_reward_cards", _pending_offers, software.levels,
+        software.stats, software.maxhp, software.maxmana)
     legacy_audio.call("play_effect", "up")
     _update_hud()
 
@@ -1291,7 +1292,8 @@ func resume_checkpoint() -> bool:
                 _pending_boss_receipts = false
             mode = "reward"
             _pause_gameplay()
-            ui.call("show_reward_cards", cards, software.levels)
+            ui.call("show_reward_cards", cards, software.levels,
+                software.stats, software.maxhp, software.maxmana)
         else:
             mode = "between"
             _resume_gameplay()
