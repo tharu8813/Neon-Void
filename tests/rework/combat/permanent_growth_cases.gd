@@ -31,7 +31,7 @@ static func _erase(path: String) -> void:
 static func _advance(battle: Variant, count: int, slot: int = -1) -> Array:
     var notes: Array = []
     for tick in range(count):
-        var input: Dictionary = {"fire": slot < 0,
+        var input: Dictionary = {"fire": slot == -1,
             "move": Vector2.ZERO, "aim_world": Vector3(2.0, 0.0, 0.0)}
         if slot >= 0 and tick == 0:
             input["skill_slot"] = slot
