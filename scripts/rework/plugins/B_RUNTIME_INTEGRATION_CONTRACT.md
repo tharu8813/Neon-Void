@@ -24,3 +24,21 @@ restore_mission_state(packet, E_levels) validates a verified E loadout and freez
 
 ## Tests
 Run the existing Windows+Linux CI plugin_reward_smoke.gd which now imports plugin_b_live_cases.gd; measure actual B events, HP, status, homing/laser/boomerang physics, p95/event budgets in later physical QA. A alone owns review and merges; do not automatically merge this draft.
+
+## C/E atomic random-rare reconciliation (C Draft #125)
+
+As of A #121, selecting `nv_c_random_rare` creates **two E receipts in one Store transaction**: the source-card receipt and `<source-receipt>:rare:0`, recorded in `mission.environment_rolls.e_rare_bonus_v1`. E alone chooses the eligible canonical rare and authorizes its level. C no longer draws or pays a secondary random rare.
+
+- `plugin_reward_coordinator.commit_choice` uses the E source-card transaction; for this source it rereads the durable E snapshot, validates the pair, and freezes any unverified ACK rather than confirming the C offer.
+- `inspect_atomic_rare(E_snapshot, source_receipt, vaccine_id, generation, run_id)` only returns a display-safe result if both receipts, policy, catalog rarity, authoritative inventory and generation/run identity match. Never build a reward UI directly from an `on_hit`, `plugin_acquired`, or `rare_reward_notice` event.
+- `apply_verified_rare(runtime, offers, E_snapshot, source_receipt, ...)` synchronizes the authoritative **next** level once and returns `already_synced` for a duplicate ACK. Stale or skipped levels require a fresh complete E snapshot and A-controlled resynchronization; this function deliberately does not silently backfill multiple levels.
+- Legacy `commit_random_rare` fails closed; `plugin_b_live_runtime.pending_e_rewards` is deprecated and must not be used to trigger grants.
+- A pilot currently has its own E inspection and UI path. A may adopt this C read-only helper after reviewing compatibility. C cannot modify A pilot scene or E schema directly.
+- The baseline single rare on source acquisition follows the provisional E #121 implementation. **Additional Lv2 count, alternate exhausted-pool fallback, and a full crash-resume policy are not approved**; C does not invent them.
+
+### Remaining interface requests to B/A/E
+
+1. **B shields (3 plugins):** publish a shield-absorption contract and meaningful mitigation/HP tests for periodic, skill and dash shields, including crit, armor, DoT, life-steal and fatal hit sequencing. Current C B-runtime evidence remains **23/27**, not release-qualified 27/27.
+2. **A scene:** instantiate the C production B subclass in the real CPU scene; use E-confirmed receipts for C/B levels and recovery UI; no additional C-side bonus dispatch.
+3. **E restore:** atomically persist C RNG/cards/rerolls/pity packet with E mission checkpoints; reconcile prepared receipts before showing an interrupted offer. C's export/restore exists but does not write or independently trust a save.
+4. **B/A projectile composition and bosses:** decide laser+boomerang precedence and boss control exemptions; preserve valid multi-hop procs while blocking cycles.
