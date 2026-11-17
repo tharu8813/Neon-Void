@@ -14,6 +14,7 @@ const Balance = preload("res://scripts/rework/progression/balance_config.gd")
 const TacticalHUD = preload("res://scripts/rework/ui/pilot_tactical_hud.gd")
 const CardStyle = preload("res://scripts/rework/ui/pilot_reward_card_style.gd")
 const HubManagement = preload("res://scripts/rework/ui/hub_management_panel.gd")
+const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -42,6 +43,7 @@ var recovery_label: Label
 var tactical_hud: PanelContainer
 var hub_panel: PanelContainer
 var hub_button: Button
+var mission_tracker: PanelContainer
 var _hud_elapsed: float = 0.0
 
 func _ready() -> void:
@@ -97,6 +99,8 @@ func _process(delta: float) -> void:
         tactical_hud.render_combat_snapshot(combat.actor_snapshot("VACCINE"))
     else:
         tactical_hud.render_combat_snapshot({})
+    if mission_tracker != null:
+        mission_tracker.render_world(world)
 
 func _unhandled_input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -120,6 +124,8 @@ func _create_ui() -> void:
     layer.add_child(outer)
     tactical_hud = TacticalHUD.new()
     layer.add_child(tactical_hud)
+    mission_tracker = MissionTracker.new()
+    layer.add_child(mission_tracker)
     hub_panel = HubManagement.new()
     layer.add_child(hub_panel)
     hub_panel.close_requested.connect(_close_management)
@@ -238,6 +244,9 @@ func _refresh() -> void:
         tactical_hud.render_saved_snapshot(loaded)
         if frozen:
             tactical_hud.show_blocked()
+    if mission_tracker != null:
+        mission_tracker.show_saved_snapshot(loaded)
+        mission_tracker.render_world(world)
     if hub_panel != null and hub_panel.visible:
         hub_panel.show_saved(loaded, not frozen and str(world.get("current_mode")) == "hub")
     if bool(saved.get("selection_required", false)):
@@ -793,6 +802,8 @@ func _halt(reason: String) -> void:
         hub_panel.visible = false
     if tactical_hud != null:
         tactical_hud.show_blocked()
+    if mission_tracker != null:
+        mission_tracker.show_blocked()
     if message_label != null:
         message_label.text = "저장 안전 정지: " + reason
     if offer_panel != null:
