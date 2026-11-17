@@ -58,10 +58,7 @@ func _ready() -> void:
     _world_hud = _layer("WorldHUD")
     _build_combat()
     _build_world()
-    if not _data.is_empty():
-        _draw_state()
-    else:
-        _draw_state()
+    _draw_state()
 
 func _layer(id: String) -> Control:
     var layer := Control.new()
