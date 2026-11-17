@@ -132,6 +132,17 @@ func _run() -> void:
         return {"ok": true, "changed": true, "state": snapshot})
     check(not failed_write.get("applied", false) and failed_write.get("reason") == "locked",
         "regular writer fails closed rather than deleting an orphaned lock")
+    # A readable-but-corrupted backup must block offline recovery as well.
+    var backup_path: String = slot.path_join("state.json.bak")
+    var corrupt_backup: FileAccess = FileAccess.open(backup_path, FileAccess.WRITE)
+    check(corrupt_backup != null, "open synthetic backup for corruption test")
+    if corrupt_backup != null:
+        corrupt_backup.store_string("{corrupted-backup")
+        corrupt_backup.close()
+        check(not Store.recover_stale_lock_offline(slot, orphan_token, true).get("ok", false),
+            "reject orphan lock recovery when backup envelope is corrupt")
+        check(Store._atomic_write(backup_path, backup_before.bytes),
+            "restore synthetic backup bytes")
     var rescue: Dictionary = Store.recover_stale_lock_offline(slot, orphan_token, true)
     check(rescue.get("ok", false), "explicit offline quarantine of synthetic orphan")
     check(DirAccess.dir_exists_absolute(str(rescue.get("quarantine", ""))),
