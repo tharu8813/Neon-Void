@@ -20,7 +20,11 @@ func follow(player_world: Vector3, pointer_logical: Vector2, delta_seconds: floa
     )
     var now: Vector2 = Vector2(global_position.x, global_position.z)
     var smoothed: Vector2 = CameraMath.smooth(now, next_target, delta_seconds, responsiveness)
-    global_position = Vector3(smoothed.x, 14.0, smoothed.y)
+    var visible: Vector2 = CameraMath.clamp_visible_center(
+        smoothed, Vector2(player_world.x, player_world.z),
+        world_bounds, view_height, player_margin
+    )
+    global_position = Vector3(visible.x, 14.0, visible.y)
 
 func pointer_ground_from_window(pixel: Vector2, client_size: Vector2) -> Dictionary:
     var result: Dictionary = CameraMath.window_to_logical(pixel, client_size)
