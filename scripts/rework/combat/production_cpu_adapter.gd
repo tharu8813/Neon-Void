@@ -60,17 +60,20 @@ func _ready() -> void:
     set_projectile_factory(Callable(self, "_make_bullet_visual"))
 
 func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
-        world_map: Dictionary, new_run_id: String) -> void:
-    ## D original 4-argument signature. Return/region changes reset old combat.
+        world_map: Dictionary, new_run_id: String,
+        config: Dictionary = {}) -> bool:
+    ## Backwards-compatible with D old 4-argument demo AND new formal
+    ## 5-argument router. A/D can validate a failed encounter initialization.
     reset()
     if player_node == null or camera_node == null or new_run_id.is_empty():
-        return
+        return false
     player = player_node
     camera = camera_node
     run_id = new_run_id
     map_plan = world_map.duplicate(true)
-    var encounter_seed: int = int(balance_draft.get("seed", 42)) ^ int(new_run_id.hash())
-    setup(new_run_id, encounter_seed, {
+    var encounter_seed: int = int(config.get("seed", balance_draft.get("seed", 42))) ^ int(new_run_id.hash())
+    var encounter_id: String = str(config.get("encounter_id", new_run_id))
+    setup(new_run_id + ":" + encounter_id, encounter_seed, {
         "encounter_id": new_run_id,
         "primary_player_id": PLAYER_ID,
         "default_projectile_speed": float(balance_draft["projectile_speed"]),
@@ -93,7 +96,7 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         }
     }):
         reset()
-        return
+        return false
     simulation.projectile_segment_filter = Callable(self, "_clip_projectile_to_floor")
     effects.attach(simulation, PLAYER_ID, new_run_id, encounter_seed ^ 0x70726f63)
     _has_player_movement = _has_property(player, "movement_enabled")
@@ -105,6 +108,7 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
     player_stats = simulation.actors[PLAYER_ID]["stats"]
     game_over = false
     _emit_resource_changes(true)
+    return running and simulation.actors.has(PLAYER_ID)
 
 func _has_property(object: Object, property_name: String) -> bool:
     for descriptor in object.get_property_list():
