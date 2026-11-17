@@ -296,8 +296,14 @@ func _run() -> void:
             check(str(returned.get("type", "")) == "hardware_board_return_requested"
                 and world.current_mode == "motherboard" and world.current_run_id == run_id,
                 region + ": physical board return re-enters same mission")
-            check(int(_saved().get("revision", -1)) == before_return,
+            var returned_e: Dictionary = _saved()
+            check(int(returned_e.get("revision", -1)) == before_return,
                 region + ": return alone never invents E reward")
+            var board_growth: Dictionary = router.live.authorized_growth_snapshot()
+            check(str(board_growth.get("vaccine_id", "")) == "a-full-run-vaccine"
+                and int(board_growth.get("revision", -1)) == before_return
+                and router.actor_snapshot("VACCINE").has("skill_state"),
+                region + ": new motherboard B actor is E-authorized BEFORE tick")
         else:
             var exit_choice: Dictionary = _interact_at(world.hardware.extraction_world())
             check(str(exit_choice.get("type", "")) == "hardware_extraction_requested"
