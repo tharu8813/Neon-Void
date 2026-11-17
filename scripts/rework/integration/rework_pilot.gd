@@ -218,6 +218,8 @@ func _on_mission_requested(request: Dictionary) -> void:
     # The remaining D facts are routed via A so reward learning happens
     # before the extraction transaction and its user choice is durable.
     world.call("attach_progression_bridge", null)
+    if not _sync_authorized_build_from_E():
+        return
     message_label.text = "CPU 의뢰 저장됨 · 전투 XP로 플러그인 획득"
     _refresh()
 
@@ -235,6 +237,47 @@ func _on_enemy_defeated(actor_id: String, receipt: String) -> void:
         return
     _maybe_open_offer()
     _refresh()
+
+## Only an E-authenticated snapshot can authorize plugin levels for B/C.
+## The B runtime is never allowed to infer a grant from an unsaved UI card.
+func _sync_authorized_build_from_E() -> bool:
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("authorized_loadout_snapshot_failed")
+        return false
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var vaccine: Dictionary = saved.get("vaccine", {})
+    if vaccine.is_empty() or vaccine.get("mission") == null:
+        _halt("authorized_loadout_mission_missing")
+        return false
+    var levels: Dictionary = {}
+    var carried: Dictionary = vaccine.get("carried", {})
+    for plugin_id in carried:
+        levels[str(plugin_id)] = int(carried[plugin_id].get("level", 0))
+    var obtained: Dictionary = vaccine["mission"].get("obtained_plugins", {})
+    for plugin_id in obtained:
+        levels[str(plugin_id)] = int(obtained[plugin_id].get("level", 0))
+    var combat: Variant = world.get("combat")
+    if combat == null or not bool(combat.configure_authorized_build(levels, [], [])):
+        _halt("B_C_initial_authorized_build_rejected")
+        return false
+    return true
+
+## C draws its offer first in volatile memory. E #118 must atomically
+## checkpoint that exact offer, RNG cursor and reroll state before it is
+## ever shown. Any ambiguous failure freezes rather than re-drawing.
+func _checkpoint_current_offer() -> bool:
+    if offers == null or bridge == null:
+        _halt("offer_checkpoint_missing_engine")
+        return false
+    var state: Dictionary = offers.export_mission_state()
+    var offer: Dictionary = offers.offer_snapshot()
+    var receipt: Dictionary = bridge.checkpoint_offer(
+        offer, str(state.get("rng_state", "")))
+    if not bool(receipt.get("ok", false)):
+        _halt("offer_checkpoint_not_durable")
+        return false
+    return true
 
 func _maybe_open_offer() -> void:
     if frozen or offers == null or offer_panel.visible:
@@ -255,6 +298,8 @@ func _maybe_open_offer() -> void:
     })
     if not bool(offer.get("active", false)):
         _halt("no_plugin_candidates")
+        return
+    if not _checkpoint_current_offer():
         return
     offer_panel.visible = true
     get_tree().paused = true
@@ -286,6 +331,13 @@ func _choose_card(index: int) -> void:
     if not bool(ack.get("ok", false)):
         _halt("plugin_commit_or_confirmation_failed")
         return
+    var confirmed_plugin: Dictionary = ack.get("plugin", {})
+    var combat: Variant = world.get("combat")
+    if combat == null or not bool(combat.upgrade_plugin_after_ack(
+            str(confirmed_plugin.get("plugin_id", "")),
+            int(confirmed_plugin.get("level", 0)))):
+        _halt("B_C_effect_sync_failed_after_E_commit")
+        return
     offer_panel.visible = false
     get_tree().paused = false
     message_label.text = "플러그인 저장 완료: " + str(ack.get("receipt_id", ""))
@@ -298,6 +350,8 @@ func _reroll_card(index: int) -> void:
     var changed: Dictionary = offers.reroll_card(index)
     if not bool(changed.get("active", false)):
         _halt("plugin_reroll_failed")
+        return
+    if not _checkpoint_current_offer():
         return
     _render_cards()
 
