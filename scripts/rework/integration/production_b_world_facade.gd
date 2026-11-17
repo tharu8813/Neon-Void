@@ -68,9 +68,33 @@ func reset() -> void:
 func spawn_hostile(info: Dictionary) -> bool:
     return bridge != null and bool(bridge.spawn_hostile(info))
 
+## Forward the COMPLETE E Gateway.snapshot() packet, not a UI draft.
+## This A public facade is the sole entry to B-approved growth and skills.
+func configure_authorized_progression(loaded: Dictionary) -> Dictionary:
+    if bridge == null:
+        last_error = "B_growth_adapter_unavailable"
+        integration_failed.emit(last_error)
+        return {"ok": false, "reason": last_error}
+    var approved: Dictionary = bridge.configure_authorized_progression(loaded)
+    if not bool(approved.get("ok", false)):
+        last_error = "B_growth_rejected:" + str(approved.get("reason", "unknown"))
+        integration_failed.emit(last_error)
+    return approved.duplicate(true)
+
+func authorized_growth_snapshot() -> Dictionary:
+    return bridge.authorized_growth_snapshot() if bridge != null else {}
+
+func skill_snapshot() -> Dictionary:
+    return bridge.skill_snapshot() if bridge != null else {}
+
 func configure_authorized_build(levels: Dictionary, instances: Array,
         skills: Array = []) -> bool:
     if bridge == null or bridge.run_id.is_empty():
+        return false
+    # Once E approved growth, direct skill-definition injection would
+    # bypass the real E equipped skills. Reject it rather than double-equip.
+    if not skills.is_empty() and not bridge.authorized_growth_snapshot().is_empty():
+        integration_failed.emit("direct_skills_forbidden_after_E_authorization")
         return false
     # B #119 owns C-driven execution through c_effect_adapter. Injecting the
     # older D numeric instances as well would double-apply proc damage.
@@ -96,7 +120,9 @@ func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
 func actor_snapshot(actor_id: String) -> Dictionary:
     if bridge == null:
         return {}
-    return bridge.simulation.snapshot(actor_id)
+    # B now exports effective stats, shield and skill_state through its
+    # supported public read-only adapter. Never bypass with simulation internals.
+    return bridge.actor_snapshot(actor_id)
 
 func advance_test_tick(commands: Dictionary) -> Array[Dictionary]:
     ## Deterministic headless D regression adapter, NOT a damage/XP shortcut.
