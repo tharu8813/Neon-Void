@@ -26,6 +26,10 @@ var arena_grid: MultiMeshInstance3D
 var scanline: MeshInstance3D
 var core_halo: MeshInstance3D
 var link_pulses: Array[MeshInstance3D] = []
+var base_halo_material: StandardMaterial3D
+var os_halo_material: StandardMaterial3D
+var base_pulse_material: StandardMaterial3D
+var os_pulse_material: StandardMaterial3D
 var star_specs: Array[Dictionary] = []
 var dust_specs: Array[Dictionary] = []
 var mode: String = "base"
@@ -99,7 +103,11 @@ func _ready() -> void:
     halo_mesh.rings = 48
     halo_mesh.ring_segments = 6
     core_halo.mesh = halo_mesh
-    core_halo.material_override = _emissive(Color("#1f6e84"))
+    base_halo_material = _emissive(Color("#2f7f92"))
+    os_halo_material = _emissive(Color("#353054"))
+    base_pulse_material = _emissive(Color("#8ff6ff"))
+    os_pulse_material = _emissive(Color("#c3a3ff"))
+    core_halo.material_override = base_halo_material
     core_halo.position = Vector3(12.0, 0.075, 7.8)
     add_child(core_halo)
 
@@ -112,8 +120,7 @@ func _ready() -> void:
         shape.radial_segments = 8
         shape.rings = 4
         pulse.mesh = shape
-        pulse.material_override = _emissive(
-            Color("#8ff6ff") if i < BASE_TARGETS.size() else Color("#c3a3ff"))
+        pulse.material_override = base_pulse_material
         add_child(pulse)
         link_pulses.append(pulse)
     set_zone("base", false)
@@ -200,8 +207,7 @@ func _draw_frame() -> void:
         var breath: float = 1.0 if reduced_effects else 1.0 + 0.045 * sin(clock * 1.9)
         var radius: float = (0.72 if mode == "base" else 1.32) * breath
         core_halo.scale = Vector3(radius, 1.0, radius)
-        core_halo.material_override = _emissive(
-            Color("#2f7f92") if mode == "base" else Color("#353054"))
+        core_halo.material_override = base_halo_material if mode == "base" else os_halo_material
     var targets: Array = BASE_TARGETS if mode == "base" else OS_TARGETS
     for i in range(MAX_LINK_PULSES):
         var marker: MeshInstance3D = link_pulses[i]
@@ -213,5 +219,4 @@ func _draw_frame() -> void:
         marker.position = Vector3(point.x * SCALE, 0.21, point.y * SCALE)
         var radius: float = 0.042 + 0.016 * sin(clock * 6.0 + float(i))
         marker.scale = Vector3.ONE * maxf(0.65, radius / 0.06)
-        marker.material_override = _emissive(
-            Color("#8ff6ff") if mode == "base" else Color("#c3a3ff"))
+        marker.material_override = base_pulse_material if mode == "base" else os_pulse_material
