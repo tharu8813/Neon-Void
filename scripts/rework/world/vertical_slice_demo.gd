@@ -116,7 +116,7 @@ func interact() -> Dictionary:
                 if world_state.is_extraction_open(chosen):
                     board.return_to_board(chosen)
                     return {"reason": "already_cleansed", "region_id": chosen}
-                if ["CPU", "GPU", "RAM", "SSD"].has(chosen):
+                if ["CPU", "GPU", "RAM", "SSD", "HDD"].has(chosen):
                     if demo_mode:
                         _enter_hardware(result["region_plan"])
                     else:
@@ -125,12 +125,12 @@ func interact() -> Dictionary:
                     board.return_to_board(chosen)
                     unavailable_hardware_requested.emit(chosen)
             return result
-        "cpu", "gpu", "ram", "ssd":
+        "cpu", "gpu", "ram", "ssd", "hdd":
             if current_mode == "ram" and region_session != null:
                 var checksum: Dictionary = region_session.try_verify(player.global_position)
                 if not checksum.is_empty():
                     return checksum
-            elif current_mode == "ssd" and region_session != null:
+            elif ["ssd", "hdd"].has(current_mode) and region_session != null:
                 var node: Dictionary = region_session.try_interact(player.global_position)
                 if not node.is_empty():
                     return node
@@ -247,7 +247,7 @@ func _request_hardware_checkpoint(gate_request: Dictionary) -> void:
         return
     var region_id: String = str(gate_request.get("region_id", ""))
     var requested_plan: Variant = gate_request.get("region_plan")
-    if not ["CPU", "GPU", "RAM", "SSD"].has(region_id) or typeof(requested_plan) != TYPE_DICTIONARY \
+    if not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(region_id) or typeof(requested_plan) != TYPE_DICTIONARY \
             or str(gate_request.get("run_id", "")) != current_run_id:
         _freeze_with_error("invalid_region_or_run_for_checkpoint")
         return
@@ -284,7 +284,7 @@ func acknowledge_hardware_checkpoint(receipt_id: String, ack: Dictionary) -> boo
         return false
     var id: String = str(fact.get("region_id", ""))
     if str(fact.get("run_id", "")) != current_run_id \
-            or not ["CPU", "GPU", "RAM", "SSD"].has(id) \
+            or not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(id) \
             or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
             or str(board.board.active_region) != id \
             or mission.get("regions", {}).get(id, {}) != fact.get("region_plan", {}):
@@ -303,7 +303,7 @@ func _enter_hardware(region_plan: Dictionary, checkpoint_verified: bool = false)
             return _enter_gpu(region_plan, checkpoint_verified)
         "RAM":
             return _enter_ram(region_plan, checkpoint_verified)
-        "SSD":
+        "SSD", "HDD":
             return _enter_storage(region_plan, checkpoint_verified)
     return false
 
