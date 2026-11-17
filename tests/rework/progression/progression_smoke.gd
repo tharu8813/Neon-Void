@@ -85,6 +85,12 @@ func _run() -> void:
         "new mission level 1")
     check(s.vaccine.mission.mission_level == 1 and s.vaccine.mission.seed != 111,
         "fresh mission level and seed")
+    check(not Rules.equip_skills(s, "vaccine-A", 1, "illegal-midmission-equip",
+        ["pulse"]).ok, "ordinary skill swap blocked during mission")
+    s = accepted(s, Rules.learn_skill(s, "vaccine-A", 1, "new-skill-mission",
+        "barrier", ["pulse", "barrier"]), "discovered skill may equip immediately")
+    check(s.vaccine.equipped_skills.has("barrier"),
+        "first discovery equips new skill in same atomic transition")
     s = accepted(s, Rules.add_pending_reward(s, "vaccine-A", 1, "run-2",
         "cache-1", 100, 100), "uncommitted point cache")
     s = accepted(s, Rules.die(s, "vaccine-A", 1, "run-2", "death-1"), "first clone")
