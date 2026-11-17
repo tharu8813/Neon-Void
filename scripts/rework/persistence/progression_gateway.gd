@@ -44,6 +44,26 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
             if not Model.natural(command.get("seed")):
                 return {"ok": false, "reason": "invalid_seed"}
             return Rules.start_mission(state, vaccine_id, generation, run_id, int(command.seed))
+        "checkpoint_region":
+            if not Model.natural(command.get("map_seed")):
+                return {"ok": false, "reason": "invalid_map_seed"}
+            return Rules.checkpoint_region(state, vaccine_id, generation, run_id,
+                receipt_id, str(command.get("region_id", "")),
+                int(command.map_seed), str(command.get("generator_id", "")))
+        "checkpoint_offer":
+            if typeof(command.get("offer_snapshot")) != TYPE_DICTIONARY \
+                    or typeof(command.get("rng_state_text", "")) != TYPE_STRING:
+                return {"ok": false, "reason": "invalid_offer_checkpoint"}
+            return Rules.checkpoint_offer(state, vaccine_id, generation, run_id,
+                receipt_id, command.offer_snapshot,
+                str(command.get("rng_state_text", "")))
+        "prepare_terminal":
+            if typeof(command.get("learn_plugin_ids", [])) != TYPE_ARRAY:
+                return {"ok": false, "reason": "invalid_terminal_selection"}
+            return Rules.prepare_terminal(state, vaccine_id, generation, run_id,
+                receipt_id, str(command.get("outcome", "")),
+                str(command.get("terminal_receipt_id", "")),
+                command.get("learn_plugin_ids", []))
         "mission_xp":
             if not Model.natural(command.get("amount")):
                 return {"ok": false, "reason": "invalid_xp"}
