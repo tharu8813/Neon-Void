@@ -5,6 +5,7 @@ const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Fence = preload("res://scripts/rework/persistence/lifetime_fence.gd")
 const STATE_FILE := "state.json"
 const BACKUP_FILE := "state.json.bak"
+const INTENT_FILE := "state.json.intent"
 const FORMAT: int = 1
 const MAX_BYTES: int = 16 * 1024 * 1024
 
@@ -99,6 +100,37 @@ static func _read_fence(slot_path: String) -> Dictionary:
         return {"ok": false, "reason": "lifetime_fence_missing_or_unreadable"}
     return Fence.parse(raw.bytes)
 
+static func _read_intent(slot_path: String) -> Dictionary:
+    var raw: Dictionary = _read_bytes(slot_path.path_join(INTENT_FILE))
+    if not raw.ok:
+        return {"ok": false, "reason": "intent_missing_or_unreadable"}
+    var parsed: Dictionary = _decode(raw.bytes)
+    if not parsed.ok:
+        return {"ok": false, "reason": "intent_" + str(parsed.reason)}
+    if parsed.state.slot_id != slot_path.get_file().trim_prefix("rework-slot-"):
+        return {"ok": false, "reason": "intent_slot_mismatch"}
+    parsed["bytes"] = raw.bytes
+    return parsed
+
+static func _same_snapshot(first: Dictionary, second: Dictionary) -> bool:
+    return int(first.revision) == int(second.revision) \
+        and JSON.stringify(first.state, "", true, true) == \
+            JSON.stringify(second.state, "", true, true)
+
+static func _cleanup_committed_intent(slot_path: String) -> Dictionary:
+    if not FileAccess.file_exists(slot_path.path_join(INTENT_FILE)):
+        return {"ok": true}
+    var pending: Dictionary = _read_intent(slot_path)
+    if not pending.ok:
+        return pending
+    # read() checks both the checksum and the lifetime fence.
+    var current: Dictionary = read(slot_path)
+    if not current.ok or not _same_snapshot(current, pending):
+        return {"ok": false, "reason": "intent_requires_reconciliation"}
+    if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
+        return {"ok": false, "reason": "intent_cleanup_failed"}
+    return {"ok": true}
+
 static func read(slot_path: String) -> Dictionary:
     if not _valid_slot(slot_path):
         return {"ok": false, "reason": "invalid_slot_path"}
@@ -114,6 +146,12 @@ static func read(slot_path: String) -> Dictionary:
             return sealed
         if not Fence.allows(result.state, sealed.fence):
             return {"ok": false, "reason": "lifetime_fence_violation"}
+        if FileAccess.file_exists(slot_path.path_join(INTENT_FILE)):
+            var pending: Dictionary = _read_intent(slot_path)
+            if not pending.ok:
+                return pending
+            if not _same_snapshot(result, pending):
+                return {"ok": false, "reason": "intent_requires_reconciliation"}
     return result
 
 static func initialize(slot_path: String, state: Dictionary) -> Dictionary:
@@ -235,6 +273,9 @@ static func _monotonic_transition(previous: Dictionary, upcoming: Dictionary) ->
 
 static func _transact_locked(slot_path: String, transition: Callable,
         expected_revision: int, fault_at: String) -> Dictionary:
+    var pending_cleanup: Dictionary = _cleanup_committed_intent(slot_path)
+    if not pending_cleanup.ok:
+        return {"applied": false, "reason": pending_cleanup.reason}
     var loaded: Dictionary = read(slot_path)
     if not loaded.ok:
         return {"applied": false, "reason": loaded.reason}
@@ -260,6 +301,10 @@ static func _transact_locked(slot_path: String, transition: Callable,
         return {"applied": false, "reason": "backup_failed"}
     if fault_at == "after_backup":
         return {"applied": false, "reason": "simulated_before_primary"}
+    # The exact intended next state is durable before the irreversible
+    # lifetime fence. Recovery can roll FORWARD, never refund a consumed clone.
+    if not _write_atomic(slot_path.path_join(INTENT_FILE), encoded.bytes):
+        return {"applied": false, "reason": "intent_write_failed"}
     var fence_before: Dictionary = _read_fence(slot_path)
     if not fence_before.ok:
         return {"applied": false, "reason": fence_before.reason}
@@ -278,6 +323,10 @@ static func _transact_locked(slot_path: String, transition: Callable,
     var checked: Dictionary = read(slot_path)
     if not checked.ok or int(checked.revision) != int(loaded.revision) + 1:
         return {"applied": false, "reason": "post_write_verification_failed"}
+    if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
+        # State is already committed; caller may retry same receipt, which
+        # remains in the committed envelope and cannot be awarded twice.
+        return {"applied": false, "reason": "committed_intent_cleanup_pending"}
     return {"applied": true, "revision": checked.revision,
         "event": changed.get("event", "updated")}
 
@@ -295,6 +344,10 @@ static func restore_backup(slot_path: String, explicit_consent: bool = false) ->
     return result
 
 static func _restore_locked(slot_path: String) -> Dictionary:
+    # A pending full-state transaction must be reconciled before any old
+    # backup can be promoted, or a receipt could be silently undone.
+    if FileAccess.file_exists(slot_path.path_join(INTENT_FILE)):
+        return {"ok": false, "reason": "intent_requires_reconciliation"}
     if read(slot_path).ok:
         return {"ok": false, "reason": "primary_is_valid"}
     var backup_bytes: Dictionary = _read_bytes(slot_path.path_join(BACKUP_FILE))
@@ -321,6 +374,65 @@ static func _restore_locked(slot_path: String) -> Dictionary:
     if not _write_atomic(slot_path.path_join(STATE_FILE), backup_bytes.bytes):
         return {"ok": false, "reason": "restore_write_failed"}
     return read(slot_path)
+
+static func recover_interrupted_commit(slot_path: String,
+        explicit_consent: bool = false) -> Dictionary:
+    ## Offline, opt-in roll-forward. Never recover from Python/legacy paths.
+    ## All instances must be stopped by the operator before consent.
+    if not explicit_consent or not _valid_slot(slot_path):
+        return {"ok": false, "reason": "offline_consent_required"}
+    var locked: Dictionary = _take_lock(slot_path)
+    if not locked.ok:
+        return locked
+    var result: Dictionary = _recover_intent_locked(slot_path)
+    if not _release_lock(slot_path, locked.token):
+        result["lock_release_failed"] = true
+    return result
+
+static func _recover_intent_locked(slot_path: String) -> Dictionary:
+    var pending: Dictionary = _read_intent(slot_path)
+    if not pending.ok:
+        return pending
+    var saved_backup: Dictionary = _read_bytes(slot_path.path_join(BACKUP_FILE))
+    if not saved_backup.ok:
+        return {"ok": false, "reason": "intent_parent_backup_missing"}
+    var base: Dictionary = _decode(saved_backup.bytes)
+    if not base.ok or base.state.slot_id != pending.state.slot_id \
+            or int(base.revision) + 1 != int(pending.revision) \
+            or not _monotonic_transition(base.state, pending.state):
+        return {"ok": false, "reason": "intent_parent_mismatch"}
+    var fenced: Dictionary = _read_fence(slot_path)
+    if not fenced.ok:
+        return fenced
+    if not Fence.allows(pending.state, fenced.fence):
+        return {"ok": false, "reason": "intent_lifetime_mismatch"}
+    var primary_bytes: Dictionary = _read_bytes(slot_path.path_join(STATE_FILE))
+    var primary: Dictionary = {}
+    if primary_bytes.ok:
+        primary = _decode(primary_bytes.bytes)
+        if primary.get("reason", "") in ["future_format", "future_schema"]:
+            return {"ok": false, "reason": "future_version_must_not_rollback"}
+    var already_committed: bool = primary.get("ok", false) \
+        and _same_snapshot(primary, pending)
+    var prior_valid: bool = primary.get("ok", false) \
+        and _same_snapshot(primary, base)
+    if not already_committed and primary.get("ok", false) and not prior_valid:
+        return {"ok": false, "reason": "intent_primary_conflict"}
+    if not already_committed:
+        if primary_bytes.ok and not prior_valid:
+            var original_path: String = slot_path.path_join(
+                "state.invalid-" + str(Time.get_ticks_usec()) + ".json")
+            if not _write_atomic(original_path, primary_bytes.bytes):
+                return {"ok": false, "reason": "intent_original_preservation_failed"}
+        if not _write_atomic(slot_path.path_join(STATE_FILE), pending.bytes):
+            return {"ok": false, "reason": "intent_roll_forward_failed"}
+    var checked: Dictionary = read(slot_path)
+    if not checked.ok or not _same_snapshot(checked, pending):
+        return {"ok": false, "reason": "intent_post_recovery_mismatch"}
+    if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
+        return {"ok": false, "reason": "intent_cleanup_failed"}
+    return {"ok": true, "revision": checked.revision,
+        "recovered": not already_committed}
 
 static func release_orphan_lock_offline(slot_path: String, token: String,
         explicit_all_processes_closed: bool = false) -> Dictionary:
