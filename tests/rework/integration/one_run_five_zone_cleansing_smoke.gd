@@ -101,6 +101,12 @@ func _kill_real_B(router: Variant, actor_id: String,
         if bool(pilot.get("frozen")) or not _drain_offers():
             return false
         var target: Vector3 = router.enemies[actor_id]["node"].global_position
+        if world.current_mode != "motherboard":
+            # Deterministic combat fixture positions the *actual player body*
+            # on a valid open floor tile close to the B enemy, rather than
+            # firing indefinitely through D procedural walls from a console.
+            # Still only B projectile collision can issue an accepted kill.
+            world.player.global_position = target + Vector3(0.5, 0.5, 0.0)
         var commands: Dictionary = {"VACCINE": {
             "move": Vector2.ZERO, "aim_world": target, "fire": true}}
         for enemy in router.enemies.keys():
