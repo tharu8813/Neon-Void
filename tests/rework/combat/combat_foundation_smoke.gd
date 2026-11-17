@@ -5,6 +5,7 @@ const Damage = preload("res://scripts/rework/combat/damage.gd")
 const Statuses = preload("res://scripts/rework/combat/statuses.gd")
 const Events = preload("res://scripts/rework/combat/events.gd")
 const RuntimeCases = preload("res://tests/rework/combat/runtime_cases.gd")
+const ProductionCases = preload("res://tests/rework/combat/production_cpu_adapter_cases.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -132,6 +133,7 @@ func _run() -> void:
     var forbidden: Dictionary = bus.submit_root({"kind": "manual", "allowed_proc_triggers": ["on_kill"]})
     check(bus.submit_proc(forbidden, "on_hit_plugin", {"trigger_kind": "on_hit", "target_id": "B"}).is_empty(), "proc trigger permission")
     RuntimeCases.run(Callable(self, "check"))
+    ProductionCases.run(Callable(self, "check"), root)
     if failures == 0:
         print("REWORK B COMBAT PASS (damage/status/procs/60 Hz, seed=7452)")
     quit(1 if failures > 0 else 0)

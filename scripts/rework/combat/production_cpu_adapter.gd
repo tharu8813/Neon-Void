@@ -1,0 +1,471 @@
+extends "res://scripts/rework/combat/combat_node_bridge.gd"
+## B-owned opt-in replacement for D demo_combat_bridge.gd.
+## Same D public methods/signals, real 60Hz B runtime and C effect sink.
+## D/A only switch the preload; no D/world/root file is edited here.
+signal enemy_defeated(actor_id: String, validated_receipt: String)
+signal player_died()
+signal health_updated(health: float, max_health: float)
+signal mana_updated(mana: float, maximum: float)
+signal plugin_failure(reason: String)
+const Stats = preload("res://scripts/rework/combat/stats.gd")
+const Statuses = preload("res://scripts/rework/combat/statuses.gd")
+const AI = preload("res://scripts/rework/combat/enemy_ai.gd")
+const Maps = preload("res://scripts/rework/world/procedural_map.gd")
+const CAdapter = preload("res://scripts/rework/combat/c_effect_adapter.gd")
+const PLAYER_ID := "VACCINE"
+
+var player: CharacterBody3D = null
+var camera: Camera3D = null
+var map_plan: Dictionary = {}
+var run_id: String = ""
+var enemies: Dictionary = {}
+var player_stats: Dictionary = {}
+var game_over: bool = false
+var effects = CAdapter.new()
+var last_path_cell: Vector2i = Vector2i(-100, -100)
+var cached_distances: PackedInt32Array = PackedInt32Array()
+var pending_input: Dictionary = {}
+var last_health: float = -1.0
+var last_mana: float = -1.0
+var last_plugin_fault: String = ""
+var _reported_deaths: Dictionary = {}
+var _projectile_kinds: Dictionary = {}
+var _old_projectiles: Dictionary = {}
+var _old_player_movement: bool = true
+var _has_player_movement: bool = false
+var balance_draft: Dictionary = {
+    "seed": 42,
+    "player_attack_base_damage": 4.0,
+    "projectile_speed": 11.0,
+    "dash_distance": 2.0,
+    "dash_cooldown_ticks": 60,
+    "enemy_health": 20.0,
+    "boss_health": 220.0,
+    "enemy_move_speed": 2.2,
+    "boss_move_speed": 1.6,
+    "enemy_attack_speed": 0.9,
+    "enemy_attack_range": 1.15,
+    "enemy_damage_base": 1.0,
+    "boss_control_resistance": 0.5,
+    "projectile_radius": 0.09
+}
+
+func _ready() -> void:
+    combat_actor_died.connect(_on_combat_actor_died)
+    combat_notice.connect(_on_combat_notice)
+    set_projectile_factory(Callable(self, "_make_bullet_visual"))
+
+func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
+        world_map: Dictionary, new_run_id: String) -> void:
+    ## D original 4-argument signature. Return/region changes reset old combat.
+    reset()
+    if player_node == null or camera_node == null or new_run_id.is_empty():
+        return
+    player = player_node
+    camera = camera_node
+    run_id = new_run_id
+    map_plan = world_map.duplicate(true)
+    var encounter_seed: int = int(balance_draft.get("seed", 42)) ^ int(new_run_id.hash())
+    setup(new_run_id, encounter_seed, {
+        "encounter_id": new_run_id,
+        "default_projectile_speed": float(balance_draft["projectile_speed"]),
+        "projectile_radius_scale": 0.01
+    })
+    var stats: Dictionary = Stats.make(balance_draft.get("player_stats", {}))
+    var attack: Dictionary = {
+        "damage_type": "physical",
+        "base_damage": float(balance_draft["player_attack_base_damage"]),
+        "ad_ratio": 1.0, "ap_ratio": 0.0,
+        "is_on_hit": true, "can_crit": true
+    }
+    if not register_node(PLAYER_ID, "vaccine", player, stats, {
+        "player_controlled": true, "external_movement": true,
+        "radius": 0.3, "projectile_speed": float(balance_draft["projectile_speed"]),
+        "projectile_radius": float(balance_draft["projectile_radius"]),
+        "attack_definition": attack, "dash_definition": {
+            "distance": float(balance_draft["dash_distance"]),
+            "cooldown_ticks": int(balance_draft["dash_cooldown_ticks"])
+        }
+    }):
+        reset()
+        return
+    simulation.projectile_segment_filter = Callable(self, "_clip_projectile_to_floor")
+    effects.attach(simulation, PLAYER_ID, new_run_id, encounter_seed ^ 0x70726f63)
+    _has_player_movement = _has_property(player, "movement_enabled")
+    if _has_player_movement:
+        _old_player_movement = bool(player.get("movement_enabled"))
+    player_stats = simulation.actors[PLAYER_ID]["stats"]
+    game_over = false
+    _emit_resource_changes(true)
+
+func _has_property(object: Object, property_name: String) -> bool:
+    for descriptor in object.get_property_list():
+        if str(descriptor.get("name", "")) == property_name:
+            return true
+    return false
+
+func reset() -> void:
+    running = false
+    if player != null and is_instance_valid(player) and _has_player_movement:
+        player.set("movement_enabled", _old_player_movement)
+    for enemy in enemies.values():
+        var body: Variant = enemy.get("body", null)
+        if is_instance_valid(body):
+            body.queue_free()
+    enemies.clear()
+    for visual in visual_nodes.values():
+        if is_instance_valid(visual):
+            visual.queue_free()
+    visual_nodes.clear()
+    bound_nodes.clear()
+    intents.clear()
+    _projectile_kinds.clear()
+    _old_projectiles.clear()
+    _reported_deaths.clear()
+    pending_input.clear()
+    accumulator = 0.0
+    last_path_cell = Vector2i(-100, -100)
+    cached_distances = PackedInt32Array()
+    run_id = ""
+    map_plan.clear()
+    player = null
+    camera = null
+    _has_player_movement = false
+    last_health = -1.0
+    last_mana = -1.0
+    last_plugin_fault = ""
+    game_over = false
+    effects = CAdapter.new()
+    simulation.begin(0, {"encounter_id": "cleared"})
+    player_stats = {}
+
+func spawn_hostile(info: Dictionary) -> bool:
+    var id: String = str(info.get("actor_id", ""))
+    if not running or id.is_empty() or enemies.has(id) or simulation.actors.has(id):
+        return false
+    var position: Vector3 = info.get("position", Vector3.ZERO)
+    if not map_plan.is_empty():
+        var tile: Vector2i = _cell(position)
+        if not Maps.is_floor(map_plan, tile):
+            return false
+    var boss: bool = bool(info.get("boss", false))
+    var body := CharacterBody3D.new()
+    body.name = "Hostile_" + id
+    var collider := CollisionShape3D.new()
+    var capsule := CapsuleShape3D.new()
+    capsule.radius = 0.39 if boss else 0.26
+    capsule.height = 1.2 if boss else 0.9
+    collider.shape = capsule
+    body.add_child(collider)
+    var mesh := MeshInstance3D.new()
+    var sphere := SphereMesh.new()
+    sphere.radius = 0.44 if boss else 0.27
+    sphere.height = 0.88 if boss else 0.54
+    mesh.mesh = sphere
+    var material := StandardMaterial3D.new()
+    material.albedo_color = Color(1.0, 0.12, 0.68) if boss else Color(0.92, 0.24, 0.3)
+    mesh.material_override = material
+    body.add_child(mesh)
+    add_child(body)
+    body.global_position = position + Vector3.UP * 0.5
+    var hp: float = float(info.get("max_health",
+        balance_draft["boss_health"] if boss else balance_draft["enemy_health"]))
+    var speed: float = float(info.get("move_speed",
+        balance_draft["boss_move_speed"] if boss else balance_draft["enemy_move_speed"]))
+    var combat_stats: Dictionary = Stats.make({
+        "max_health": hp, "health": hp, "move_speed": speed,
+        "attack_speed": float(balance_draft["enemy_attack_speed"]),
+        "attack_damage": 9.0 if boss else 3.0,
+        "boss_control_resistance": float(balance_draft["boss_control_resistance"]) if boss else 0.0
+    })
+    var registered: bool = register_node(id, "virus", body, combat_stats, {
+        "radius": 0.44 if boss else 0.27,
+        "external_movement": true, "attack_range": float(balance_draft["enemy_attack_range"]),
+        "preferred_min_range": 0.0, "preferred_max_range": 0.85,
+        "projectile_speed": float(balance_draft["projectile_speed"]),
+        "projectile_radius": 0.12,
+        "attack_definition": {"damage_type": "physical",
+            "base_damage": float(balance_draft["enemy_damage_base"]),
+            "ad_ratio": 1.0, "can_crit": false}
+    })
+    if not registered:
+        body.queue_free()
+        return false
+    enemies[id] = {"body": body, "boss": boss, "speed": speed}
+    return true
+
+func configure_plugins(levels: Dictionary, seed: int) -> bool:
+    ## A calls this from E's durable mission snapshot after confirmed rewards.
+    return effects.configure_levels(levels, seed)
+
+func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
+    return effects.upgrade_plugin(plugin_id, level)
+
+func learn_active_skill(definition: Dictionary, slot: int,
+        progression_authorized: bool) -> bool:
+    return simulation.learn_skill(PLAYER_ID, definition, slot, progression_authorized)
+
+func set_combat_input(command: Dictionary) -> void:
+    ## A may override keyboard sampling with camera-correct, remappable input.
+    pending_input = command.duplicate(true)
+
+func _key_direction() -> Vector2:
+    var direction: Vector2 = Vector2.ZERO
+    if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+        direction.x -= 1.0
+    if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+        direction.x += 1.0
+    if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
+        direction.y -= 1.0
+    if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
+        direction.y += 1.0
+    return direction.normalized()
+
+func _player_command() -> Dictionary:
+    var aim_world: Vector3 = player.global_position + Vector3.RIGHT * 100.0
+    if camera != null and is_instance_valid(camera) and camera.has_method("direction_to_window_pointer"):
+        var size: Vector2 = get_viewport().get_visible_rect().size
+        var pixel: Vector2 = get_viewport().get_mouse_position()
+        var pointing: Variant = camera.call("direction_to_window_pointer",
+            player.global_position, pixel, size)
+        if pointing is Vector3:
+            var vector: Vector3 = pointing
+            vector.y = 0.0
+            if vector.length_squared() > 0.000001:
+                aim_world = player.global_position + vector.normalized() * 100.0
+    var movement: Vector2 = _key_direction()
+    var command: Dictionary = {
+        "move": movement, "aim_world": aim_world,
+        "fire": not enemies.is_empty(), "external_movement": true,
+        "dash": Input.is_key_pressed(KEY_SPACE)
+    }
+    # Temporary customizable fallback, not a finalized GDD key binding.
+    if Input.is_key_pressed(KEY_Q):
+        command["skill_slot"] = 0
+    elif Input.is_key_pressed(KEY_E):
+        command["skill_slot"] = 1
+    elif Input.is_key_pressed(KEY_C):
+        command["skill_slot"] = 2
+    command.merge(pending_input, true)
+    return command
+
+func _physics_process(delta: float) -> void:
+    if not running or player == null or game_over or not is_instance_valid(player):
+        return
+    accumulator += maxf(0.0, delta)
+    var steps: int = 0
+    while accumulator >= STEP and steps < 8 and running and not game_over:
+        advance_production_tick()
+        accumulator -= STEP
+        steps += 1
+
+func advance_production_tick() -> Array[Dictionary]:
+    ## Testable entry point: exactly one 60Hz gameplay tick, even headless.
+    if not running or game_over or player == null:
+        return []
+    effects.notices.clear()
+    var input: Dictionary = _player_command()
+    intents[PLAYER_ID] = input
+    _old_projectiles.clear()
+    for p in simulation.projectiles:
+        _old_projectiles[str(p["id"])] = p.duplicate(true)
+    var tick_run_id: String = run_id
+    var base_notes: Array[Dictionary] = super.advance_one_tick()
+    # D/A death ACK may synchronously return to hub during signal emission.
+    if not running or player == null or run_id != tick_run_id:
+        return base_notes
+    _move_physical_player()
+    _move_physical_enemies()
+    _notify_retired_projectiles(base_notes)
+    var c_notes: Array[Dictionary] = effects.after_fixed_step(simulation.last_processed_events)
+    for note in c_notes:
+        combat_notice.emit(note)
+        if str(note.get("kind", "")) == "death":
+            combat_actor_died.emit(str(note["actor_id"]), str(note.get("killer_id", PLAYER_ID)))
+        if str(note.get("kind", "")) == "plugin_error":
+            var reason: String = str(note.get("reason", "unknown_plugin_error"))
+            if reason != last_plugin_fault:
+                last_plugin_fault = reason
+                plugin_failure.emit(reason)
+    if running and run_id == tick_run_id:
+        _emit_resource_changes()
+        pending_input.clear()
+    var all_notices: Array[Dictionary] = base_notes.duplicate(true)
+    all_notices.append_array(c_notes)
+    return all_notices
+
+func _move_physical_player() -> void:
+    var state: Dictionary = simulation.snapshot(PLAYER_ID)
+    if state.is_empty() or not bool(state["alive"]):
+        return
+    var destination: Vector3 = state["position"]
+    var displacement: Vector3 = destination - player.global_position
+    if displacement.length_squared() > 0.000001:
+        player.move_and_collide(displacement)
+    simulation.set_actor_position(PLAYER_ID, player.global_position)
+    if _has_player_movement:
+        var flags: Dictionary = Statuses.active_flags(state["status_state"])
+        player.set("movement_enabled", _old_player_movement and
+            not bool(flags.get("stopped", false)) and not bool(flags.get("rooted", false)))
+
+func _move_physical_enemies() -> void:
+    if not map_plan.is_empty():
+        var tile: Vector2i = _cell(player.global_position)
+        if tile != last_path_cell:
+            last_path_cell = tile
+            cached_distances = Maps.distance_field(map_plan, tile)
+    for id in enemies.keys():
+        if not simulation.actors.has(id) or not bool(simulation.actors[id]["alive"]):
+            continue
+        var entity: Dictionary = enemies[id]
+        var body: CharacterBody3D = entity["body"]
+        if not is_instance_valid(body):
+            continue
+        var actor: Dictionary = simulation.actors[id]
+        var flags: Dictionary = Statuses.active_flags(actor["status_state"])
+        var movement: Vector2 = Vector2.ZERO
+        if not bool(flags.get("stopped", false)) and not bool(flags.get("rooted", false)):
+            var decision: Dictionary = AI.decide(actor, simulation.actors[PLAYER_ID])
+            movement = decision["move"]
+        var destination: Vector3 = player.global_position
+        if not map_plan.is_empty() and movement.length_squared() > 0.0:
+            destination = _next_path_target(body.global_position, destination)
+            var vector: Vector3 = destination - body.global_position
+            movement = Vector2(vector.x, vector.z).normalized() if vector.length_squared() > 0.000001 else Vector2.ZERO
+        var speed: float = maxf(0.0, float(simulation._effective_stats(actor).get("move_speed", 0.0)))
+        body.velocity = Vector3(movement.x, 0.0, movement.y) * speed
+        body.move_and_slide()
+        simulation.set_actor_position(str(id), body.global_position)
+
+func _cell(point: Vector3) -> Vector2i:
+    return Vector2i(floori(point.x / Maps.TILE_SIZE), floori(point.z / Maps.TILE_SIZE))
+
+func _next_path_target(source: Vector3, fallback: Vector3) -> Vector3:
+    var cell: Vector2i = _cell(source)
+    if cached_distances.is_empty() or not Maps.is_floor(map_plan, cell):
+        return fallback
+    var width: int = int(map_plan["width"])
+    var candidate: Vector2i = cell
+    var score: int = cached_distances[cell.y * width + cell.x]
+    for direction in [Vector2i(0,-1), Vector2i(1,0), Vector2i(0,1), Vector2i(-1,0)]:
+        var other: Vector2i = cell + direction
+        if not Maps.is_floor(map_plan, other):
+            continue
+        var distance: int = cached_distances[other.y * width + other.x]
+        if distance >= 0 and (score < 0 or distance < score):
+            score = distance
+            candidate = other
+    return Maps.cell_to_world(candidate) if candidate != cell else fallback
+
+func _clip_projectile_to_floor(start: Vector3, finish: Vector3,
+        _projectile: Dictionary) -> Dictionary:
+    if map_plan.is_empty():
+        return {"position": finish, "blocked": false}
+    var span: Vector2 = Vector2(finish.x - start.x, finish.z - start.z)
+    var step_size: float = maxf(0.05, Maps.TILE_SIZE * 0.2)
+    var intervals: int = maxi(1, ceili(span.length() / step_size))
+    var safe: Vector3 = start
+    for index in range(1, intervals + 1):
+        var point: Vector3 = start.lerp(finish, float(index) / float(intervals))
+        if not Maps.is_floor(map_plan, _cell(point)):
+            return {"position": safe, "blocked": true}
+        safe = point
+    return {"position": finish, "blocked": false}
+
+func _make_bullet_visual(p: Dictionary) -> Node3D:
+    var shot := MeshInstance3D.new()
+    var mesh := SphereMesh.new()
+    mesh.radius = maxf(0.025, float(p.get("radius", 0.09)))
+    mesh.height = mesh.radius * 2.0
+    shot.mesh = mesh
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = Color(0.25, 0.95, 1.0) if str(p.get("team", "")) == "vaccine" else Color(1.0, 0.3, 0.4)
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    shot.material_override = mat
+    return shot
+
+func _notify_retired_projectiles(notes: Array[Dictionary]) -> void:
+    for event in notes:
+        if str(event.get("kind", "")) != "projectile_retire":
+            continue
+        var id: String = str(event.get("id", ""))
+        if _old_projectiles.has(id):
+            effects.handle_boomerang_return(_old_projectiles[id])
+
+func _emit_resource_changes(force: bool = false) -> void:
+    if not simulation.actors.has(PLAYER_ID):
+        return
+    var actor: Dictionary = simulation.actors[PLAYER_ID]
+    var hp: float = float(actor["stats"]["health"])
+    var maximum: float = float(actor["stats"]["max_health"])
+    if force or not is_equal_approx(last_health, hp):
+        last_health = hp
+        health_updated.emit(hp, maximum)
+    var skills: Variant = actor["skills"]
+    if force or not is_equal_approx(last_mana, skills.mana):
+        last_mana = skills.mana
+        mana_updated.emit(skills.mana, skills.max_mana)
+    player_stats = actor["stats"]
+
+func _on_combat_notice(_event: Dictionary) -> void:
+    pass
+
+func _on_combat_actor_died(actor_id: String, _killer_id: String) -> void:
+    if _reported_deaths.has(actor_id):
+        return
+    _reported_deaths[actor_id] = true
+    if actor_id == PLAYER_ID:
+        game_over = true
+        if _has_player_movement and is_instance_valid(player):
+            player.set("movement_enabled", false)
+        player_died.emit()
+        return
+    if not enemies.has(actor_id):
+        return
+    var body: Variant = enemies[actor_id].get("body", null)
+    enemies.erase(actor_id)
+    bound_nodes.erase(actor_id)
+    if is_instance_valid(body):
+        body.queue_free()
+    enemy_defeated.emit(actor_id, "%s:enemy:%s:death" % [run_id, actor_id])
+
+func _apply_hit(enemy_id: String, hit_key: String) -> void:
+    ## D existing headless test compatibility only; not used for live aiming.
+    if not running or game_over or not enemies.has(enemy_id):
+        return
+    simulation.bus.set_tick(simulation.fixed_tick)
+    var root: Dictionary = simulation.bus.submit_root({
+        "kind": "damage", "actor_id": PLAYER_ID, "target_id": enemy_id,
+        "attack_id": "test_hit", "hit_key": hit_key,
+        "trigger_kind": "on_hit", "source_tags": ["basic_attack", "projectile_hit"],
+        "attack": simulation.actors[PLAYER_ID]["attack_definition"].duplicate(true),
+        "allowed_proc_triggers": ["on_hit", "on_crit"]
+    })
+    if root.is_empty():
+        return
+    simulation.presentation.clear()
+    var processed: Array[Dictionary] = simulation.bus.drain_batch(
+        int(simulation.settings.get("event_work_per_tick", 512)),
+        Callable(simulation, "_resolve_event"))
+    for note in simulation.presentation:
+        combat_notice.emit(note)
+        if str(note.get("kind", "")) == "death":
+            combat_actor_died.emit(str(note["actor_id"]), str(note.get("killer_id", PLAYER_ID)))
+    effects.notices.clear()
+    var others: Array[Dictionary] = effects.after_fixed_step(processed)
+    for note in others:
+        combat_notice.emit(note)
+        if str(note.get("kind", "")) == "death":
+            combat_actor_died.emit(str(note["actor_id"]), str(note.get("killer_id", PLAYER_ID)))
+    _emit_resource_changes()
+
+func diagnostics() -> Dictionary:
+    return {
+        "run_id": run_id, "active": running, "tick": simulation.fixed_tick,
+        "actors": simulation.actors.size(), "enemies": enemies.size(),
+        "projectiles": simulation.projectiles.size(),
+        "combat_counters": simulation.counters.duplicate(true),
+        "proc_metrics": simulation.bus.metrics.duplicate(true),
+        "pending_C_events": effects.outstanding_events(),
+        "C_fault": effects.fault
+    }
