@@ -133,12 +133,58 @@ static func valid(mission: Dictionary) -> bool:
                 or not _whole(info.seed) or not _id(info.generator_id):
             return false
         if not mission.generated_map_seeds.has(region) \
+                or not _whole(mission.generated_map_seeds[region]) \
                 or int(mission.generated_map_seeds[region]) != int(info.seed):
             return false
     if cp.active_offer != null:
         if int(mission.pending_plugin_offers) < 1 \
+                or int(cp.offer_sequence) < 1 \
+                or cp.active_offer.offer_id != str(mission.run_id) + ":" + str(int(cp.offer_sequence)) \
                 or mission.claimed_offer_ids.has(cp.active_offer.offer_id) \
                 or cp.terminal_pending != null:
+            return false
+    return true
+
+static func monotonic(before: Dictionary, after: Dictionary) -> bool:
+    ## Store boundary: even direct callers cannot erase the checkpoint,
+    ## reroll multiple cards or silently roll back a staged terminal intent.
+    var old_has: bool = before.environment_rolls.has(KEY)
+    var new_has: bool = after.environment_rolls.has(KEY)
+    if not old_has:
+        return true
+    if not new_has or not valid(after):
+        return false
+    var old: Dictionary = before.environment_rolls[KEY]
+    var now: Dictionary = after.environment_rolls[KEY]
+    if int(now.offer_sequence) < int(old.offer_sequence) \
+            or int(now.offer_sequence) > int(old.offer_sequence) + 1:
+        return false
+    for region in old.regions:
+        if not now.regions.has(region) or now.regions[region] != old.regions[region]:
+            return false
+    if old.terminal_pending != null and now.terminal_pending != old.terminal_pending:
+        return false
+    if old.active_offer != null:
+        if now.active_offer == null:
+            if not after.claimed_offer_ids.has(old.active_offer.offer_id):
+                return false
+        else:
+            if old.active_offer.offer_id != now.active_offer.offer_id \
+                    or old.active_offer.context != now.active_offer.context \
+                    or int(now.rerolls_left) > int(old.rerolls_left) \
+                    or int(now.rerolls_left) < int(old.rerolls_left) - 1 \
+                    or (old.active_offer.high_seen and not now.active_offer.high_seen):
+                return false
+            var changed: int = 0
+            for i in range(3):
+                if old.active_offer.cards[i] != now.active_offer.cards[i]:
+                    changed += 1
+            if changed > 1:
+                return false
+            if changed > 0 and int(now.rerolls_left) != int(old.rerolls_left) - 1:
+                return false
+    elif now.active_offer != null:
+        if int(now.offer_sequence) != int(old.offer_sequence) + 1:
             return false
     return true
 
@@ -164,7 +210,8 @@ static func record_region(mission: Dictionary, region: String, seed: int,
     if cp.regions.has(region):
         return {"ok": false, "reason": "region_seed_already_committed"}
     if mission.generated_map_seeds.has(region) \
-            and int(mission.generated_map_seeds[region]) != seed:
+            and (not _whole(mission.generated_map_seeds[region]) \
+                or int(mission.generated_map_seeds[region]) != seed):
         return {"ok": false, "reason": "map_seed_conflict"}
     mission.generated_map_seeds[region] = seed
     cp.regions[region] = {"seed": seed, "generator_id": generator_id}
@@ -211,6 +258,11 @@ static func record_offer(mission: Dictionary, snapshot: Dictionary,
                 or int(snapshot.missed_screens) != int(mission.pity_counter) \
                 or candidate.offer_id != str(mission.run_id) + ":" + str(int(cp.offer_sequence) + 1):
             return {"ok": false, "reason": "invalid_new_offer_transition"}
+        var initial_high: bool = false
+        for card in candidate.cards:
+            initial_high = initial_high or str(card.rarity) in ["legendary", "mythic"]
+        if initial_high != bool(candidate.high_seen):
+            return {"ok": false, "reason": "initial_pity_screen_mismatch"}
         cp.offer_sequence += 1
     else:
         # One-card reroll: same offer/context, exactly one slot may change,
@@ -227,6 +279,12 @@ static func record_offer(mission: Dictionary, snapshot: Dictionary,
                 changed += 1
         if changed > 1 or (current.high_seen and not candidate.high_seen):
             return {"ok": false, "reason": "reroll_mutated_other_cards"}
+        if not current.high_seen and candidate.high_seen:
+            var new_high: bool = false
+            for card in candidate.cards:
+                new_high = new_high or str(card.rarity) in ["legendary", "mythic"]
+            if not new_high:
+                return {"ok": false, "reason": "forged_high_rarity_pity"}
     cp.active_offer = candidate
     cp.rerolls_left = next_rerolls
     cp.rng_state_text = rng_state_text
