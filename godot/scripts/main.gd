@@ -474,6 +474,12 @@ func _on_card_selected(index: int) -> void:
     ui.call("complete_reward_selection")
     mode = "clean" if campaign.is_sector_clean(campaign.active_sector) else "between"
     _resume_gameplay()
+    # Source Python game.py::pick_upgrade immediately starts the next wave.
+    # E has already durably committed this choice; this call only resumes C
+    # active combat and cannot award duplicate XP or pick a different card.
+    if mode == "between" and not start_next_wave():
+        _pause_gameplay()
+        ui.call("show_error", "다음 웨이브를 시작하지 못했습니다. 저장된 확정 보상은 유지됩니다.")
 
 func _on_player_hit(_damage: float, infection_delta: float) -> void:
     campaign.apply_infection(infection_delta)
@@ -1150,6 +1156,13 @@ func resume_checkpoint() -> bool:
         else:
             mode = "between"
             _resume_gameplay()
+            # An E checkpoint with scene=play records the last confirmed
+            # wave, not active bullets. Resume the next unconfirmed wave
+            # automatically, exactly as Python's software pickup does.
+            if not start_next_wave():
+                _pause_gameplay()
+                ui.call("show_error", "저장된 웨이브 재개에 실패했습니다. 기존 체크포인트를 보존합니다.")
+                return false
     else:
         mode = "dead"
         _pause_gameplay()
