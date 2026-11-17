@@ -155,12 +155,28 @@ static func _music_note(buffer: PackedFloat32Array, at: float, duration: float,
             envelope *= exp(-decay * t)
         buffer[j] = clampf(buffer[j] + sample * envelope * gain, -1.0, 1.0)
 
+static func _music_hat(buffer: PackedFloat32Array, at: float,
+        rng: RandomNumberGenerator) -> void:
+    # Original audio.py applies a 30ms exp(-90t) white-noise hat on every
+    # odd arpeggio step. This is deterministic but not bit-identical to
+    # Python's random.Random(77) sample stream.
+    var start: int = int(at * MUSIC_SR)
+    for i in range(int(0.03 * MUSIC_SR)):
+        var index: int = start + i
+        if index < 0 or index >= buffer.size():
+            break
+        var time: float = float(i) / float(MUSIC_SR)
+        var v: float = (1.0 if rng.randf() > 0.5 else -1.0) * exp(-time * 90.0) * 0.05
+        buffer[index] = clampf(buffer[index] + v, -1.0, 1.0)
+
 static func build_music() -> AudioStreamWAV:
     # The original four-bar 100 BPM progression (Am, F, C, G) and arpeggios
     # from audio.py. Godot is not guaranteed PCM-bit-identical to Python waveOut.
     var beat: float = 60.0 / 100.0
     var samples := PackedFloat32Array()
     samples.resize(int(beat * 4.0 * 4.0 * float(MUSIC_SR)))
+    var hats := RandomNumberGenerator.new()
+    hats.seed = 77
     var chords: Array = [
         [110.00, 220.00, 261.63, 329.63],
         [87.31, 174.61, 220.00, 261.63],
@@ -182,4 +198,6 @@ static func build_music() -> AudioStreamWAV:
         for step in range(8):
             _music_note(samples, base + float(step) * beat / 2.0, beat * 0.45,
                 float(arpeggio[step]) * 2.0, 0.085, "tri", 7.0)
+            if step % 2 == 1:
+                _music_hat(samples, base + float(step) * beat / 2.0, hats)
     return _wav(samples, MUSIC_SR, true)
