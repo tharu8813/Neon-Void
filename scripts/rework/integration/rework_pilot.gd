@@ -28,6 +28,8 @@ var new_vaccine_button: Button
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
+    # The reward overlay must respond while the simulation itself is paused.
+    world.process_mode = Node.PROCESS_MODE_PAUSABLE
     world.set("demo_mode", false)
     _create_ui()
     world.connect("mission_start_requested", Callable(self, "_on_mission_requested"))
