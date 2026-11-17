@@ -99,6 +99,7 @@ jobs:
             tests/rework/world/hardware_rules_smoke.gd
             tests/rework/progression/progression_smoke.gd
             tests/rework/persistence/persistence_smoke.gd
+            tests/rework/integration/mission_commit_bridge_smoke.gd
           )
           count=0
           failures=0
@@ -130,7 +131,8 @@ jobs:
             'tests/rework/world/hub_motherboard_smoke.gd',
             'tests/rework/world/hardware_rules_smoke.gd',
             'tests/rework/progression/progression_smoke.gd',
-            'tests/rework/persistence/persistence_smoke.gd'
+            'tests/rework/persistence/persistence_smoke.gd',
+            'tests/rework/integration/mission_commit_bridge_smoke.gd'
           )
           $count = 0
           $failures = 0
