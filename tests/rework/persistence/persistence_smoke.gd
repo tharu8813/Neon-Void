@@ -3,6 +3,7 @@ extends SceneTree
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
+const Observation = preload("res://scripts/rework/progression/combat_observation.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -743,8 +744,18 @@ func _test_combat_observation(root_dir: String) -> void:
         }
     }, true)
     var committed: Dictionary = Gateway.transact_command(slot, observed)
+    if not committed.get("applied", false):
+        var before_probe: Dictionary = Store.read(slot)
+        if before_probe.get("ok", false):
+            var manual: Dictionary = Observation.record(
+                before_probe.state.vaccine.mission, str(observed.region_id),
+                int(observed.combat_tick), str(observed.b_version),
+                str(observed.d_version), observed.b_state, observed.d_state)
+            printerr("REWORK E COMBAT DIAG: store=" + str(committed) +
+                " domain=" + str(manual) + " valid=" +
+                str(Observation.valid(before_probe.state.vaccine.mission)))
     check(committed.get("applied", false),
-        "B and D observation captured in ONE checksummed E save")
+        "B and D observation captured in ONE checksummed E save: " + str(committed))
     var inspected: Dictionary = Gateway.inspect_slot(slot)
     check(inspected.ok and inspected.combat_runtime_checkpoint_present \
         and inspected.combat_observation_snapshot.combat_tick == 100 \
