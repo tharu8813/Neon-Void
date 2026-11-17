@@ -322,6 +322,10 @@ func _physics_process(delta: float) -> void:
         if combo_window <= 0.0:
             combo_count = 0
     if mode == "combat":
+        # Python step_player repeats 34% dash blast every third combat frame
+        # while the 0.145s dash remains active, in addition to initial pulse.
+        if float(actor.get("dash_t")) > 0.0 and (run_frames + 1) % 3 == 0:
+            _apply_dash_blast_pulse()
         PlayerBridge.read_player(sim, actor)
         sim.set_player_snapshot({"stats": software.stats})
         var shots_before: int = sim.enemy_bullets.size()
@@ -534,6 +538,19 @@ func _on_dash_visual(_direction: Vector2) -> void:
                 if center.distance_to(enemy["pos"]) < 78.0 + float(enemy["radius"]):
                     sim.damage_enemy(int(enemy["id"]), blast, -1.0, false,
                         _direction.normalized() * 140.0)
+
+func _apply_dash_blast_pulse() -> void:
+    if mode != "combat" or paused:
+        return
+    var blast: float = float(software.stats.get("dash_blast", 0.0))
+    if blast <= 0.0:
+        return
+    var position_2d: Vector2 = actor.get("logical_position")
+    var direction: Vector2 = actor.get("dash_dir")
+    for enemy in sim.enemies.duplicate():
+        if position_2d.distance_to(enemy["pos"]) < 70.0 + float(enemy["radius"]):
+            sim.damage_enemy(int(enemy["id"]), blast * 0.34, -1.0, false,
+                direction * 90.0)
 
 func _on_skill_requested(skill: String) -> void:
     if mode != "combat" or paused:
