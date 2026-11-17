@@ -170,7 +170,8 @@ static func _release_lock(slot_path: String, token: String, require_same_pid: bo
     if not raw.ok:
         return false
     var parser := JSON.new()
-    if parser.parse(raw.bytes.get_string_from_utf8()) != OK             or typeof(parser.data) != TYPE_DICTIONARY             or parser.data.get("token") != token             or parser.data.get("pid") != OS.get_process_id():
+    if parser.parse(raw.bytes.get_string_from_utf8()) != OK             or typeof(parser.data) != TYPE_DICTIONARY             or parser.data.get("token") != token \
+            or (require_same_pid and parser.data.get("pid") != OS.get_process_id()):
         return false
     if DirAccess.remove_absolute(lock_path.path_join("owner.json")) != OK:
         return false
