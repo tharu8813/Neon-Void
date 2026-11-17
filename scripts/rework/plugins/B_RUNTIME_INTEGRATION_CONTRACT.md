@@ -14,8 +14,8 @@ A integration order: instantiate the new C subclass ONLY in opt-in rework scene;
 - B event work quota delays, not drops, outstanding events. B ancestry signature (effect ID, actor, target) allows legal different-target hops while blocking cyclic repeats.
 
 ## Measured verification boundary
-Linux+Windows automatic tests iterate all 27 and use actual B combat_runtime and event FIFO. 23/27 caused verifiable B actor HP/stat/status/position or projectile state changes. This DOES NOT assert 27 playable in the A CPU scene.
-Unverified: nv_c_periodic_shield, nv_c_skill_shield, nv_r_dash_shield do not yet prevent HP loss because B lacks finalized shield absorption semantics. The C adapter tracks pending shield values but these are not defense. nv_c_random_rare is an E transaction, not a B attack: it must use the existing exactly-once E plugin_picked command.
+Linux+Windows automatic tests iterate all 27 and use actual B combat_runtime and event FIFO. C Draft #125 updated the independent production-B subclass to use B's real damage_absorber; **26/27** now cause verifiable B actor HP/stat/status/position, actual HP mitigation or projectile state changes. The remaining 1 is the E-owned rare receipt, verified in separate real E transaction tests. This DOES NOT assert 27 playable in the A CPU scene.
+Shields: nv_c_periodic_shield, nv_c_skill_shield and nv_r_dash_shield now prevent actual HP loss through B's pre-damage absorption hook, matching A's **provisional** shield-first implementation; consumed shields cannot be reused. Shield stacking/expiry, interaction with invulnerability/DoT/crit/vamp/death and balance are not final. nv_c_random_rare is E transaction, not a B attack; source+rare pair is granted once by E, never by C.
 Pending A/B review: combined laser+boomerang shapes, boss control immunity, shield vs crit/armor/vamp/DoT ordering, physical CPU collision, event chain synergy, visual/audio and Windows in-game QA. Mythic proposals remain unapproved.
 
 ## E persistence / resume handoff
@@ -38,7 +38,7 @@ As of A #121, selecting `nv_c_random_rare` creates **two E receipts in one Store
 
 ### Remaining interface requests to B/A/E
 
-1. **B shields (3 plugins):** publish a shield-absorption contract and meaningful mitigation/HP tests for periodic, skill and dash shields, including crit, armor, DoT, life-steal and fatal hit sequencing. Current C B-runtime evidence remains **23/27**, not release-qualified 27/27.
+1. **B shields (3 plugins):** C #125 tested actual HP mitigation for periodic/skill/dash shields using B's existing damage_absorber callback, increasing C-only B coverage from **23/27 to 26/27**. B/A still must approve stacking, expiry, crit, armor, DoT, life-steal, invulnerability and fatal-hit sequencing before calling the provisional policy final. A must not attach both C's B subclass and B's CAdapter to a single actor, since that would duplicate triggers.
 2. **A scene:** instantiate the C production B subclass in the real CPU scene; use E-confirmed receipts for C/B levels and recovery UI; no additional C-side bonus dispatch.
 3. **E restore:** atomically persist C RNG/cards/rerolls/pity packet with E mission checkpoints; reconcile prepared receipts before showing an interrupted offer. C's export/restore exists but does not write or independently trust a save.
 4. **B/A projectile composition and bosses:** decide laser+boomerang precedence and boss control exemptions; preserve valid multi-hop procs while blocking cycles.
