@@ -78,6 +78,11 @@ func _run() -> void:
     }
     var started: Dictionary = Gateway.transact_command(slot, command)
     check(started.get("applied", false), "mission start persisted")
+    if not started.get("applied", false) or not Store.read(slot).get("ok", false):
+        printerr("REWORK E: abort on failed initial transaction")
+        _remove_tree(root_dir)
+        quit(1)
+        return
     var first_revision: int = int(Store.read(slot).revision)
     check(first_revision == 2, "one revision per committed state")
 
@@ -218,6 +223,55 @@ func _run() -> void:
         "future format must never silently downgrade from backup")
     check(not Gateway.transact_command(slot, event).applied,
         "unsupported format never accepts writes")
+
+    # Stat purchases must remain valid after JSON parsing turns whole numbers into floats.
+    var stat_slot: String = root_dir.path_join("rework-slot-stat-roundtrip")
+    check(Store.initialize(stat_slot, Model.new_slot("stat-roundtrip", "stat-vaccine")).ok,
+        "isolated stat validation slot")
+    var stat_start: Dictionary = command.duplicate(true)
+    stat_start.vaccine_id = "stat-vaccine"
+    check(Gateway.transact_command(stat_slot, stat_start).applied,
+        "stat-roundtrip mission starts")
+    var stat_cache: Dictionary = event.duplicate(true)
+    stat_cache.vaccine_id = "stat-vaccine"
+    stat_cache.fragments = 100
+    check(Gateway.transact_command(stat_slot, stat_cache).applied,
+        "stat-roundtrip fragments earned")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "hardware_cleaned", "vaccine_id": "stat-vaccine",
+        "generation": 1, "run_id": "run-a",
+        "receipt_id": "world:run-a:CPU:clean", "hardware_id": "CPU"
+    }).applied, "stat-roundtrip extraction enabled")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "extract", "vaccine_id": "stat-vaccine",
+        "generation": 1, "run_id": "run-a",
+        "receipt_id": "world:run-a:extraction", "learn_plugin_ids": []
+    }).applied, "stat-roundtrip fragments committed")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "reallocate_stats", "vaccine_id": "stat-vaccine",
+        "generation": 1, "receipt_id": "stat-allocation", "allocations": {"max_hp": 1}
+    }).applied, "stat purchase persists successfully")
+    var stat_reloaded: Dictionary = Store.read(stat_slot)
+    check(stat_reloaded.get("ok", false), "stat purchase can be reloaded after JSON parse")
+    if stat_reloaded.get("ok", false):
+        check(stat_reloaded.state.vaccine.invested_stats.max_hp == 1,
+            "purchased stat survives restart")
+        check(stat_reloaded.state.vaccine.unspent_fragments == 0,
+            "stat purchase correctly consumes 100 fragments")
+
+    # A crash leaves a lock that must be released only with offline approval
+    # and the exact owner token; the previous process PID cannot be the validator.
+    var lock_owner: Dictionary = Store._take_lock(slot)
+    check(lock_owner.get("ok", false), "synthetic orphan lock acquired")
+    if lock_owner.get("ok", false):
+        var lock_owner_path: String = slot + ".write-lock/owner.json"
+        var lock_meta: Dictionary = JSON.parse_string(_bytes(lock_owner_path).get_string_from_utf8())
+        lock_meta.pid = 123456789
+        _write(lock_owner_path, JSON.stringify(lock_meta))
+        check(not Store._release_lock(slot, lock_owner.token),
+            "normal lock release rejects foreign process PID")
+        check(Store.release_orphan_lock_offline(slot, lock_owner.token, true).ok,
+            "offline token-authorized orphan lock recovery accepts old PID")
 
     var irreversible: String = root_dir.path_join("rework-slot-irreversible")
     check(Store.initialize(irreversible, Model.new_slot("irreversible", "vaccine-1")).ok,
