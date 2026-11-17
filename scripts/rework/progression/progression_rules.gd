@@ -4,6 +4,7 @@ extends RefCounted
 const State = preload("res://scripts/rework/progression/state_model.gd")
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
 const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
+const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 
 static func _reject(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}
@@ -211,6 +212,22 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
         var old: Dictionary = m.obtained_plugins[plugin_id]
         if old.rarity != rarity or level <= int(old.level):
             return _reject("invalid_plugin_level")
+    var rare_plan: Dictionary = {}
+    if plugin_id == RareBonus.SOURCE_ID:
+        # GDD approves a random rare on acquisition, but not an extra Lv2
+        # count. One baseline bonus is awarded here as an explicit draft.
+        if rarity != "common":
+            return _reject("rare_source_rarity_mismatch")
+        var old_source_level: int = 0
+        if output.vaccine.carried.has(plugin_id):
+            old_source_level = int(output.vaccine.carried[plugin_id].level)
+        if m.obtained_plugins.has(plugin_id):
+            old_source_level = int(m.obtained_plugins[plugin_id].level)
+        if level != old_source_level + 1:
+            return _reject("rare_source_level_mismatch")
+        rare_plan = RareBonus.plan(m, output.vaccine.carried, receipt_id, level)
+        if not bool(rare_plan.get("ok", false)):
+            return _reject(str(rare_plan.get("reason", "rare_bonus_unavailable")))
     if offer_source == "levelup" and m.environment_rolls.has(Checkpoint.KEY):
         var expected_level: int = 1
         if output.vaccine.carried.has(plugin_id):
@@ -227,6 +244,15 @@ static func plugin_picked(state: Dictionary, vaccine_id: String, generation: int
         if not settled.ok:
             return _reject(str(settled.reason))
     m.obtained_plugins[plugin_id] = {"rarity": rarity, "level": level}
+    if not rare_plan.is_empty():
+        # Source card + extra rare + both unique receipts share ONE durable
+        # Store.transact. No crash can commit only half the reward pair.
+        var bonus_receipt: String = str(rare_plan["record"]["bonus_receipt"])
+        if not _accept_receipt(output.vaccine, bonus_receipt):
+            return _reject("rare_bonus_duplicate_receipt")
+        var rare_result: Dictionary = RareBonus.commit(m, rare_plan)
+        if not bool(rare_result.get("ok", false)):
+            return _reject(str(rare_result.get("reason", "rare_bonus_not_committed")))
     m.claimed_offer_ids.append(offer_key)
     if offer_source == "levelup":
         m.pending_plugin_offers -= 1
