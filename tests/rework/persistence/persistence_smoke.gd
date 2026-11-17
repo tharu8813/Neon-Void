@@ -172,6 +172,13 @@ func _run() -> void:
         "save boundary disallows removal of committed receipt ledger")
     check(not Gateway.transact_command(slot, event).applied, "receipt remains exactly once")
 
+    # The previous mission ended with death; use a NEW live run to exercise
+    # the actual backup write failure instead of receiving run_not_active.
+    check(Gateway.transact_command(slot, {
+        "action": "start_mission", "vaccine_id": "vaccine-1",
+        "generation": 1, "run_id": "run-after-death", "seed": 909
+    }).applied, "fresh mission for backup permission failure test")
+
     var backup_name: String = slot.path_join("state.json.bak")
     var parked_backup: String = slot.path_join("state.json.bak.synthetic-held")
     var prior_revision: int = int(Store.read(slot).revision)
@@ -180,6 +187,7 @@ func _run() -> void:
             "unwritable backup destination fault injected")
         var fresh_event: Dictionary = event.duplicate(true)
         fresh_event.receipt_id = "reward-should-not-commit"
+        fresh_event.run_id = "run-after-death"
         var blocked: Dictionary = Gateway.transact_command(slot, fresh_event)
         check(not blocked.applied and blocked.reason == "backup_failed",
             "backup write failure blocks primary commit")
