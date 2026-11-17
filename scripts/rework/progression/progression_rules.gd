@@ -111,6 +111,19 @@ static func prepare_terminal(state: Dictionary, vaccine_id: String,
     if not prepared.ok:
         return prepared
     var out: Dictionary = prepared.state
+    if outcome == "extract":
+        var mission: Dictionary = out.vaccine.mission
+        if mission.hardware_cleaned_ids.is_empty():
+            return _reject("hardware_required")
+        if learn_plugin_ids.size() > 2 or not State._valid_ids(learn_plugin_ids, 2):
+            return _reject("invalid_learning_selection")
+        for plugin_id in learn_plugin_ids:
+            if not mission.obtained_plugins.has(plugin_id):
+                return _reject("plugin_not_obtained")
+            if not ["common", "rare"].has(mission.obtained_plugins[plugin_id].rarity):
+                return _reject("rarity_not_learnable")
+            if out.vaccine.archive.has(plugin_id) or out.vaccine.carried.has(plugin_id):
+                return _reject("already_learned_policy_pending")
     if not _accept_receipt(out.vaccine, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     var stored: Dictionary = Checkpoint.prepare_terminal(out.vaccine.mission,
