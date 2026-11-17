@@ -9,6 +9,38 @@ const KEY: String = "e_rare_bonus_v1"
 const SOURCE_ID: String = "nv_c_random_rare"
 const RNG_POLICY: String = "rare-event-v1"
 const MAX_SAFE: int = 9007199254740991
+# GDD-proposed settings. These values do not authorize an unapproved Lv2 multiplier.
+const DRAFT_POLICY: Dictionary = {
+    "baseline_grants": 1,
+    "lv2_extra_grants": 0,
+    "exhausted_candidates": "reject_without_spending_receipt"
+}
+
+static func policy_draft() -> Dictionary:
+    return DRAFT_POLICY.duplicate(true)
+
+static func verify_committed_pair(mission: Dictionary,
+        receipts: Dictionary, source_receipt: String) -> Dictionary:
+    ## Verify source + derived receipts, authoritative level, and persisted policy.
+    ## Read-only: an absent ACK must never generate another award.
+    if not _id(source_receipt) or not valid(mission):
+        return {"ok": false, "reason": "invalid_rare_grant_state"}
+    var history: Dictionary = mission.environment_rolls.get(KEY, {})
+    if not history.has(source_receipt):
+        return {"ok": false, "reason": "rare_grant_record_missing"}
+    var record: Dictionary = history[source_receipt]
+    var source: Variant = mission.obtained_plugins.get(SOURCE_ID, {})
+    if not source is Dictionary or source.get("rarity") != "common" \
+            or int(source.get("level", 0)) < 1:
+        return {"ok": false, "reason": "rare_source_not_owned"}
+    if not receipts.has(source_receipt) or receipts[source_receipt] != true \
+            or not receipts.has(str(record.bonus_receipt)) \
+            or receipts[str(record.bonus_receipt)] != true:
+        return {"ok": false, "reason": "rare_pair_receipt_incomplete"}
+    return {"ok": true, "source_receipt": source_receipt,
+        "bonus_receipt": str(record.bonus_receipt),
+        "plugin_id": str(record.plugin_id), "level": int(record.level),
+        "rng_policy": str(record.rng_policy)}
 
 static func _id(value: Variant) -> bool:
     if typeof(value) != TYPE_STRING or value.is_empty() or value.length() > 100:
@@ -63,7 +95,10 @@ static func monotonic(before: Dictionary, after: Dictionary) -> bool:
 
 static func plan(mission: Dictionary, carried: Dictionary,
         source_receipt: String, source_level: int) -> Dictionary:
-    ## Only one baseline rare on acquisition. Lv2 extra quantity is UNAPPROVED.
+    ## Draft policy is visible and explicit; do not enable unapproved Lv2 counts.
+    if DRAFT_POLICY.baseline_grants != 1 or DRAFT_POLICY.lv2_extra_grants != 0 \
+            or DRAFT_POLICY.exhausted_candidates != "reject_without_spending_receipt":
+        return {"ok": false, "reason": "rare_reward_policy_not_approved"}
     var bonus_receipt: String = source_receipt + ":rare:0"
     if not _id(source_receipt) or not _id(bonus_receipt) \
             or source_level < 1 or source_level > 2 \
