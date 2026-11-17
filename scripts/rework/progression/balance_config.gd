@@ -23,9 +23,14 @@ const STAT_COSTS := {
 }
 static func valid_config(config: Dictionary) -> bool:
     for key in config:
-        if not DEFAULTS.has(key) or typeof(config[key]) != TYPE_INT:
+        if not DEFAULTS.has(key):
             return false
-        if config[key] < 0 or config[key] > 100000:
+        var value: Variant = config[key]
+        if (typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT) \
+                or is_nan(float(value)) or is_inf(float(value)) \
+                or floor(float(value)) != float(value):
+            return false
+        if value < 0 or value > 100000:
             return false
     var effective: Dictionary = DEFAULTS.duplicate()
     effective.merge(config, true)
