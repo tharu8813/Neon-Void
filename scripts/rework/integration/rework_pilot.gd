@@ -25,6 +25,10 @@ var card_buttons: Array[Button] = []
 var reroll_buttons: Array[Button] = []
 var deposit_button: Button
 var new_vaccine_button: Button
+var learn_panel: PanelContainer
+var learn_list: VBoxContainer
+var learn_checks: Array[CheckBox] = []
+var pending_extraction: Dictionary = {}
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -35,6 +39,11 @@ func _ready() -> void:
     world.connect("mission_start_requested", Callable(self, "_on_mission_requested"))
     world.connect("mission_returned", Callable(self, "_on_mission_returned"))
     world.connect("integration_error", Callable(self, "_on_world_error"))
+    # A handles D's durability requests so extraction can present a 0-2
+    # learnable-plugin selection BEFORE E commits the one-shot receipt.
+    world.connect("world_fact_requested", Callable(self, "_on_world_fact_requested"))
+    world.connect("extraction_commit_requested", Callable(self, "_on_extraction_requested"))
+    world.connect("death_commit_requested", Callable(self, "_on_death_requested"))
     world.connect("unavailable_hardware_requested", Callable(self, "_on_unavailable"))
     var preview_combat: Node = world.get("combat") as Node
     if preview_combat != null:
@@ -112,6 +121,24 @@ func _create_ui() -> void:
         row.add_child(reroll)
         reroll_buttons.append(reroll)
 
+    learn_panel = PanelContainer.new()
+    learn_panel.name = "ExtractionLearning"
+    learn_panel.position = Vector2(280, 200)
+    learn_panel.custom_minimum_size = Vector2(600, 280)
+    learn_panel.visible = false
+    layer.add_child(learn_panel)
+    var learn_column := VBoxContainer.new()
+    learn_panel.add_child(learn_column)
+    var learn_title := Label.new()
+    learn_title.text = "철수 보상: 이번 의뢰 플러그인 최대 2개 학습 (선택 가능)"
+    learn_column.add_child(learn_title)
+    learn_list = VBoxContainer.new()
+    learn_column.add_child(learn_list)
+    var finish_button := Button.new()
+    finish_button.text = "선택 확정 및 안전 철수"
+    finish_button.pressed.connect(_finish_extraction)
+    learn_column.add_child(finish_button)
+
 func _accept_saved_state(loaded: Dictionary) -> void:
     var saved: Dictionary = loaded.get("snapshot", {})
     if not bool(saved.get("selection_required", false)):
@@ -187,6 +214,10 @@ func _on_mission_requested(request: Dictionary) -> void:
     if not bool(world.call("confirm_mission_started", current_run_id, seed)):
         _halt("world_failed_after_E_mission_commit")
         return
+    # Only mission start needs a bridge attached for D's preflight guard.
+    # The remaining D facts are routed via A so reward learning happens
+    # before the extraction transaction and its user choice is durable.
+    world.call("attach_progression_bridge", null)
     message_label.text = "CPU 의뢰 저장됨 · 전투 XP로 플러그인 획득"
     _refresh()
 
@@ -275,6 +306,9 @@ func _on_mission_returned(_fact: Dictionary) -> void:
     offers = null
     current_run_id = ""
     offer_panel.visible = false
+    learn_panel.visible = false
+    learn_checks.clear()
+    pending_extraction.clear()
     get_tree().paused = false
     message_label.text = "의뢰 결과 저장됨 · 허브 복귀"
     _refresh()
@@ -323,6 +357,95 @@ func _choose_new_vaccine() -> void:
         return
     _refresh()
 
+func _on_world_fact_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        return
+    if str(fact.get("type", "")) == "boss_defeated":
+        return
+    var ack: Dictionary = bridge.handle_world_fact(fact)
+    if not bool(ack.get("ok", false)):
+        _halt("hardware_objective_save_failed")
+        return
+    if not bool(world.call("acknowledge_world_fact",
+            str(fact.get("receipt_id", "")), ack)):
+        _halt("hardware_objective_ack_failed")
+
+func _on_extraction_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        return
+    if not pending_extraction.is_empty():
+        _halt("overlapping_extraction")
+        return
+    if str(fact.get("run_id", "")) != current_run_id:
+        _halt("extraction_run_mismatch")
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("cannot_read_extraction_choices")
+        return
+    var vaccine: Dictionary = loaded["snapshot"].get("vaccine", {})
+    var mission: Variant = vaccine.get("mission")
+    if typeof(mission) != TYPE_DICTIONARY:
+        _halt("no_active_mission_for_extraction")
+        return
+    learn_checks.clear()
+    for child in learn_list.get_children():
+        learn_list.remove_child(child)
+        child.queue_free()
+    var obtained: Dictionary = mission.get("obtained_plugins", {})
+    var archive: Dictionary = vaccine.get("archive", {})
+    var carried: Dictionary = vaccine.get("carried", {})
+    for plugin_id in obtained:
+        var info: Dictionary = obtained[plugin_id]
+        if not ["common", "rare"].has(str(info.get("rarity", ""))):
+            continue
+        # Previously learned instances are deliberately excluded until the
+        # unapproved re-learning policy is specified (E currently rejects).
+        if archive.has(plugin_id) or carried.has(plugin_id):
+            continue
+        var choice := CheckBox.new()
+        choice.text = "[%s] %s · Lv.%d" % [str(info["rarity"]), str(plugin_id), int(info["level"])]
+        choice.set_meta("plugin_id", str(plugin_id))
+        learn_list.add_child(choice)
+        learn_checks.append(choice)
+    if learn_checks.is_empty():
+        var note := Label.new()
+        note.text = "학습 가능한 신규 일반·레어 플러그인이 없어. 보상 없이 철수 가능."
+        learn_list.add_child(note)
+    pending_extraction = fact.duplicate(true)
+    learn_panel.visible = true
+    get_tree().paused = true
+
+func _finish_extraction() -> void:
+    if frozen or bridge == null or pending_extraction.is_empty():
+        return
+    var chosen: Array = []
+    for checkbox in learn_checks:
+        if checkbox.button_pressed:
+            chosen.append(str(checkbox.get_meta("plugin_id", "")))
+    if chosen.size() > 2:
+        message_label.text = "학습할 플러그인은 최대 2개까지 선택할 수 있어"
+        return
+    var ack: Dictionary = bridge.commit_terminal_fact(pending_extraction, chosen)
+    if not bool(ack.get("ok", false)):
+        _halt("extraction_save_failed")
+        return
+    if not bool(world.call("acknowledge_extraction", ack)):
+        _halt("extraction_world_ack_failed")
+        return
+    learn_panel.visible = false
+    get_tree().paused = false
+
+func _on_death_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        return
+    var ack: Dictionary = bridge.commit_terminal_fact(fact)
+    if not bool(ack.get("ok", false)):
+        _halt("death_save_failed")
+        return
+    if not bool(world.call("acknowledge_death", ack)):
+        _halt("death_world_ack_failed")
+
 func _on_unavailable(region_id: String) -> void:
     message_label.text = region_id + "는 아직 플레이 가능한 구역이 아니야"
 
@@ -338,6 +461,8 @@ func _halt(reason: String) -> void:
         message_label.text = "저장 안전 정지: " + reason
     if offer_panel != null:
         offer_panel.visible = false
+    if learn_panel != null:
+        learn_panel.visible = false
     get_tree().paused = false
     if world != null and world.get("player") != null:
         var player: Node = world.get("player") as Node
