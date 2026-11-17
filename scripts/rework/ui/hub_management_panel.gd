@@ -41,6 +41,7 @@ var hint: Label
 var stat_body: VBoxContainer
 var database_body: VBoxContainer
 var skills_body: VBoxContainer
+var combat_body: VBoxContainer
 var overview_body: VBoxContainer
 var stat_summary: Label
 var stat_submit: Button
@@ -84,6 +85,7 @@ func _ready() -> void:
     stat_body = _page("능력치")
     database_body = _page("플러그인 DB")
     skills_body = _page("스킬 장착")
+    combat_body = _page("전투 상세")
     var footer := _label(
         "허브에서만 편집 가능 · 실제 저장 승인 후 결과 반영 · 의뢰 중 변경 불가", 12, MUTED)
     layout.add_child(footer)
@@ -171,6 +173,7 @@ func show_saved(loaded: Dictionary, allow_actions: bool) -> void:
     _render_stats()
     _render_database()
     _render_skills()
+    show_live_combat({})
 
 func _render_overview() -> void:
     _clear(overview_body)
@@ -220,7 +223,7 @@ func _render_stats() -> void:
         maxi(0, remaining) % unit], 16)
     stat_body.add_child(stat_summary)
     stat_body.add_child(_label(
-        "능력치 투자 수치와 비용은 밸런스 초안이야. 초기화 후 재투자 비용은 없어.", 12, MUTED))
+        "능력치 투자 내역은 E에 영구 저장돼. B 전투 적용은 추가 통합 검증이 필요해.", 12, MUTED))
     for stat_id in Balance.STAT_COSTS.keys():
         var line := HBoxContainer.new()
         line.add_theme_constant_override("separation", 10)
@@ -339,7 +342,7 @@ func _render_skills() -> void:
     _clear(skills_body)
     skills_body.add_child(_label("액티브 스킬 · 3슬롯", 17))
     skills_body.add_child(_label(
-        "습득한 스킬만 선택할 수 있어. 스킬 발견과 학습은 별도 전투 기능이야.", 13, MUTED))
+        "E에 장착 순서를 저장해. 실제 전투 스킬 정의·시전 연결은 별도 검증이 필요해.", 13, MUTED))
     var known: Array = vaccine.get("known_skills", [])
     for slot in range(3):
         var row := HBoxContainer.new()
@@ -393,3 +396,58 @@ func _request_skills() -> void:
         equip_requested.emit(equipped, revision)
     else:
         hint.text = "이미 저장된 스킬 구성과 동일해."
+
+## B is the only authority for current combat values. Never infer them from
+## E investment counts or fabricate shield values the public B API omitted.
+func show_live_combat(actor: Dictionary) -> void:
+    if combat_body == null:
+        return
+    _clear(combat_body)
+    var stats: Dictionary = actor.get("stats", {})
+    combat_body.add_child(_label("전투 능력치 · 실제 B 런타임", 17))
+    if stats.is_empty():
+        combat_body.add_child(_label(
+            "현재 실행 중인 B 전투가 없어 실제 전투 수치를 확인할 수 없어.", 14, MUTED))
+        return
+    var rows: Array = [
+        ["체력", "health", ""], ["최대 체력", "max_health", ""],
+        ["공격력 (AD)", "attack_damage", ""], ["주문력 (AP)", "ability_power", ""],
+        ["물리 방어력", "armor", ""], ["마법 저항력", "magic_resist", ""],
+        ["고정 물리 관통", "physical_pen_flat", ""],
+        ["비율 물리 관통", "physical_pen_percent", "rate"],
+        ["고정 마법 관통", "magic_pen_flat", ""],
+        ["비율 마법 관통", "magic_pen_percent", "rate"],
+        ["발사속도", "attack_speed", "per_sec"],
+        ["이동속도", "move_speed", ""],
+        ["탄환속도 배율", "projectile_speed_mult", ""],
+        ["치명타 확률", "crit_chance", "rate"],
+        ["치명타 배율", "crit_multiplier", ""],
+        ["스킬 가속", "skill_haste", ""], ["행운", "luck", "rate"],
+        ["적중 흡혈", "on_hit_vamp", "rate"],
+        ["모든 피해 흡혈", "omni_vamp", "rate"],
+        ["강인함", "tenacity", "rate"],
+        ["최대 마나", "max_mana", ""],
+        ["초당 마나 재생", "mana_regen", "per_sec"]
+    ]
+    for spec in rows:
+        var key: String = str(spec[1])
+        if not stats.has(key):
+            continue
+        var amount: float = float(stats[key])
+        var formatted: String = "%.1f" % amount
+        if str(spec[2]) == "rate":
+            formatted = "%.1f%%" % (amount * 100.0)
+        elif str(spec[2]) == "per_sec":
+            formatted += " /초"
+        var line := HBoxContainer.new()
+        combat_body.add_child(line)
+        var name_label := _label(str(spec[0]), 14, MUTED)
+        name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        line.add_child(name_label)
+        line.add_child(_label(formatted, 14))
+    combat_body.add_child(_label(
+        "현재 마나: %.1f" % float(actor.get("mana", 0.0)) if actor.has("mana")
+            else "현재 마나: 확인 불가", 14))
+    combat_body.add_child(_label(
+        "보호막: %.1f" % float(stats["shield"]) if stats.has("shield")
+            else "보호막: 공개된 B 데이터 없음", 14, MUTED))
