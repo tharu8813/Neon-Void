@@ -20,6 +20,8 @@ func accepted(previous: Dictionary, outcome: Dictionary, note: String) -> Dictio
 func _run() -> void:
     var s: Dictionary = State.new_slot("domain-test", "vaccine-A")
     check(State.validate(s), "fresh v1 state")
+    check(State.valid_id("run-a:1:0"), "C colon-delimited card receipts accepted")
+    check(not State.valid_slot_id("invalid:filename"), "unsafe filesystem slot rejected")
     check(Balance.needed_xp(1, false) == 100, "mission level XP draft")
     check(Balance.needed_xp(2, false) == 130, "mission level XP slope")
     check(Balance.needed_xp(1, true) == 180, "vaccine XP draft")
@@ -40,8 +42,11 @@ func _run() -> void:
         "plugin_alpha", "common", 3, "event"), "level-up keeps latest level")
     s = accepted(s, Rules.plugin_picked(s, "vaccine-A", 1, "run-1", "choice-B",
         "plugin_beta", "rare", 2, "hardware"), "rare plugin")
-    s = accepted(s, Rules.plugin_picked(s, "vaccine-A", 1, "run-1", "choice-C",
-        "plugin_gamma", "legendary", 1, "event"), "legendary mission-only")
+    s = accepted(s, Rules.plugin_picked(s, "vaccine-A", 1, "run-1", "run-1:4:0",
+        "plugin_gamma", "legendary", 1, "event", "run-1:4"), "legendary mission-only")
+    check(not Rules.plugin_picked(s, "vaccine-A", 1, "run-1", "run-1:4:1",
+        "plugin_delta", "common", 1, "event", "run-1:4").ok,
+        "two different card receipts cannot claim same offer twice")
     check(not Rules.extract(s, "vaccine-A", 1, "run-1",
         "extract-too-early", ["plugin_alpha"]).ok, "cannot extract before cleaning")
     s = accepted(s, Rules.objective_completed(s, "vaccine-A", 1, "run-1",
