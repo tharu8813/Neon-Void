@@ -2,7 +2,7 @@ extends Node3D
 ## Optional 3D preview with input-injection methods; NEVER replaces main.tscn.
 const Model = preload("res://scripts/rework/world/motherboard_layout.gd")
 signal board_event(event: Dictionary)
-var board: RefCounted = Model.new()
+var board: Variant = Model.new()
 
 func _ready() -> void:
     board.board_event.connect(_relay)
