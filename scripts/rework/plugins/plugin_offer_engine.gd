@@ -52,7 +52,7 @@ func export_mission_state() -> Dictionary:
 	if not _started:
 		return {}
 	return {"schema":1,"run_id":_run_id,"seed":_seed,
-		"rng_state":_rng.state,"offer_sequence":_offer_sequence,
+		"rng_state":str(_rng.state),"offer_sequence":_offer_sequence,
 		"levels":levels.duplicate(true),"missed_screens":missed_screens,
 		"rerolls_remaining":rerolls_remaining,"pending":_pending.duplicate(true),
 		"prepared":_prepared.duplicate(true),"commit_uncertain":_commit_uncertain}
@@ -72,9 +72,11 @@ func restore_mission_state(snapshot: Dictionary, E_levels: Dictionary) -> bool:
 		var entry: Dictionary = get_entry(str(uid))
 		if entry.is_empty() or typeof(E_levels[uid]) != TYPE_INT or int(E_levels[uid])<0 or int(E_levels[uid])>int(entry["max_level"]):
 			return false
-	for name in ["seed","rng_state","offer_sequence","missed_screens","rerolls_remaining"]:
+	for name in ["seed","offer_sequence","missed_screens","rerolls_remaining"]:
 		if typeof(snapshot.get(name,null)) != TYPE_INT:
 			return false
+	if not snapshot.get("rng_state",null) is String or not str(snapshot["rng_state"]).is_valid_int():
+		return false
 	if int(snapshot["offer_sequence"])<0 or int(snapshot["missed_screens"])<0 or int(snapshot["rerolls_remaining"])<0:
 		return false
 	var pending: Variant = snapshot.get("pending",null)
@@ -112,7 +114,7 @@ func restore_mission_state(snapshot: Dictionary, E_levels: Dictionary) -> bool:
 			return false
 	if not begin_mission(int(snapshot["seed"]),E_levels,saved_run):
 		return false
-	_rng.state = int(snapshot["rng_state"])
+	_rng.state = str(snapshot["rng_state"]).to_int()
 	_offer_sequence = int(snapshot["offer_sequence"])
 	missed_screens = int(snapshot["missed_screens"])
 	rerolls_remaining = int(snapshot["rerolls_remaining"])
