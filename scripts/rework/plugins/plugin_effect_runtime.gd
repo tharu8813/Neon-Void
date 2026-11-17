@@ -145,7 +145,7 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 			"low_hp_emergency", "low_hp_knockback":
 				eligible = kind in ["damage_taken", "health_threshold"] and float(event.get("actor_health_ratio", 1.0)) <= float(spec["trigger_health_ratio"])
 			"chain_lightning", "hit_explosion":
-				eligible = kind in ["on_hit", "on_crit"] and not target_id.is_empty()
+				eligible = kind in ["on_hit", "on_crit", "on_hit_proc"] and not target_id.is_empty()
 			"breakable_sprint":
 				eligible = kind == "damage_taken" and float(event.get("actual_damage", 0.0)) > 0.0
 			"armor_shred", "execute":
