@@ -149,7 +149,7 @@ func run() -> bool:
 	var before_repeat: int = int(combo.counters["damage_events"])
 	var duplicate = combo.effect_owners["P"]
 	var processed_again: Dictionary = duplicate.process({"event_id":"same-root","kind":"on_hit",
-		"actor_id":"P","target_id":"E1","tick":combo.fixed_tick,
+		"actor_id":"P","target_id":"E1","tick":combo.fixed_tick+500,
 		"source_tags":["basic_attack"],"allowed_proc_triggers":["on_hit"]},
 		{},Callable(combo,"_submit_effect_commands"))
 	check(not processed_again.get("ok",false),"cannot dispatch without authoritative B parent")
@@ -157,7 +157,9 @@ func run() -> bool:
 		"failed direct C dispatch does not double damage")
 	check(dispatch_total<2000 and max_pending<512,
 		"bounded real B event throughput 27 catalog tests")
-	verified = verified_battle.keys()
+	verified.clear()
+	for id in verified_battle.keys():
+		verified.append(str(id))
 	verified.sort()
 	not_verified.sort()
 	print("C B LIVE COVERAGE: %d/27 actually changed B combat state; unverified=%s" %
