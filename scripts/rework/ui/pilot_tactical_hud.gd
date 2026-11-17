@@ -60,6 +60,19 @@ func _ready() -> void:
     save_label = _make_text("저장 확인 전 · 전투 자원 대기", Color(0.68, 0.76, 0.85))
     body.add_child(save_label)
     render_combat_snapshot({})
+    update_layout()
+
+func update_layout() -> void:
+    if get_viewport() == null:
+        return
+    var width: float = get_viewport().get_visible_rect().size.x
+    var available: float = minf(632.0, maxf(250.0, width - 36.0))
+    custom_minimum_size.x = available
+    var bar_width: float = maxf(70.0, (available - 70.0) / 3.0 - 9.0)
+    for bar in [health_meter, shield_meter, mana_meter]:
+        if bar != null:
+            bar.custom_minimum_size.x = bar_width
+    position = Vector2(18.0, 12.0)
 
 func _make_text(value: String, color: Color) -> Label:
     var label := Label.new()
