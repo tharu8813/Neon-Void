@@ -40,6 +40,8 @@ func _delete_synthetic_tree(folder: String) -> void:
 
 func _run() -> void:
     ShieldCases.run(Callable(self, "check"))
+    if failures == 0:
+        print("REWORK A SHIELDS PROPOSAL PASS: periodic/skill/dash real B shielding, HP-only after depletion")
     var suffix: String = str(OS.get_process_id()) + "-" + str(Time.get_ticks_usec())
     var slot_id: String = "a-contract-" + suffix
     var synthetic_parent: String = ProjectSettings.globalize_path("user://rework-a-test-" + suffix)
