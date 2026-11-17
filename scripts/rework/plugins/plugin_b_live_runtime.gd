@@ -191,6 +191,7 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 	var before_metrics: Dictionary = bus.metrics.duplicate(true)
 	var before_sequence: int = bus.next_sequence
 	var proposals: Array[Dictionary] = []
+	var delayed_mutations: Array[Dictionary] = []
 	for command in commands:
 		if not command is Dictionary:
 			return {"ok":false,"reason":"invalid_command"}
@@ -245,17 +246,15 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 			# Existing shot is modified by _spawn; don't double-spawn it.
 			continue
 		elif typ=="rare_reward_request":
-			pending_e_rewards.append(command.duplicate(true))
+			delayed_mutations.append(command.duplicate(true))
 		elif typ=="shield":
 			# No shield absorption API in B yet. Track pending, do NOT count as
 			# actual combat shield success until B/A supplies real mitigation.
-			actors[actor_id]["c_shield_pending"] = float(actors[actor_id].get("c_shield_pending",0.0))+float(command.get("amount",0.0))
+			delayed_mutations.append(command.duplicate(true))
 		elif typ=="knockback":
 			var victim: String = target_id
 			if actors.has(victim) and victim!=actor_id:
-				var delta: Vector3 = actors[victim]["position"]-actors[actor_id]["position"]
-				if delta.length_squared()>0.000001:
-					actors[victim]["position"] += delta.normalized()*float(command.get("force",0.0))
+				delayed_mutations.append(command.duplicate(true))
 		elif typ=="modify_attack":
 			# Execute is applied before B Damage.calculate by derived_attack.
 			continue
@@ -280,4 +279,17 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 			bus.metrics = before_metrics
 			bus.next_sequence = before_sequence
 			return {"ok":false,"reason":"B_proc_rejected"}
+	# C side effects must NEVER survive a rejected B proc batch.
+	for item in delayed_mutations:
+		match str(item.get("type","")):
+			"rare_reward_request":
+				pending_e_rewards.append(item)
+			"shield":
+				actors[actor_id]["c_shield_pending"] = float(actors[actor_id].get("c_shield_pending",0.0))+float(item.get("amount",0.0))
+			"knockback":
+				var victim: String = str(item.get("target_id",_active_parent.get("target_id","")))
+				if actors.has(victim) and victim!=actor_id:
+					var displacement: Vector3 = actors[victim]["position"]-actors[actor_id]["position"]
+					if displacement.length_squared()>0.000001:
+						actors[victim]["position"] += displacement.normalized()*float(item.get("force",0.0))
 	return {"ok":true,"queued":proposals.size()}
