@@ -2,6 +2,8 @@ extends RefCounted
 ## Deterministic perfect-maze backbone + optional loops: every floor tile is reachable.
 ## Tile size, objective count and density are [draft v0.1].
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
+## Bump this immutable identity whenever saved-seed geometry semantics change.
+const GENERATOR_ID: String = "D-procedural-v1"
 const TILE_SIZE: float = 1.2
 const DIRECTIONS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 
