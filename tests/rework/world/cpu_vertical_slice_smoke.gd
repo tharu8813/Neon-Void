@@ -3,6 +3,9 @@ extends SceneTree
 ## Run: godot --headless --path . --script res://tests/rework/world/cpu_vertical_slice_smoke.gd
 const Scene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
 const FormalCases = preload("res://tests/rework/world/formal_cpu_combat_cases.gd")
+const PilotScene = preload("res://scenes/rework/integration/rework_pilot.tscn")
+const EGateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
+const EStore = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Board = preload("res://scripts/rework/world/motherboard_layout.gd")
 const Hub = preload("res://scripts/rework/world/hub_layout.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
@@ -22,6 +25,23 @@ func _hit_to_death(world: Variant, enemy_id: String, max_hits: int = 40) -> bool
             return true
         world.combat._apply_hit(enemy_id, "smoke:%s:%d" % [enemy_id, i])
     return not world.combat.enemies.has(enemy_id)
+
+func _delete_only_fixture(folder: String) -> void:
+    var directory: DirAccess = DirAccess.open(folder)
+    if directory == null:
+        return
+    directory.list_dir_begin()
+    var filename: String = directory.get_next()
+    while not filename.is_empty():
+        if filename != "." and filename != "..":
+            var path: String = folder.path_join(filename)
+            if directory.current_is_dir():
+                _delete_only_fixture(path)
+            else:
+                DirAccess.remove_absolute(path)
+        filename = directory.get_next()
+    directory.list_dir_end()
+    DirAccess.remove_absolute(folder)
 
 func _run() -> void:
     var game: Variant = Scene.instantiate()
@@ -109,6 +129,77 @@ func _run() -> void:
     var suite: Variant = FormalCases.new()
     for problem in suite.execute(root):
         check(false, "B formal CPU: " + str(problem))
+
+    # Live B -> A's actual opt-in saved pilot -> E receipt/XP. Unique synthetic
+    # slot only; no test-only world approval, no direct B HP mutation.
+    var fixture_id: String = "d-b-e-contract-%d-%d" % [
+        OS.get_process_id(), Time.get_ticks_usec()]
+    var fixture_path: String = EStore.default_slot_path(fixture_id)
+    check(not DirAccess.dir_exists_absolute(fixture_path),
+        "unique E test slot does not pre-exist")
+    var pilot: Node3D = PilotScene.instantiate()
+    pilot.set("slot_id", fixture_id)
+    pilot.set("initial_vaccine_id", "d-b-e-fixture")
+    root.add_child(pilot)
+    await process_frame
+    check(not bool(pilot.get("frozen")), "A opt-in persisted pilot safely initialized")
+    var saved: Dictionary = EGateway.snapshot(fixture_path)
+    check(bool(saved.get("ok", false)), "E created isolated durable slot")
+    var persisted_world: Node3D = pilot.get_node("World")
+    check(not bool(persisted_world.get("demo_mode")),
+        "A uses persisted D world, never demo approval")
+    pilot.call("_on_mission_requested", {"seed": 42})
+    saved = EGateway.snapshot(fixture_path)
+    check(bool(saved.get("ok", false)) and
+        saved.get("snapshot", {}).get("vaccine", {}).get("mission") != null,
+        "E committed mission start before B runtime was activated")
+    var production: Variant = persisted_world.get("combat")
+    check(production.mode == "formal", "A pilot selects B authoritative combat")
+    check(production.live.bridge.simulation.actors.has("VACCINE"),
+        "B runtime owns actual player HP/status/mana")
+    check(production.enemies.has("intro-0"),
+        "B runtime owns initial motherboard enemies")
+    var initial_revision: int = int(saved.get("revision", -1))
+    if production.enemies.has("intro-0"):
+        var target_world: Vector3 = production.enemies["intro-0"]["node"].global_position
+        for tick in range(240):
+            if not production.enemies.has("intro-0"):
+                break
+            var inputs: Dictionary = {
+                "VACCINE": {
+                    "move": Vector2.ZERO, "aim_world": target_world,
+                    "fire": true},
+                "intro-0": {"move": Vector2.ZERO,
+                    "aim_world": persisted_world.player.global_position, "fire": false},
+                "intro-1": {"move": Vector2.ZERO,
+                    "aim_world": persisted_world.player.global_position, "fire": false},
+                "intro-2": {"move": Vector2.ZERO,
+                    "aim_world": persisted_world.player.global_position, "fire": false}
+            }
+            production.live.advance_test_tick(inputs)
+    check(not production.enemies.has("intro-0"),
+        "actual B projectile death reached D world and A pilot")
+    saved = EGateway.snapshot(fixture_path)
+    check(bool(saved.get("ok", false)) and int(saved.get("revision", -1)) >
+        initial_revision, "B kill fact triggered durable E XP transaction")
+    var saved_xp: int = -1
+    if bool(saved.get("ok", false)):
+        var mission_snapshot: Variant = saved["snapshot"]["vaccine"]["mission"]
+        if mission_snapshot is Dictionary:
+            saved_xp = int(mission_snapshot.get("mission_xp", -1))
+    check(saved_xp == 8, "exactly one B intro kill credits exactly 8 XP")
+    for tick in range(5):
+        production.live.advance_test_tick({
+            "VACCINE": {"move": Vector2.ZERO, "fire": false}})
+    var saved_again: Dictionary = EGateway.snapshot(fixture_path)
+    if bool(saved_again.get("ok", false)):
+        check(int(saved_again["snapshot"]["vaccine"]["mission"]["mission_xp"]) ==
+            saved_xp, "B death is not replayed into E reward ledger")
+    get_tree().paused = false
+    root.remove_child(pilot)
+    pilot.queue_free()
+    await process_frame
+    _delete_only_fixture(fixture_path)
     if failures == 0:
         print("CPU VERTICAL SLICE PASS: hub -> real B combat intro -> CPU walkable maze -> two goals -> boss -> unlock -> ACK -> hub")
     quit(0 if failures == 0 else 1)
