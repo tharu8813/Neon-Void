@@ -152,7 +152,12 @@ func _run() -> void:
     var lower_copies: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.copies_remaining = 2
         return {"ok": true, "state": next}
-    check(Store.transact(slot, lower_copies).applied, "synthetic copy use stored")
+    check(Store.transact(slot, lower_copies).reason == "invalid_transition",
+        "clone decrement without closed death run is refused")
+    check(Gateway.transact_command(slot, {
+        "action": "die", "vaccine_id": "vaccine-1", "generation": 1,
+        "run_id": "run-a", "receipt_id": "unit-death"
+    }).applied, "one death consumes exactly one clone transactionally")
     var recharge: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.copies_remaining = 3
         return {"ok": true, "state": next}
