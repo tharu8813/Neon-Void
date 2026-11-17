@@ -114,6 +114,11 @@ func _run() -> void:
 			check(false,"unhandled effect kind: "+uid+" / "+kind)
 		tested[uid] = true
 	check(tested.size()==27,"all original effects exercised")
+	var sprint_levels = Runtime.new()
+	check(sprint_levels.configure({"nv_c_breakable_sprint":2},91),"sprint level 2")
+	check(float(sprint_levels.derived_stats({"move_speed":5.0})["move_speed"]) > 10.0,
+		"unapproved level 2 boosts above confirmed +100 percent while preserving level 1")
+
 
 	# Original GDD 4 proc triggers -> 4 projectiles at precisely 70% efficiency.
 	var volley = Runtime.new()
@@ -227,6 +232,24 @@ func _run() -> void:
 				check(mission["obtained_plugins"].has(claimed_id) and int(mission["pending_plugin_offers"])==0,
 					"C and E share one persisted selection / pending reward consumed")
 				check(int(c_offers.levels.get(claimed_id,0))==1,"C inventory updated after durable commit")
+				# The 15th common plugin grants a RANDOM rare, not merely a
+				# description. E's event-source transaction must own its receipt.
+				var random_rare_runtime = Runtime.new()
+				check(random_rare_runtime.configure({"nv_c_random_rare":1},77),"rare grant runtime configured")
+				var award: Dictionary = Coordinator.commit_random_rare(random_rare_runtime,
+					slot_path,"vaccine-c",1,"run-c-receipt","acquire-rare",9812)
+				check(award.get("ok",false),"rare auto-grant committed via E")
+				if award.get("ok",false):
+					var rare_id: String = str(award["plugin_id"])
+					var second_snapshot: Dictionary = gateway_api.snapshot(slot_path)
+					check(second_snapshot.get("ok",false)
+						and second_snapshot["snapshot"]["vaccine"]["mission"]["obtained_plugins"].has(rare_id)
+						and int(random_rare_runtime.levels[rare_id])==1,"rare E receipt and C inventory aligned")
+					var duplicate_award: Dictionary = Coordinator.commit_random_rare(random_rare_runtime,
+						slot_path,"vaccine-c",1,"run-c-receipt","acquire-rare",9812)
+					check(not duplicate_award.get("ok",false)
+						and int(random_rare_runtime.levels[rare_id])==1,"rare receipt never grants twice")
+
 			else:
 				check(false,"persisted E snapshot missing")
 		_delete_synthetic(folder)
