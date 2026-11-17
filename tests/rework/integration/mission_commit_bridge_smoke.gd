@@ -71,15 +71,21 @@ func _run() -> void:
     var cards: Dictionary = offers.roll_offer({
         "cleared_hardware": 0, "difficulty_tier": 0, "luck_points": 0.0})
     check(cards.get("active", false), "C generated a 3-card selection")
-    var selected: Dictionary = offers.choose_card(0)
+    var selected: Dictionary = offers.prepare_card(0)
     check(not selected.is_empty() and selected.get("rarity", "") == "common",
-        "deterministic common plugin selected")
+        "deterministic common plugin prepared")
     if selected.is_empty():
         _delete_synthetic_tree(synthetic_parent)
         quit(1)
         return
-    check(bridge.commit_plugin_choice(selected).get("ok", false),
-        "C selected plugin committed through E before UI approval")
+    check(int(offers.levels.get(str(selected["plugin_id"]), 0)) == 0,
+        "prepare alone must never grant a plugin")
+    var committed_choice: Dictionary = bridge.choose_and_commit_plugin(offers, 0)
+    check(committed_choice.get("ok", false)
+        and str(committed_choice.get("receipt_id", "")) == str(selected["receipt_id"]),
+        "E durably accepts prepared choice before C confirms it")
+    check(int(offers.levels.get(str(selected["plugin_id"]), 0)) == int(selected["level"]),
+        "C inventory advances only after E durable acknowledgement")
     var after_choice: Dictionary = Gateway.snapshot(slot_path)
     check(after_choice.get("ok", false)
         and after_choice["snapshot"]["vaccine"]["mission"]["pending_plugin_offers"] == 0,
