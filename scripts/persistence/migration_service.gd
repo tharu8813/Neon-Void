@@ -23,6 +23,35 @@ static func _delete_owned_tree(path: String) -> void:
         _delete_owned_tree(path.path_join(folder))
     DirAccess.remove_absolute(path)
 
+## A previously confirmed wave without its authoritative XP receipt
+## cannot be resumed reliably in Godot. Reject the ENTIRE opt-in import
+## rather than present an apparently playable but unrewardable OS run.
+static func validate_cross_file_state(state: Dictionary) -> Dictionary:
+    if not Store.validate_state(state):
+        return {"ok": false, "reason": "invalid_converted_state"}
+    var cp: Variant = state.get("os_checkpoint.json")
+    if cp == null:
+        return {"ok": true}
+    var db: Dictionary = state["antivirus_db.json"]
+    var run_id: String = str(cp.campaign.run_id)
+    if db.closed_runs.has(run_id) and cp.scene != "dead":
+        return {"ok": false, "reason": "checkpoint_run_already_closed"}
+    var sector_names := {"CPU": "cpu_core", "MEMORY": "memory_sector",
+        "STORAGE": "storage_vault", "NETWORK": "network_grid"}
+    for zone in sector_names:
+        var sid: String = sector_names[zone]
+        var complete: int = int(cp.campaign.completed_waves[zone])
+        for wave in range(1, complete + 1):
+            var key: String = "%s:%s:wave:%d" % [run_id, sid, wave]
+            if not db.awarded_xp_ids.has(key):
+                return {"ok": false, "reason": "checkpoint_missing_xp_receipt:" + zone}
+        if complete == 5:
+            for suffix in ["boss_killed", "sector_cleared"]:
+                if not db.awarded_xp_ids.has("%s:%s:%s" % [run_id, sid, suffix]):
+                    return {"ok": false, "reason": "checkpoint_missing_sector_receipt:" + zone}
+    return {"ok": true}
+
+
 static func import_legacy(source_directory: String, target_slot: String = "user://persistence/slot-v1",
         explicit_consent: bool = false) -> Dictionary:
     if not explicit_consent:
@@ -65,8 +94,9 @@ static func import_legacy(source_directory: String, target_slot: String = "user:
             "bytes": raw.bytes.size(), "schema_version": parsed.data.get("schema_version", 0)}
     if originals.is_empty():
         return {"ok": false, "reason": "no_legacy_files"}
-    if not Store.validate_state(state):
-        return {"ok": false, "reason": "invalid_converted_state"}
+    var consistent: Dictionary = validate_cross_file_state(state)
+    if not consistent.ok:
+        return consistent
     var parent: String = target.get_base_dir()
     if DirAccess.make_dir_recursive_absolute(parent) != OK:
         return {"ok": false, "reason": "destination_unwritable"}
