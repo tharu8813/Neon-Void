@@ -52,3 +52,6 @@ A owns `.github/workflows/**`: add these commands to **both Linux and Windows** 
 
 ## Additional status action gate
 `Statuses.action_allowed(state, action, gameplay_rng)` applies stop/root/silence flags and data-authored malfunction attack failure. Pass a **dedicated, seeded gameplay RNG**, not a VFX RNG. `Statuses.modified_stats(base, state)` derives ephemeral combat stats without altering permanent allocations. The max-of-sources malfunction chance is **[초안 v0.1]**, subject to balance review. Infinite projectile piercing is a status flag (`infinite_pierce`) consumed by A's projectile collision integration.
+
+### Collision lifetime and memory contract
+Every projectile or attack occurrence uses a globally unique `hit_key` for that encounter, shared across all its collision callbacks. At the **end** of that projectile's lifetime, A/D calls `Events.retire_hit_key(hit_key)` so the duplicate-hit ledger can be dropped. Do not retire while the projectile is capable of further hits. Events' processed-ID scratch bookkeeping is cleared after draining; metrics remain available for profiling. Per-target ICD state remains valid across ticks until `reset()` at the next encounter.

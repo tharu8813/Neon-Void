@@ -35,16 +35,23 @@ func _new_id() -> String:
 func _queue(event: Dictionary) -> Dictionary:
     var hit_key: String = str(event.get("hit_key", ""))
     if not hit_key.is_empty():
-        var collision_key: String = hit_key + "|" + str(event.get("target_id", ""))
-        if seen_collision_targets.has(collision_key):
+        var target_key: String = str(event.get("target_id", ""))
+        var targets: Dictionary = seen_collision_targets.get(hit_key, {})
+        if targets.has(target_key):
             metrics["duplicate_hit_blocked"] += 1
             return {}
-        seen_collision_targets[collision_key] = true
+        targets[target_key] = true
+        seen_collision_targets[hit_key] = targets
     event["event_id"] = _new_id()
     pending.append(event)
     metrics["accepted"] += 1
     metrics["max_pending"] = maxi(int(metrics["max_pending"]), pending.size())
     return event
+
+func retire_hit_key(hit_key: String) -> void:
+    ## A/D call when a projectile/attack has definitely ended.
+    ## Prevents completed projectile collision ledgers growing forever.
+    seen_collision_targets.erase(hit_key)
 
 func submit_root(payload: Dictionary) -> Dictionary:
     ## Required by C/D: actor_id, target_id, kind, source_tags, hit_key.
@@ -112,4 +119,6 @@ func drain(handler: Callable = Callable()) -> Array[Dictionary]:
                 var entry: Dictionary = request
                 submit_proc(event, str(entry.get("effect_id", "")),
                     entry.get("event", {}), int(entry.get("icd_ticks", 0)))
+    # Already-popped events cannot replay; discard per-drain ID bookkeeping.
+    processed_ids.clear()
     return processed
