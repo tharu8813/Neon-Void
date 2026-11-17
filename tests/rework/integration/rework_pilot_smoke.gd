@@ -142,6 +142,15 @@ func _run() -> void:
             "D returns to hub only after E ACK")
         check(snapshot["snapshot"]["vaccine"]["carried"].size() == (1 if selectable_count > 0 else 0),
             "eligible selected plugin preserved in carried inventory")
+    var result_panel: PanelContainer = pilot.get("result_panel") as PanelContainer
+    check(result_panel != null and result_panel.visible and paused
+        and result_panel.get("title_label").text.contains("성공"),
+        "real E extraction opens verified success modal before resuming hub")
+    var before_close: int = int(snapshot.get("revision", -1))
+    result_panel.call("_dismiss")
+    check(not result_panel.visible and not paused
+        and int(Gateway.snapshot(slot_path).get("revision", -2)) == before_close,
+        "closing result cannot replay E settlement or alter saved revision")
     if selectable_count > 0:
         pilot.call("_deposit_carried")
         snapshot = Gateway.snapshot(slot_path)
