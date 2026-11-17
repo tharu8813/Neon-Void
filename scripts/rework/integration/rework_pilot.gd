@@ -11,6 +11,7 @@ const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 const RecoveryView = preload("res://scripts/rework/integration/pilot_recovery_view.gd")
 const TacticalHUD = preload("res://scripts/rework/ui/pilot_tactical_hud.gd")
+const CardStyle = preload("res://scripts/rework/ui/pilot_reward_card_style.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -124,8 +125,8 @@ func _create_ui() -> void:
     offer_panel = PanelContainer.new()
     offer_panel.name = "PluginChoice"
     offer_panel.visible = false
-    offer_panel.position = Vector2(260, 180)
-    offer_panel.custom_minimum_size = Vector2(690, 330)
+    offer_panel.position = Vector2(260, 150)
+    offer_panel.custom_minimum_size = Vector2(720, 420)
     layer.add_child(offer_panel)
     var panel_column := VBoxContainer.new()
     offer_panel.add_child(panel_column)
@@ -136,7 +137,9 @@ func _create_ui() -> void:
         var row := HBoxContainer.new()
         panel_column.add_child(row)
         var card := Button.new()
-        card.custom_minimum_size = Vector2(490, 72)
+        card.custom_minimum_size = Vector2(520, 106)
+        card.alignment = HORIZONTAL_ALIGNMENT_LEFT
+        card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         card.pressed.connect(_choose_card.bind(index))
         row.add_child(card)
         card_buttons.append(card)
@@ -390,10 +393,14 @@ func _render_cards() -> void:
     for index in range(3):
         var card: Dictionary = cards[index]
         var info: Dictionary = offers.get_entry(str(card.get("plugin_id", "")))
-        card_buttons[index].text = "%d. [%s] %s · Lv.%d" % [
-            index + 1, str(card.get("rarity", "")),
-            str(info.get("name", card.get("plugin_id", ""))),
-            int(offers.levels.get(str(card.get("plugin_id", "")), 0)) + 1]
+        var rarity: String = str(card.get("rarity", ""))
+        var level: int = int(offers.levels.get(str(card.get("plugin_id", "")), 0))
+        card_buttons[index].text = CardStyle.card_label(card, info, level)
+        for variant in ["normal", "hover", "pressed", "disabled"]:
+            card_buttons[index].add_theme_stylebox_override(
+                variant, CardStyle.card_style(rarity, variant))
+        card_buttons[index].add_theme_color_override(
+            "font_color", CardStyle.rarity_color(rarity))
         card_buttons[index].disabled = bool(card.get("empty", false)) or frozen
         reroll_buttons[index].disabled = frozen or int(offer.get("rerolls_remaining", 0)) <= 0
         reroll_buttons[index].text = "재추첨 (%d)" % int(offer.get("rerolls_remaining", 0))
