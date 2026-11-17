@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "proposal_v0.1_not_user_approved",
+  "rarity_weights": {
+    "common": 70,
+    "rare": 23,
+    "legendary": 6,
+    "mythic": 1
+  },
+  "base_rerolls": 3,
+  "pity": {
+    "missed_screens_before_boost": 5,
+    "legendary_multiplier_per_extra_screen": 0.25,
+    "mythic_multiplier_per_extra_screen": 0.15,
+    "max_extra_screens_for_boost": 20,
+    "policy": "count_once_on_offer_settlement; legendary_plus_seen_at_any_time_during_open_offer_resets; reset_on_mission_start; proposal_v0.1"
+  },
+  "modifiers": {
+    "per_cleared_hardware_rare": 0.04,
+    "per_cleared_hardware_legendary": 0.08,
+    "per_cleared_hardware_mythic": 0.1,
+    "per_difficulty_tier_rare": 0.05,
+    "per_difficulty_tier_legendary": 0.1,
+    "per_difficulty_tier_mythic": 0.12,
+    "per_luck_point_rare": 0.01,
+    "per_luck_point_legendary": 0.02,
+    "per_luck_point_mythic": 0.025
+  },
+  "no_candidate_fallback": "empty_card",
+  "same_screen_duplicates": "allowed_until_user_decision",
+  "weight_normalization": "eligible_rarities_only"
+}
