@@ -200,8 +200,8 @@ static func run(check: Callable, root: Node) -> void:
     var mana_before: float = float(battle.skill_snapshot()["mana"])
     var cast_notes: Array = _advance(battle, 1, 0)
     check.call(cast_notes.any(func(note: Dictionary) -> bool:
-        return str(note.get("kind","")) == "skill_cast" and
-            str(note.get("skill_id","")) == "nv_skill_arc_pulse"),
+        return (str(note.get("kind","")) == "skill_cast"
+            and str(note.get("skill_id","")) == "nv_skill_arc_pulse")),
         "E-approved pulse skill generates live B cast event")
     check.call(float(battle.skill_snapshot()["mana"]) < mana_before,
         "real skill consumes mana in B 60Hz controller")
@@ -212,8 +212,8 @@ static func run(check: Callable, root: Node) -> void:
     check.call(impact, "actual B projectile hit produces public skill_impact")
     var cooldown_notes: Array = _advance(battle, 1, 0)
     check.call(cooldown_notes.any(func(note: Dictionary) -> bool:
-        return str(note.get("kind","")) == "skill_rejected" and
-            str(note.get("reason","")) == "cooldown"),
+        return (str(note.get("kind","")) == "skill_rejected"
+            and str(note.get("reason","")) == "cooldown")),
         "skill cooldown rejects second real cast")
     var status_pre: Dictionary = battle.simulation.snapshot("E")["status_state"]
     _advance(battle, 1, 2)
