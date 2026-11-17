@@ -8,6 +8,7 @@ const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Bridge = preload("res://scripts/rework/integration/mission_commit_bridge.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
+const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -358,14 +359,53 @@ func _choose_card(index: int) -> void:
         return
     var confirmed_plugin: Dictionary = ack.get("plugin", {})
     var combat: Variant = world.get("combat")
+    var bonus: Dictionary = {}
+    if str(confirmed_plugin.get("plugin_id", "")) == RareBonus.SOURCE_ID:
+        # Source and bonus are a SINGLE durable E transaction. Never infer
+        # a rare from C's pending command or independently roll on the client.
+        var loaded: Dictionary = Gateway.snapshot(slot_path)
+        if not bool(loaded.get("ok", false)):
+            _halt("atomic_rare_bonus_E_snapshot_unreadable")
+            return
+        var snapshot: Dictionary = loaded.get("snapshot", {})
+        var vaccine: Dictionary = snapshot.get("vaccine", {})
+        var mission: Dictionary = vaccine.get("mission", {})
+        bonus = mission.get("environment_rolls", {}).get(
+            RareBonus.KEY, {}).get(str(ack.get("receipt_id", "")), {})
+        if bonus.is_empty() or not vaccine.get("receipts", {}).has(
+                str(bonus.get("bonus_receipt", ""))):
+            _halt("atomic_rare_bonus_receipt_missing")
+            return
+        var bonus_id: String = str(bonus.get("plugin_id", ""))
+        var bonus_level: int = int(bonus.get("level", 0))
+        var authoritative: Dictionary = mission.get("obtained_plugins", {}).get(
+            bonus_id, {})
+        if str(bonus.get("rarity", "")) != "rare" \
+                or bonus_id.is_empty() or int(authoritative.get("level", 0)) != bonus_level \
+                or int(offers.levels.get(bonus_id, 0)) + 1 != bonus_level:
+            _halt("atomic_rare_bonus_E_C_level_divergence")
+            return
+    # Only AFTER E confirms source + possible rare reward do we mutate B/C.
     if combat == null or not bool(combat.upgrade_plugin_after_ack(
             str(confirmed_plugin.get("plugin_id", "")),
             int(confirmed_plugin.get("level", 0)))):
         _halt("B_C_effect_sync_failed_after_E_commit")
         return
+    var bonus_message: String = ""
+    if not bonus.is_empty():
+        var bonus_id: String = str(bonus.get("plugin_id", ""))
+        var bonus_level: int = int(bonus.get("level", 0))
+        if not bool(combat.upgrade_plugin_after_ack(bonus_id, bonus_level)):
+            _halt("B_C_rare_bonus_sync_failed_after_E_commit")
+            return
+        # The offer engine tracks candidate levels separately from B combat.
+        # This is an E-verified level, never an optimistic UI award.
+        offers.levels[bonus_id] = bonus_level
+        bonus_message = " · 레어 보너스: " + str(offers.get_entry(bonus_id).get(
+            "name_ko", bonus_id))
     offer_panel.visible = false
     get_tree().paused = false
-    message_label.text = "플러그인 저장 완료: " + str(ack.get("receipt_id", ""))
+    message_label.text = "플러그인 저장 완료" + bonus_message
     _refresh()
     _maybe_open_offer()
 
