@@ -193,3 +193,11 @@ func _marker(parent: Node3D, label: String, position: Vector3, color: Color) -> 
     mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     marker.material_override = mat
     parent.add_child(marker)
+    var sign := Label3D.new()
+    sign.name = "Label_" + label
+    sign.text = label.to_upper() if label == "SPAWN" or label == "BOSS" else label.to_upper() + "  [F]"
+    sign.font_size = 36
+    sign.pixel_size = 0.006
+    sign.rotation_degrees = Vector3(-90, 0, 0)
+    sign.position = position + Vector3.UP * 0.7
+    parent.add_child(sign)
