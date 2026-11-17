@@ -41,3 +41,4 @@ htmlcov/
 /python/profile.json
 /python/antivirus_db.json*
 /python/os_checkpoint.json*
+*.uid
