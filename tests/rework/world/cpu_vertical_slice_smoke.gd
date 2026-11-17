@@ -15,7 +15,7 @@ func check(condition: bool, message: String) -> void:
 func _initialize() -> void:
     call_deferred("_run")
 
-func _hit_to_death(world: Node3D, enemy_id: String, max_hits: int = 40) -> bool:
+func _hit_to_death(world: Variant, enemy_id: String, max_hits: int = 40) -> bool:
     for i in range(max_hits):
         if not world.combat.enemies.has(enemy_id):
             return true
@@ -23,7 +23,7 @@ func _hit_to_death(world: Node3D, enemy_id: String, max_hits: int = 40) -> bool:
     return not world.combat.enemies.has(enemy_id)
 
 func _run() -> void:
-    var game: Node3D = Scene.instantiate()
+    var game: Variant = Scene.instantiate()
     root.add_child(game)
     check(game.current_mode == "hub", "standalone boots in on-foot Defender Hub")
     check(game.active_level.get_node_or_null("WorldGeometry/HubFloorCollider") != null,

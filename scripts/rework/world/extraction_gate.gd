@@ -3,7 +3,7 @@ extends RefCounted
 ## in-memory D results; do not send a second reward command after lost ACK.
 signal extraction_prepared(fact: Dictionary)
 signal extraction_finalized(fact: Dictionary)
-var state: RefCounted
+var state: Variant
 var pending: Dictionary = {}
 var finalized: bool = false
 

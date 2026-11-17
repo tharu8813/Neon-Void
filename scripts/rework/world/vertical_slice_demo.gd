@@ -29,16 +29,16 @@ const Gate = preload("res://scripts/rework/world/extraction_gate.gd")
 var current_mode: String = ""
 var current_run_id: String = ""
 var mission: Dictionary = {}
-var world_state: RefCounted
-var extraction_gate: RefCounted
-var active_level: Node3D
-var board: Node3D
-var hardware: Node3D
-var cpu_session: Node
-var combat: Node3D
-var player: CharacterBody3D
-var camera: Camera3D
-var progression_bridge: RefCounted
+var world_state: Variant
+var extraction_gate: Variant
+var active_level: Variant
+var board: Variant
+var hardware: Variant
+var cpu_session: Variant
+var combat: Variant
+var player: Variant
+var camera: Variant
+var progression_bridge: Variant
 var pending_world_receipts: Dictionary = {}
 var pending_death: Dictionary = {}
 var last_error: String = ""
@@ -130,6 +130,10 @@ func enter_hub() -> void:
     active_level.name = "ActiveDefenderHub"
     add_child(active_level)
     active_level.terminal_requested.connect(_on_hub_terminal)
+    var preview_camera: Camera3D = active_level.get_node_or_null("PreviewCamera") as Camera3D
+    if preview_camera != null:
+        preview_camera.current = false
+    camera.make_current()
     player.global_position = HubLayout.SPAWN + Vector3.UP * 0.5
     camera.world_bounds = HubLayout.BOUNDS
     camera.global_position = Vector3(HubLayout.SPAWN.x, 14, HubLayout.SPAWN.z)
@@ -177,6 +181,10 @@ func _enter_motherboard() -> bool:
     active_level = board
     add_child(board)
     board.setup_run(current_run_id, mission)
+    var preview_camera: Camera3D = board.get_node_or_null("PreviewCamera") as Camera3D
+    if preview_camera != null:
+        preview_camera.current = false
+    camera.make_current()
     player.global_position = BoardLayout.SPAWN + Vector3.UP * 0.5
     camera.world_bounds = BoardLayout.BOUNDS
     camera.global_position = Vector3(BoardLayout.SPAWN.x, 14, BoardLayout.SPAWN.z)
@@ -195,7 +203,7 @@ func _enter_cpu(region_plan: Dictionary) -> bool:
     if planned_map.is_empty():
         integration_error.emit("cpu_map_generation_failed")
         return false
-    var instance: Node3D = Geometry.new()
+    var instance: Variant = Geometry.new()
     if not instance.configure(current_run_id, "CPU", planned_map):
         instance.queue_free()
         integration_error.emit("cpu_map_geometry_failed")
@@ -274,7 +282,7 @@ func _on_extraction_prepared(fact: Dictionary) -> void:
     extraction_commit_requested.emit(fact.duplicate(true))
 
 func acknowledge_extraction(ack: Dictionary) -> bool:
-    if extraction_gate == null or not pending_world_receipts.is_empty():
+    if extraction_gate == null or extraction_gate.finalized or not pending_world_receipts.is_empty():
         return false
     var finished: Dictionary = extraction_gate.finalize_after_durable_ack(ack)
     if finished.is_empty():

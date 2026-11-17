@@ -15,7 +15,7 @@ var run_id: String = ""
 var enemies: Dictionary = {}
 var shots: Array[Dictionary] = []
 var player_stats: Dictionary = {}
-var combat_events: RefCounted = Events.new()
+var combat_events: Variant = Events.new()
 var frame_tick: int = 0
 var shot_sequence: int = 0
 var firing_clock: float = 0.0
@@ -139,8 +139,12 @@ func _move_hostiles(delta: float) -> void:
                     health_updated.emit(float(player_stats["health"]), float(player_stats["max_health"]))
                 if bool(dealt.get("killed", false)) and not game_over:
                     game_over = true
-                    player_died.emit()
+                    call_deferred("_report_player_death")
         enemies[id] = info
+
+func _report_player_death() -> void:
+    if game_over:
+        player_died.emit()
 
 func _next_path_target(from: Vector3, fallback: Vector3) -> Vector3:
     var current := Vector2i(floori(from.x / Maps.TILE_SIZE), floori(from.z / Maps.TILE_SIZE))

@@ -8,10 +8,10 @@ signal boss_spawned(actor_id: String)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 var run_id: String = ""
-var world_state: RefCounted
+var world_state: Variant
 var region_plan: Dictionary = {}
-var geometry: Node3D
-var objectives: RefCounted
+var geometry: Variant
+var objectives: Variant
 var known_hostiles: Dictionary = {}
 var defeated_hostiles: Dictionary = {}
 var boss_spawned_once: bool = false
@@ -64,10 +64,10 @@ func confirm_enemy_defeated(actor_id: String, b_receipt_id: String) -> bool:
         return false
     if defeated_hostiles.has(actor_id):
         return false
+    if actor_id == "CPU-BOSS" and not objectives.all_objectives_completed():
+        return false
     defeated_hostiles[actor_id] = b_receipt_id
     if actor_id == "CPU-BOSS":
-        if not objectives.all_objectives_completed():
-            return false
         return world_state.confirm_boss_defeated("CPU", b_receipt_id)
     if bool(geometry.goal_activated.get("stop_intruders", false)):
         return objectives.apply_verified_event("stop_intruders", "kill", b_receipt_id, 1)
