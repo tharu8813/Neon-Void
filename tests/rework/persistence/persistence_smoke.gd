@@ -112,6 +112,8 @@ func _run() -> void:
         "idempotent replay after crash does not duplicate pending rewards")
     check(Store.read(slot).revision == saved.revision,
         "duplicate replay cannot advance revision")
+    check(not FileAccess.file_exists(slot.path_join("state.json.intent")),
+        "replay after lost ACK safely removes an already-committed intent")
 
     var temp: String = slot.path_join("state.json.tmp-abandoned")
     _write(temp, "{uncommitted broken staging file")
@@ -301,8 +303,49 @@ func _run() -> void:
     check(Store.read(interrupted).reason == "lifetime_fence_violation",
         "interrupted irreversible transition fails closed, never refunds clone")
     check(Store.restore_backup(interrupted, true).reason ==
-        "backup_would_restore_consumed_clone",
-        "unsafe predeath snapshot cannot be recovered behind lifetime fence")
+        "intent_requires_reconciliation",
+        "never roll back a pending clone-consuming transaction from old backup")
+    check(not Store.recover_interrupted_commit(interrupted).ok,
+        "interrupted commit recovery requires explicit offline consent")
+    var rolled_forward: Dictionary = Store.recover_interrupted_commit(interrupted, true)
+    check(rolled_forward.get("ok", false),
+        "verified write-ahead death intent rolls forward without refunding a clone")
+    if rolled_forward.get("ok", false):
+        var after_roll_forward: Dictionary = Store.read(interrupted)
+        check(after_roll_forward.ok and after_roll_forward.state.vaccine.copies_remaining == 2,
+            "recovered death leaves exactly two clones")
+        check(not Gateway.transact_command(interrupted, death_cmd).applied,
+            "replaying death after recovery never consumes another copy")
+        check(not FileAccess.file_exists(interrupted.path_join("state.json.intent")),
+            "recovery cleans only its validated intent file")
+
+    var reward_intent_slot: String = root_dir.path_join("rework-slot-reward-intent")
+    check(Store.initialize(reward_intent_slot,
+        Model.new_slot("reward-intent", "vaccine-1")).ok,
+        "isolated non-death intent slot")
+    check(Gateway.transact_command(reward_intent_slot, command).applied,
+        "reward intent mission started")
+    check(not Gateway.transact_command(reward_intent_slot, event,
+        -1, "before_primary").applied,
+        "simulate non-death reward crash after intent, before primary")
+    check(Store.read(reward_intent_slot).reason == "intent_requires_reconciliation",
+        "no stale XP snapshot exposed while an uncommitted receipt is pending")
+    check(not Gateway.transact_command(reward_intent_slot, event).applied,
+        "new awards blocked until interrupted reward intent is reconciled")
+    check(Store.restore_backup(reward_intent_slot, true).reason ==
+        "intent_requires_reconciliation",
+        "backup cannot erase an interrupted reward receipt")
+    var restored_reward: Dictionary = Store.recover_interrupted_commit(
+        reward_intent_slot, true)
+    check(restored_reward.get("ok", false),
+        "pending reward is promoted atomically with its original receipt")
+    if restored_reward.get("ok", false):
+        var reward_loaded: Dictionary = Store.read(reward_intent_slot)
+        check(reward_loaded.ok and
+            reward_loaded.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "restored intent contains exact pre-crash reward")
+        check(not Gateway.transact_command(reward_intent_slot, event).applied,
+            "reward receipt replay is refused after intentional roll-forward")
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
