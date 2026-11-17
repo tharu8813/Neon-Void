@@ -309,9 +309,12 @@ func retreat_to_hub() -> void:
 func _physics_process(delta: float) -> void:
     if paused or mode not in ["base", "hub", "combat", "between", "clean"]:
         return
+    # Python's time-slow and kill hitstop scale B movement and infection,
+    # but never the native 60Hz gameplay clock or real skill cooldowns.
+    var world_scale: float = float(sim.current_time_scale()) if mode == "combat" else 1.0
     actor.call("simulate_tick", delta,
         controls.call("movement_vector"),
-        controls.call("consume_dash_request"))
+        controls.call("consume_dash_request"), delta * world_scale)
     var pointer: Vector2 = get_viewport().get_mouse_position()
     controls.call("set_pointer_logical", pointer)
     if bool(controls.get("pointer_valid")):
@@ -340,7 +343,7 @@ func _physics_process(delta: float) -> void:
             legacy_audio.call("play_effect", "eshoot", 0.08)
         _last_friendly_cooldown = cooldown_after
         PlayerBridge.write_player(sim, actor)
-        campaign.tick_infection(1.0 / 60.0)
+        campaign.tick_infection(1.0 / 60.0 * world_scale)
         if float(actor.get("hp")) <= 0.0:
             _game_over()
         elif campaign.failed:
