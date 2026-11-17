@@ -21,6 +21,7 @@ const Geometry = preload("res://scripts/rework/world/hardware_geometry.gd")
 const ObjectiveSession = preload("res://scripts/rework/world/cpu_objective_session.gd")
 const GPUSession = preload("res://scripts/rework/world/gpu_objective_session.gd")
 const RAMSession = preload("res://scripts/rework/world/ram_objective_session.gd")
+const StorageSession = preload("res://scripts/rework/world/storage_objective_session.gd")
 const PlayerMotor = preload("res://scripts/rework/world/preview_player_motor.gd")
 const CombatRouter = preload("res://scripts/rework/world/world_combat_router.gd")
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
@@ -95,7 +96,7 @@ func _physics_process(delta: float) -> void:
     camera.call("follow", player.global_position, pointer, delta)
     if current_mode == "cpu" and cpu_session != null:
         cpu_session.tick_player(player.global_position)
-    elif current_mode == "gpu" and region_session != null:
+    elif ["gpu", "ssd"].has(current_mode) and region_session != null:
         region_session.tick_player(player.global_position)
 
 const CameraRigMath = preload("res://scripts/rework/camera/look_ahead_math.gd")
@@ -115,7 +116,7 @@ func interact() -> Dictionary:
                 if world_state.is_extraction_open(chosen):
                     board.return_to_board(chosen)
                     return {"reason": "already_cleansed", "region_id": chosen}
-                if ["CPU", "GPU", "RAM"].has(chosen):
+                if ["CPU", "GPU", "RAM", "SSD"].has(chosen):
                     if demo_mode:
                         _enter_hardware(result["region_plan"])
                     else:
@@ -124,11 +125,15 @@ func interact() -> Dictionary:
                     board.return_to_board(chosen)
                     unavailable_hardware_requested.emit(chosen)
             return result
-        "cpu", "gpu", "ram":
+        "cpu", "gpu", "ram", "ssd":
             if current_mode == "ram" and region_session != null:
                 var checksum: Dictionary = region_session.try_verify(player.global_position)
                 if not checksum.is_empty():
                     return checksum
+            elif current_mode == "ssd" and region_session != null:
+                var node: Dictionary = region_session.try_interact(player.global_position)
+                if not node.is_empty():
+                    return node
             return hardware.interact_at(player.global_position)
     return {}
 
@@ -242,7 +247,7 @@ func _request_hardware_checkpoint(gate_request: Dictionary) -> void:
         return
     var region_id: String = str(gate_request.get("region_id", ""))
     var requested_plan: Variant = gate_request.get("region_plan")
-    if not ["CPU", "GPU", "RAM"].has(region_id) or typeof(requested_plan) != TYPE_DICTIONARY \
+    if not ["CPU", "GPU", "RAM", "SSD"].has(region_id) or typeof(requested_plan) != TYPE_DICTIONARY \
             or str(gate_request.get("run_id", "")) != current_run_id:
         _freeze_with_error("invalid_region_or_run_for_checkpoint")
         return
@@ -279,7 +284,7 @@ func acknowledge_hardware_checkpoint(receipt_id: String, ack: Dictionary) -> boo
         return false
     var id: String = str(fact.get("region_id", ""))
     if str(fact.get("run_id", "")) != current_run_id \
-            or not ["CPU", "GPU", "RAM"].has(id) \
+            or not ["CPU", "GPU", "RAM", "SSD"].has(id) \
             or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
             or str(board.board.active_region) != id \
             or mission.get("regions", {}).get(id, {}) != fact.get("region_plan", {}):
@@ -298,6 +303,8 @@ func _enter_hardware(region_plan: Dictionary, checkpoint_verified: bool = false)
             return _enter_gpu(region_plan, checkpoint_verified)
         "RAM":
             return _enter_ram(region_plan, checkpoint_verified)
+        "SSD":
+            return _enter_storage(region_plan, checkpoint_verified)
     return false
 
 func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) -> bool:
@@ -420,6 +427,49 @@ func _enter_ram(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
         return false
     return true
 
+func _enter_storage(region_plan: Dictionary, E_checkpoint_verified: bool = false) -> bool:
+    var id: String = str(region_plan.get("id", ""))
+    if id != "SSD" and id != "HDD":
+        return false
+    if not demo_mode and not E_checkpoint_verified:
+        _freeze_with_error(id + "_map_requires_E_checkpoint_before_generation")
+        return false
+    var planned_map: Dictionary = Maps.generate(id,
+        int(region_plan.get("map_seed", 0)), region_plan.get("environment", {}))
+    if planned_map.is_empty():
+        _freeze_with_error(id + "_map_generation_failed")
+        return false
+    var instance: Variant = Geometry.new()
+    if not instance.configure(current_run_id, id, planned_map):
+        instance.queue_free()
+        _freeze_with_error(id + "_map_geometry_failed")
+        return false
+    _remove_active_level()
+    current_mode = id.to_lower()
+    hardware = instance
+    board = null
+    active_level = hardware
+    add_child(hardware)
+    region_session = StorageSession.new()
+    region_session.name = id + "ObjectiveSession"
+    add_child(region_session)
+    if not region_session.configure(current_run_id, region_plan, world_state, hardware):
+        _freeze_with_error(id + "_objective_setup_failed")
+        return false
+    hardware.interaction_requested.connect(region_session.on_world_interaction)
+    hardware.interaction_requested.connect(_on_board_return_interacted)
+    region_session.enemy_spawn_requested.connect(combat.spawn_hostile)
+    region_session.extraction_interaction_requested.connect(_on_storage_exit_interacted)
+    player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
+    camera.world_bounds = planned_map["world_bounds"]
+    camera.global_position = Vector3(player.position.x, 14, player.position.z)
+    if not combat.begin_encounter(player, camera, planned_map, current_run_id, {
+        "formal": not demo_mode, "seed": int(region_plan["encounter_seed"]),
+        "encounter_id": id + ":mission"}):
+        _freeze_with_error("B_" + id + "_encounter_failed")
+        return false
+    return true
+
 func _on_enemy_defeated(actor_id: String, receipt_id: String) -> void:
     if current_mode == "motherboard" and board != null:
         if board.confirm_intro_enemy_defeated(actor_id, receipt_id):
@@ -428,7 +478,7 @@ func _on_enemy_defeated(actor_id: String, receipt_id: String) -> void:
         cpu_session.confirm_enemy_defeated(actor_id, receipt_id)
         if world_state.is_extraction_open("CPU") and pending_world_receipts.is_empty():
             cpu_session.acknowledge_cleansed()
-    elif ["gpu", "ram"].has(current_mode) and region_session != null:
+    elif ["gpu", "ram", "ssd", "hdd"].has(current_mode) and region_session != null:
         region_session.confirm_enemy_defeated(actor_id, receipt_id)
         if world_state.is_extraction_open(current_mode.to_upper()) and pending_world_receipts.is_empty():
             region_session.acknowledge_cleansed()
@@ -470,6 +520,12 @@ func _on_board_return_interacted(fact: Dictionary) -> void:
     if not world_state.is_extraction_open(id) or not pending_world_receipts.is_empty():
         return
     _enter_motherboard()
+
+func _on_storage_exit_interacted(_fact: Dictionary) -> void:
+    var id: String = current_mode.to_upper()
+    if not ["SSD", "HDD"].has(id) or not world_state.is_extraction_open(id):
+        return
+    extraction_gate.prepare(id)
 
 func _on_ram_exit_interacted(_fact: Dictionary) -> void:
     if current_mode != "ram" or not world_state.is_extraction_open("RAM"):
