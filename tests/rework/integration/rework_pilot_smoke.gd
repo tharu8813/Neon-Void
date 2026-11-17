@@ -148,6 +148,9 @@ func _run() -> void:
         check(bool(snapshot.get("ok", false))
             and snapshot["snapshot"]["vaccine"]["archive"].size() == 1,
             "manual hub deposit moves learned plugin into DB")
+    pilot.call("_halt", "synthetic_ambiguous_E_commit")
+    check(bool(pilot.get("frozen")) and paused,
+        "ambiguous durable receipt freezes entire 60Hz B/D gameplay")
     paused = false
     root.remove_child(pilot)
     pilot.queue_free()
