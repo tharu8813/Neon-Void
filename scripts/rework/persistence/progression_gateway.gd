@@ -66,7 +66,8 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
             return Rules.plugin_picked(state, vaccine_id, generation, run_id,
                 receipt_id, str(command.get("plugin_id", "")),
                 str(command.get("rarity", "")), int(command.level),
-                str(command.get("offer_source", "levelup")),\n                str(command.get("offer_id", "")))
+                str(command.get("offer_source", "levelup")),
+                str(command.get("offer_id", "")))
         "extract":
             if typeof(command.get("learn_plugin_ids")) != TYPE_ARRAY:
                 return {"ok": false, "reason": "invalid_learning_selection"}
