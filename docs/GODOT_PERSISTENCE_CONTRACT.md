@@ -2,20 +2,21 @@
 
 > This port is **not** the legacy writer. Python/Tk files are the source of truth
 > for Python; the Godot port writes only its own `user://` slot. No automatic
-> import or transparent overwrite is allowed. PR based on P1 #65, so keep it
-> unmerged until P5/P6/P7 and the physical Windows gates pass.
+> import or transparent overwrite is allowed. Initial P8 integration reached
+> `main` through #85, followed by the root project layout in #86. Follow-up
+> safety changes stay in a separate reviewable PR until CI and QA pass.
 
 ## Inventory and ownership (frozen Python baseline)
 
 | Legacy filename | Origin | Schema | Godot authority |
 | --- | --- | --- | --- |
-| `save.json` | `neonvoid/storage.py` | unversioned best_score, best_wave, runs | score/run history only |
-| `settings.json` | `neonvoid/settings.py` | v1–v5; v5 has 9 remappable controls | settings UI, **not** database XP |
-| `profile.json` | `neonvoid/profile.py` | v1–v2; v2 adds extracted_runs | statistics/recent 20 runs only |
-| `antivirus_db.json` | `neonvoid/database_storage.py` | exact v1, strict receipts | **SOLE authority** for cumulative XP, level, archived software, extraction/closed run receipts |
-| `os_checkpoint.json` | `neonvoid/os_checkpoint.py` | exact v1 | one confirmed OS run state and completed waves; never active enemies or bullets |
+| `save.json` | `python/neonvoid/storage.py` | unversioned best_score, best_wave, runs | score/run history only |
+| `settings.json` | `python/neonvoid/settings.py` | v1–v5; v5 has 9 remappable controls | settings UI, **not** database XP |
+| `profile.json` | `python/neonvoid/profile.py` | v1–v2; v2 adds extracted_runs | statistics/recent 20 runs only |
+| `antivirus_db.json` | `python/neonvoid/database_storage.py` | exact v1, strict receipts | **SOLE authority** for cumulative XP, level, archived software, extraction/closed run receipts |
+| `os_checkpoint.json` | `python/neonvoid/os_checkpoint.py` | exact v1 | one confirmed OS run state and completed waves; never active enemies or bullets |
 
-Python source execution resolves files in the repository root.
+Python source execution resolves files in the repository's `python/` directory (after #86).
 Frozen Python Windows builds resolve to
 `%LOCALAPPDATA%\\NeonVoid\\`, falling back to `~/.neonvoid` when
 LocalAppData is inaccessible. These are distinct potential sources.
@@ -30,7 +31,10 @@ target in the import dialog. Imported backups live under
 `slot-v1/legacy_originals/<original filename>`; `migration_manifest.json`
 records schema versions, source location, exact byte counts and SHA-256 for
 each present original. The five converted documents live in a single
-`slot-v1/state.json` envelope, checksum-covered and revisioned. Supported older settings v1–v3 are normalized to settings v5 with the\noriginal Python binding-migration priorities, and profile v1 to profile v2;\noriginal bytes remain in the backup. Missing optional legacy documents are\nexplicitly recorded as absent and given safe in-memory defaults. No silently corrupt file is treated as absent.
+`slot-v1/state.json` envelope, checksum-covered and revisioned. Supported older settings v1–v3 are normalized to settings v5 with the
+original Python binding-migration priorities, and profile v1 to profile v2;
+original bytes remain in the backup. Missing optional legacy documents are
+explicitly recorded as absent and given safe in-memory defaults. No silently corrupt file is treated as absent.
 
 ## Explicit import protocol
 
@@ -39,6 +43,10 @@ each present original. The five converted documents live in a single
 2. Reject overlapping source/target paths, existing Godot slots, unsupported
    future versions, corrupt JSON, inconsistent receipts, unsupported precision,
    and bad/oversized checkpoints **before** any committed destination exists.
+   A checkpoint with confirmed waves must match the corresponding wave XP
+   receipts in the imported authoritative DB. A fully completed sector must
+   also have boss and sector-clear receipts. An inconsistent source is rejected
+   without changing or deleting a single legacy byte.
 3. Stage inside a brand-new sibling directory on the same filesystem. Copy
    exact original bytes to `legacy_originals`; verify backup SHA-256.
    Write the manifest and converted state envelope. Re-read every source and
@@ -59,19 +67,30 @@ support needs a separately reviewed format.
 ## Runtime transaction and recovery
 
 `save_store.gd` manages one envelope containing all five documents:
-`{format:1, revision:N, payload_sha256:..., payload_json:"..."}`. The SHA-256 is computed over the **exact serialized payload_json string** to\navoid type-representation changes after parsing; the inner JSON and all\ncurrent schema fields are revalidated before use.
+`{format:1, revision:N, payload_sha256:..., payload_json:"..."}`. The SHA-256 is computed over the **exact serialized payload_json string** to
+avoid type-representation changes after parsing; the inner JSON and all
+current schema fields are revalidated before use.
 A runtime mutation takes a directory lock (`<slot>.write-lock`), re-reads
 the current envelope, computes a new immutable-style state, validates it,
 writes the old full snapshot to `state.json.bak`, writes a synced temporary
 envelope, and renames it to the primary path. A response reports
 `applied=true` **only after** the new primary was verified.
 
+The **complete serialized envelope**, including the nested JSON payload and
+checksum metadata, is measured before rotating a backup or replacing a
+primary. If it exceeds `MAX_STATE_BYTES` (16 MiB), the transaction returns
+`state_too_large`, leaving both primary and `.bak` byte-for-byte intact.
+
 A stale or corrupt primary is NEVER reset to defaults. Manual
 `SaveStore.recover_from_backup(slot, true)` first verifies the backup in an
 isolated directory, preserves primary bytes under
 `state.json.before-recovery-*`, then restores the backup. The backup is the
 **previous snapshot**, potentially missing the most recent awarded XP.
-Recovery is an explicit user decision, not automatic. A crash can leave a
+Recovery is an explicit user decision, not automatic. Recovery refuses any
+healthy current primary (`primary_is_valid`) and unsupported future formats
+(`primary_requires_manual_review`), preventing accidental loss of valid XP
+receipts and cross-version downgrades. An invalid primary is preserved in a
+quarantine copy and verified before replacing it with the backup. A crash can leave a
 `.write-lock` sidecar; a user/admin must verify no game process is running
 before manually removing it. File rename and directory rename atomicity
 depends on the target filesystem; durable power-loss guarantees on all
@@ -131,21 +150,23 @@ enemies or an unfinished wave. `Checkpoint.resume` returns each zone's
 Checkpoint revisions are checked and cannot skip/regress confirmed waves.
 Starting a new run must close the previous run first.
 
-**Integration ownership:** E owns `godot/scripts/persistence/**`,
-`godot/scripts/progression/**`, the P8 test and this contract. C owns
+**Integration ownership:** E owns `scripts/persistence/**`,
+`scripts/progression/**`, `tests/persistence_smoke.gd` and this contract. C owns
 sector events/campaign; D owns UI/menus. Neither team should write the
 DB or checkpoint JSON directly.
 
 ## Automated checks / remaining gates
 
-`godot --headless --path godot --script res://tests/persistence_smoke.gd`
+`godot --headless --path . --script res://tests/persistence_smoke.gd`
 runs synthetic import fixtures under a newly generated
-`user://p8-test-*` directory and checks import refusal, original-byte\nimmutability, normalized v2 settings/profile migration, guarded settings UI\nwrites, backup write failure (no success receipt), backups, XP receipts, extraction, revision conflicts,
+`user://p8-test-*` directory and checks import refusal, original-byte
+immutability, normalized v2 settings/profile migration, guarded settings UI
+writes, backup write failure (no success receipt), backups, XP receipts, extraction, revision conflicts,
 prior-snapshot recovery and future-schema rejection. It deletes only its
 own synthetic fixture directory. No real user saves are ever opened.
 
-Required before merge: green Linux and Windows Godot Actions for latest
-HEAD; manual Windows import from **copies** of known versions with varied
-DPI/permissions, running two Windows processes, interrupted writes,
-recovering from abrupt termination, settings and profile UI parity,
-P5–P7 integration, and all outstanding P0/P1 acceptance criteria.
+Before merging new persistence hardening: green Linux and Windows Godot Actions
+for the latest HEAD; manual Windows import from **copies** of known versions,
+permissions and concurrent-process/force-quit tests, interrupted-write
+recovery, settings/profile UI parity and end-to-end save/resume/extraction QA.
+Never use real user files in automated tests.

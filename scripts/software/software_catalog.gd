@@ -30,6 +30,12 @@ static func find(uid: String) -> Dictionary:
 			return entry
 	return {}
 
+static func description_for_display(uid: String) -> String:
+	## Real per-kill recovery is lifesteal * 0.5, without mutating frozen metadata.
+	if uid == "vamp":
+		return "적 처치 시 체력 +0.35"
+	return str(find(uid).get("description", ""))
+
 static func weight(uid: String, sector_id: String = "") -> float:
 	var entry: Dictionary = find(uid)
 	if entry.is_empty():

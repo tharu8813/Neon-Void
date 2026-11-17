@@ -60,7 +60,7 @@ static func make_checkpoint(campaign: RefCounted, actor: Node, combat: RefCounte
         software: RefCounted, scene_kind: String, hub_position: Vector2,
         cards: Array[String], purify_uses: int, score: int, kills: int,
         boss_kills: int, deployed_level: int, elapsed_frames: int,
-        confirmed_wave: int = 0) -> Dictionary:
+        confirmed_wave: int = 0, combo: int = 0, run_best_combo: int = 0) -> Dictionary:
     var sid: String = str(campaign.active_sector)
     var persisted_scene: String = scene_kind
     var valid_scene: bool = persisted_scene in ["hub", "play", "upgrade", "dead"]
@@ -76,6 +76,8 @@ static func make_checkpoint(campaign: RefCounted, actor: Node, combat: RefCounte
         if sid.is_empty() or confirmed_wave != int(waves.get(sid, -1)) + 1:
             return {}
         waves[sid] = confirmed_wave
+    if combo < 0 or run_best_combo < combo or run_best_combo > kills:
+        return {}
     var spot: Vector2 = actor.get("logical_position")
     if persisted_scene == "hub":
         spot = hub_position
@@ -101,9 +103,9 @@ static func make_checkpoint(campaign: RefCounted, actor: Node, combat: RefCounte
         "pending_cards": cards.duplicate(),
         "infection": {"player_infection": campaign.infection, "os_integrity": campaign.integrity},
         "purify_uses": purify_uses, "salvage_claimed": false,
-        "score": score, "kills": kills, "combo": 0,
+        "score": score, "kills": kills, "combo": combo,
         "run_kills": kills, "run_boss_kills": boss_kills,
-        "run_best_combo": 0, "elapsed_frames": elapsed_frames,
+        "run_best_combo": maxi(combo, run_best_combo), "elapsed_frames": elapsed_frames,
     }
     return snapshot if Validator.validate("os_checkpoint.json", snapshot).ok else {}
 

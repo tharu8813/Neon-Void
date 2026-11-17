@@ -76,6 +76,7 @@ var player_echo: Node3D
 var legacy_sparks: Node3D
 var _enemy_hp_previous: Dictionary = {}
 var combo_count: int = 0
+var run_best_combo: int = 0
 var combo_window: float = 0.0
 var lowhp_beat_timer: float = 0.0
 var _last_friendly_cooldown: float = 0.0
@@ -177,7 +178,10 @@ func _ready() -> void:
         _pause_gameplay()
         ui.call("show_error", last_error)
 
-func start_new_run() -> bool:
+func start_new_run(seed_override: int = -1) -> bool:
+    # Deterministic test seed is opt-in; ordinary runs receive a fresh seed.
+    if seed_override < -1 or seed_override > 2147483647:
+        return false
     if mode not in ["base", "dead"]:
         return false
     if persistence_enabled:
@@ -213,8 +217,15 @@ func start_new_run() -> bool:
     if persistence_enabled and saved_state["antivirus_db.json"]["closed_runs"].has(unique_run_id):
         ui.call("show_error", "OS 실행 ID 충돌로 새 배포를 중단했습니다.")
         return false
-    campaign = Campaign.new(unique_run_id, 42)
-    sim = Combat.new(42)
+    var run_seed: int = seed_override
+    if run_seed == -1:
+        var seed_bytes: PackedByteArray = Crypto.new().generate_random_bytes(4)
+        if seed_bytes.size() != 4:
+            ui.call("show_error", "새 OS의 난수 시드를 생성하지 못했습니다.")
+            return false
+        run_seed = int(seed_bytes.decode_u32(0) & 0x7fffffff)
+    campaign = Campaign.new(unique_run_id, run_seed)
+    sim = Combat.new(run_seed)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("shard_collected", _on_shard_collected)
@@ -232,6 +243,7 @@ func start_new_run() -> bool:
     purify_uses = 3
     score = 0
     combo_count = 0
+    run_best_combo = 0
     combo_window = 0.0
     lowhp_beat_timer = 0.0
     _enemy_hp_previous.clear()
@@ -244,6 +256,13 @@ func start_new_run() -> bool:
     actor.set("simulation_enabled", true)
     actor.call("set_logical_position", HUB_SPAWN)
     actor.set("velocity_px", Vector2.ZERO)
+    # Reset reusable B actor before _apply_stats clamps charges.
+    actor.set("dash_t", 0.0)
+    actor.set("charge_t", 0.0)
+    actor.set("invulnerability_t", 0.0)
+    actor.set("dash_dir", Vector2.ZERO)
+    actor.set("last_move_dir", Vector2.UP)
+    actor.set("charges", int(software.stats["dash_max"]))
     actor.set("hp", software.maxhp)
     actor.set("mana", software.maxmana)
     _apply_stats()
@@ -251,7 +270,8 @@ func start_new_run() -> bool:
     if persistence_enabled:
         var first: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim, software,
             "hub", hub_position, [], purify_uses, score, run_kills,
-            run_boss_kills, deployed_level, run_frames)
+            run_boss_kills, deployed_level, run_frames, 0,
+            combo_count, run_best_combo)
         var initial: Dictionary = SaveBridge.persist_checkpoint(save_slot, first, 0)
         if not initial.get("applied", false) or not _reload_save():
             mode = "base"
@@ -436,7 +456,8 @@ func _try_confirm_wave() -> void:
             preview_software.set_pending_offers(_pending_offers)
         var future: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim,
             preview_software, "upgrade", hub_position, _pending_offers, purify_uses,
-            score, run_kills, run_boss_kills, deployed_level, run_frames, wave)
+            score, run_kills, run_boss_kills, deployed_level, run_frames, wave,
+            combo_count, run_best_combo)
         var commit: Dictionary = SaveBridge.persist_wave(save_slot, future,
             checkpoint_revision, str(campaign.run_id), sid, wave)
         if not commit.get("applied", false) or not _reload_save():
@@ -495,7 +516,8 @@ func _on_card_selected(index: int) -> void:
         var new_score: int = score + (250 if intended == "bonus" else 0)
         var snapshot: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim,
             candidate, scene_after, hub_position, [], purify_uses, new_score,
-            run_kills, run_boss_kills, deployed_level, run_frames)
+            run_kills, run_boss_kills, deployed_level, run_frames, 0,
+            combo_count, run_best_combo)
         var saved: Dictionary = SaveBridge.persist_checkpoint(save_slot, snapshot, checkpoint_revision)
         if not saved.get("applied", false) or not _reload_save():
             ui.call("show_error", "선택은 보류됐습니다. 저장 실패 후 다시 선택하세요: " +
@@ -536,6 +558,7 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     run_kills += 1
     var boss_kill: bool = EnemyCatalog.is_boss(kind)
     combo_count = combo_count + 1 if combo_window > 0.0 else 1
+    run_best_combo = maxi(run_best_combo, combo_count)
     combo_window = 2.6
     # Python game.py::kill_enemy uses the actual enemy type score times
     # min(combo,40)*0.1, not a flat ten points per kill.
@@ -1218,6 +1241,10 @@ func resume_checkpoint() -> bool:
     sim.connect("wave_ready", _on_wave_ready)
     run_kills = int(cp.run_kills)
     run_boss_kills = int(cp.run_boss_kills)
+    run_best_combo = int(cp.run_best_combo)
+    # Only the lifetime best survives the safe-boundary resume: no combo clock is saved.
+    combo_count = 0
+    combo_window = 0.0
     run_frames = int(cp.elapsed_frames)
     score = int(cp.score)
     purify_uses = int(cp.purify_uses)
@@ -1225,6 +1252,10 @@ func resume_checkpoint() -> bool:
     actor.set("simulation_enabled", true)
     actor.set("hp", float(cp.player.hp))
     actor.set("mana", float(cp.player.mana))
+    actor.set("dash_t", 0.0)
+    actor.set("charge_t", 0.0)
+    actor.set("invulnerability_t", 0.0)
+    actor.set("velocity_px", Vector2.ZERO)
     _apply_stats()
     actor.set("charges", int(cp.player.charges))
     sim.set_player_snapshot({
@@ -1434,7 +1465,8 @@ func _save_hub_checkpoint() -> bool:
         return false
     var next: Dictionary = SaveBridge.make_checkpoint(campaign, actor, sim, software,
         "hub", hub_position, [], purify_uses, score, run_kills,
-        run_boss_kills, deployed_level, run_frames)
+        run_boss_kills, deployed_level, run_frames, 0,
+        combo_count, run_best_combo)
     var result: Dictionary = SaveBridge.persist_checkpoint(save_slot, next, checkpoint_revision)
     return result.get("applied", false) and _reload_save()
 
@@ -1444,4 +1476,4 @@ func _finalize_saved_run(status: String, selected_id: String = "") -> Dictionary
         highest_wave = maxi(highest_wave, int(campaign.progress[sid]))
     return SaveBridge.finalize_run(save_slot, str(campaign.run_id), status,
         software.levels.duplicate(true), selected_id, score, run_kills,
-        run_boss_kills, 0, run_frames, highest_wave)
+        run_boss_kills, run_best_combo, run_frames, highest_wave)

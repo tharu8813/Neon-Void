@@ -372,7 +372,7 @@ func _draw_state() -> void:
         "방어력   %6.1f\n방어 관통 %6.1f\n이동 속도 %6.0f") % [
         float(stats.get("dmg", 10.0)), float(stats.get("rate", 5.4)),
         float(stats.get("crit", 0.05)) * 100.0,
-        float(stats.get("armor", 4.0)) + (12.0 if float(_data.get("guard_t", 0.0)) > 0.0 else 0.0),
+        float(stats.get("armor", 4.0)) + (20.0 if float(_data.get("guard_t", 0.0)) > 0.0 else 0.0),
         float(stats.get("armor_pen", 0.0)), float(stats.get("speed", 322.0))]
     _stat_right.text = ("마나 회복 %4.1f/s\n체력 재생 %4.1f/s\n적중 회복 %4.1f\n" +
         "화상 확률 %4.0f%%\n중독 확률 %4.0f%%\n스킬 위력 %4.0f%%") % [
