@@ -146,7 +146,7 @@ static func _take_lock(slot_path: String) -> Dictionary:
         return {"ok": false, "reason": "lock_owner_failed"}
     return {"ok": true, "token": token}
 
-static func _release_lock(slot_path: String, token: String) -> bool:
+static func _release_lock(slot_path: String, token: String, require_same_pid: bool = true) -> bool:
     var lock_path: String = slot_path + ".write-lock"
     var raw: Dictionary = _read_bytes(lock_path.path_join("owner.json"))
     if not raw.ok:
@@ -171,6 +171,48 @@ static func transact(slot_path: String, transition: Callable,
     if not _release_lock(slot_path, locked.token):
         result["lock_release_failed"] = true
     return result
+
+static func _monotonic_transition(previous: Dictionary, upcoming: Dictionary) -> bool:
+    ## Even a future integration caller using Store.transact() directly cannot
+    ## replenish clones or silently erase receipts/banked progression.
+    if upcoming.generation < previous.generation or upcoming.generation > previous.generation + 1:
+        return false
+    var before: Variant = previous.vaccine
+    var after: Variant = upcoming.vaccine
+    if before == null:
+        if after == null:
+            return upcoming.generation == previous.generation
+        return previous.selection_required and upcoming.generation == previous.generation + 1 \
+            and after.level == 1 and after.total_xp == 0 \
+            and after.earned_fragments == 0 and after.unspent_fragments == 0 \
+            and after.copies_remaining == 3 and after.archive.is_empty() \
+            and after.carried.is_empty() and after.known_skills.is_empty() \
+            and after.receipts.is_empty() and after.closed_runs.is_empty() \
+            and after.mission == null
+    if upcoming.generation != previous.generation:
+        return false
+    if after == null:
+        return before.copies_remaining == 0 and before.mission != null \
+            and upcoming.selection_required
+    if after.vaccine_id != before.vaccine_id \
+            or after.copies_remaining > before.copies_remaining \
+            or after.total_xp < before.total_xp \
+            or after.level < before.level \
+            or after.earned_fragments < before.earned_fragments:
+        return false
+    for key in before.receipts:
+        if not after.receipts.has(key):
+            return false
+    for key in before.closed_runs:
+        if after.closed_runs.get(key) != before.closed_runs[key]:
+            return false
+    for skill in before.known_skills:
+        if not after.known_skills.has(skill):
+            return false
+    if before.mission != null and after.mission == null \
+            and not after.closed_runs.has(before.mission.run_id):
+        return false
+    return true
 
 static func _transact_locked(slot_path: String, transition: Callable,
         expected_revision: int, fault_at: String) -> Dictionary:
@@ -251,6 +293,6 @@ static func release_orphan_lock_offline(slot_path: String, token: String,
     ## all instances are closed BEFORE calling with its exact owner token.
     if not explicit_all_processes_closed or not _valid_slot(slot_path):
         return {"ok": false, "reason": "offline_consent_required"}
-    if not _release_lock(slot_path, token):
+    if not _release_lock(slot_path, token, false):
         return {"ok": false, "reason": "owner_token_mismatch"}
     return {"ok": true}
