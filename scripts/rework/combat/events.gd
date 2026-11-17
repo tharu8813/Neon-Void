@@ -78,7 +78,7 @@ func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd
         metrics["cycle_blocked"] += 1
         return {}
     var clock: int = int(parent.get("tick", current_tick))
-    var icd_key: String = signature
+    var icd_key: String = effect_id + "|" + actor + "|" + str(event.get("icd_scope_key", target))
     if icd_ticks > 0 and last_proc_tick.has(icd_key):
         if clock - int(last_proc_tick[icd_key]) < icd_ticks:
             metrics["icd_blocked"] += 1
@@ -97,11 +97,14 @@ func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd
     return queued
 
 func drain(handler: Callable = Callable()) -> Array[Dictionary]:
-    ## handler(event) -> Array[Dictionary] of {"effect_id", "event", "icd_ticks"}
-    ## No arbitrary chain-depth cutoff: cycles and duplicate hit IDs are rejected.
-    ## Each call fully drains FIFO; caller may monitor metrics for load.
+    return drain_batch(-1, handler)
+
+func drain_batch(max_events: int, handler: Callable = Callable()) -> Array[Dictionary]:
+    ## max_events is a scheduling quota, NOT an event drop limit.
+    ## Any overflow remains pending with its ancestry and order preserved.
+    ## -1 means exhaust all; no fixed gameplay maximum chain depth.
     var processed: Array[Dictionary] = []
-    while not pending.is_empty():
+    while not pending.is_empty() and (max_events < 0 or processed.size() < max_events):
         var event: Dictionary = pending.pop_front()
         var event_id: String = str(event.get("event_id", ""))
         if processed_ids.has(event_id):
