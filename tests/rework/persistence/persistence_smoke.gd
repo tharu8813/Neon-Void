@@ -141,12 +141,12 @@ func _run() -> void:
         "corrupt existing slot must not silently reset")
     check(not Store.restore_backup(slot).ok, "recovery needs explicit consent")
     var recovered: Dictionary = Store.restore_backup(slot, true)
-    check(recovered.ok and recovered.revision == first_revision,
-        "manual verified backup recovery rolls back to previous revision")
+    check(recovered.ok and recovered.revision == saved.revision,
+        "explicit recovery restores latest committed revision, not previous rollback")
     check(FileAccess.file_exists(slot.path_join("state.json.bak")),
         "backup remains available after recovery")
-    check(_bytes(slot.path_join("state.json")) != current,
-        "recovery uses prior verified backup, not newer damaged primary")
+    check(_bytes(slot.path_join("state.json")) == current,
+        "latest committed recovery copy matches the original primary byte-for-byte")
 
     # Hard storage invariants hold even if a future caller bypasses the gateway.
     var lower_copies: Callable = func(next: Dictionary) -> Dictionary:
@@ -158,8 +158,8 @@ func _run() -> void:
         return {"ok": true, "state": next}
     check(Store.transact(slot, recharge).reason == "invalid_transition",
         "save boundary blocks clone restoration even by direct writer")
-    check(Gateway.transact_command(slot, event).applied,
-        "recovered backup can recommit lost receipt exactly once")
+    check(not Gateway.transact_command(slot, event).applied,
+        "restored committed receipt cannot be granted again")
     var drop_receipt: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.receipts.clear()
         return {"ok": true, "state": next}
@@ -213,9 +213,10 @@ func _run() -> void:
     check(Gateway.transact_command(second_slot, another).applied,
         "second slot write creates safe backup")
     _write(second_slot.path_join("state.json.bak"), "{invalid backup")
+    _write(second_slot.path_join("state.json.recovery"), "{invalid latest copy")
     _write(second_slot.path_join("state.json"), "{invalid primary")
     check(not Store.restore_backup(second_slot, true).ok,
-        "corrupt backup never silently restored")
+        "damaged latest copy and backup cannot silently roll back receipts")
     check(not Store.initialize(second_slot, Model.new_slot("bad-backup", "again")).ok,
         "corrupt existing slot cannot be overwritten")
 
@@ -289,9 +290,14 @@ func _run() -> void:
     check(Store.read(irreversible).state.vaccine.copies_remaining == 2,
         "first spent clone persisted")
     _write(irreversible.path_join("state.json"), "{damaged after clone used")
-    check(Store.restore_backup(irreversible, true).reason ==
-        "backup_would_restore_consumed_clone",
-        "backup cannot resurrect a consumed clone after primary corruption")
+    var safe_death_restore: Dictionary = Store.restore_backup(irreversible, true)
+    check(safe_death_restore.get("ok", false),
+        "latest committed recovery restores death without refunding a clone")
+    if safe_death_restore.get("ok", false):
+        check(safe_death_restore.state.vaccine.copies_remaining == 2,
+            "latest recovery copy retains consumed clone")
+        check(safe_death_restore.state.vaccine.receipts.has("death-finality"),
+            "latest recovery copy retains death receipt")
 
     var interrupted: String = root_dir.path_join("rework-slot-interrupted")
     check(Store.initialize(interrupted, Model.new_slot("interrupted", "vaccine-1")).ok,
