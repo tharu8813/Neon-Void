@@ -61,6 +61,14 @@ func submit_root(payload: Dictionary) -> Dictionary:
     event["proc_path"] = []
     return _queue(event)
 
+func submit_continuation(payload: Dictionary, ancestry: Array) -> Dictionary:
+    ## A projectile spawned by a proc must NOT be treated as a fresh attack
+    ## root. Its eventual hit inherits the original effect ancestry.
+    var event: Dictionary = payload.duplicate(true)
+    event["tick"] = current_tick
+    event["proc_path"] = ancestry.duplicate()
+    return _queue(event)
+
 func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd_ticks: int = 0) -> Dictionary:
     if effect_id.is_empty():
         return {}

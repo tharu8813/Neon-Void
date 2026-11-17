@@ -3,6 +3,7 @@ extends RefCounted
 const Runtime = preload("res://scripts/rework/combat/combat_runtime.gd")
 const Grid = preload("res://scripts/rework/combat/collision_grid.gd")
 const Events = preload("res://scripts/rework/combat/events.gd")
+const Statuses = preload("res://scripts/rework/combat/statuses.gd")
 const Plugins = preload("res://scripts/rework/combat/plugin_effects.gd")
 const Bridge = preload("res://scripts/rework/combat/combat_node_bridge.gd")
 
@@ -152,6 +153,67 @@ static func run(check: Callable) -> void:
     check.call(gated.size() == 1 and
         gated[0]["event"]["allowed_proc_triggers"].is_empty(),
         "C can_trigger_on_hit_effects=false denies downstream proc rights")
+    var area = Runtime.new(723, {"encounter_id": "area"})
+    area.register_actor("P", "vaccine", Vector3.ZERO,
+        {"attack_damage": 5.0, "attack_speed": 0.0},
+        {"player_controlled": true, "projectile_speed": 120.0})
+    area.register_actor("E1", "virus", Vector3(2, 0, 0),
+        {"max_health": 20.0, "health": 20.0, "attack_speed": 0.0},
+        {"attack_range": 0.0})
+    area.register_actor("E2", "virus", Vector3(4, 0, 0),
+        {"max_health": 20.0, "health": 20.0, "attack_speed": 0.0},
+        {"attack_range": 0.0})
+    var splash: Dictionary = {
+        "plugin_id": "splash", "trigger": {"event": "projectile_hit",
+            "source_tags": ["basic_attack"]},
+        "proc_permissions": {"can_trigger_on_hit_effects": false,
+            "allowed_proc_triggers": []},
+        "effect_commands": [{"kind": "damage", "target_policy": "area_around_target",
+            "radius": 2.1, "attack": {"damage_type": "true",
+            "base_damage": 2.0}}]
+    }
+    area.set_actor_plugins("P", [splash])
+    area.actors["P"]["fire_credit"] = 1.0
+    area._fire_if_ready("P", Vector2.RIGHT)
+    area.step_fixed({"P": {"fire": false, "aim_world": Vector3(5, 0, 0)}})
+    check.call(_close(float(area.snapshot("E1")["stats"]["health"]), 13.0) and
+        _close(float(area.snapshot("E2")["stats"]["health"]), 18.0),
+        "explicit area radius hits all valid targets with actual AoE damage")
+    var feedback = Runtime.new(800, {"encounter_id": "feedback"})
+    feedback.register_actor("P", "vaccine", Vector3.ZERO,
+        {"attack_damage": 5.0, "attack_speed": 0.0},
+        {"player_controlled": true, "projectile_speed": 120.0})
+    feedback.register_actor("E", "virus", Vector3(2, 0, 0),
+        {"max_health": 30.0, "health": 30.0, "attack_speed": 0.0},
+        {"attack_range": 0.0})
+    var extra_bullet: Dictionary = {
+        "plugin_id": "feedback_bullet",
+        "trigger": {"event": "projectile_hit", "source_tags": []},
+        "proc_permissions": {"can_trigger_on_hit_effects": true,
+            "allowed_proc_triggers": ["on_hit"]},
+        "effect_commands": [{"kind": "spawn_projectile", "speed": 120.0,
+            "count": 1, "attack": {"damage_type": "physical", "base_damage": 1.0}}]
+    }
+    feedback.set_actor_plugins("P", [extra_bullet])
+    feedback.actors["P"]["fire_credit"] = 1.0
+    feedback._fire_if_ready("P", Vector2.RIGHT)
+    for tick in range(5):
+        feedback.step_fixed({"P": {"fire": false,
+            "aim_world": Vector3(5, 0, 0)}})
+    check.call(int(feedback.counters["shots"]) == 2 and
+        int(feedback.bus.metrics["cycle_blocked"]) >= 1,
+        "derived projectile inherits ancestry and cannot create infinite feedback")
+    var dot_self = Runtime.new(700, {"encounter_id": "dot"})
+    dot_self.register_actor("P", "vaccine", Vector3.ZERO,
+        {"max_health": 30.0, "health": 30.0, "attack_speed": 0.0},
+        {"player_controlled": true})
+    var dot_status: Dictionary = {
+        "id": "integrity", "duration_ticks": 2,
+        "dot_dps": 60.0, "dot_damage_type": "true"}
+    Statuses.apply(dot_self.actors["P"]["status_state"], dot_status)
+    dot_self.step_fixed({"P": {"fire": false}})
+    check.call(_close(float(dot_self.snapshot("P")["stats"]["health"]), 29.0),
+        "self-sourced DoT status applies HP damage even without external owner")
     var count_metadata: Dictionary = {
         "plugin_id": "threshold", "trigger": {"event": "on_hit_proc_count",
             "source_tags": []}, "trigger_after_hits": 4,

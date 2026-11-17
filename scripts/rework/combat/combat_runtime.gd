@@ -201,7 +201,8 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
         "attack": attack.duplicate(true), "source_tags": tags.duplicate(),
         "allowed_proc_triggers": overrides.get("allowed_proc_triggers",
             ["on_hit", "on_crit"] if tags.has("basic_attack") or tags.has("skill_damage") else []).duplicate(),
-        "on_hit_damage_efficiency": float(overrides.get("on_hit_damage_efficiency", 1.0))
+        "on_hit_damage_efficiency": float(overrides.get("on_hit_damage_efficiency", 1.0)),
+        "proc_path": overrides.get("proc_path", []).duplicate()
     })
     projectiles.append(projectile)
     counters["shots"] += 1
@@ -312,14 +313,19 @@ func _step_projectiles() -> void:
         counters["broadphase_candidates"] += candidates.size()
         for candidate in candidates:
             var victim: String = str(candidate["actor_id"])
-            var root: Dictionary = bus.submit_root({
+            var hit_payload: Dictionary = {
                 "kind": "damage", "trigger_kind": "on_hit",
                 "actor_id": str(p["actor_id"]), "target_id": victim,
                 "attack_id": "projectile", "hit_key": p["hit_key"],
                 "attack": p["attack"], "source_tags": p["source_tags"],
                 "on_hit_damage_efficiency": p["on_hit_damage_efficiency"],
                 "allowed_proc_triggers": p["allowed_proc_triggers"]
-            })
+            }
+            var root: Dictionary = {}
+            if p["proc_path"].is_empty():
+                root = bus.submit_root(hit_payload)
+            else:
+                root = bus.submit_continuation(hit_payload, p["proc_path"])
             if root.is_empty():
                 continue
             counters["collisions"] += 1
@@ -340,7 +346,37 @@ func _plugin_requests(event: Dictionary) -> Array[Dictionary]:
     var actor_id: String = str(event.get("actor_id", ""))
     if not actors.has(actor_id):
         return []
-    return Plugins.requests_for(actors[actor_id]["plugins"], event, plugin_hit_counts)
+    var proposals: Array[Dictionary] = Plugins.requests_for(
+        actors[actor_id]["plugins"], event, plugin_hit_counts)
+    var expanded: Array[Dictionary] = []
+    for proposal in proposals:
+        var child: Dictionary = proposal.get("event", {})
+        var cmd: Dictionary = child.get("command", {})
+        if str(cmd.get("target_policy", "")) != "area_around_target":
+            expanded.append(proposal)
+            continue
+        # C must provide a positive world-unit radius, not text summary.
+        var center_id: String = str(event.get("target_id", ""))
+        if not actors.has(center_id) or not cmd.has("radius"):
+            continue
+        var radius: float = maxf(0.0, float(cmd["radius"]))
+        var center: Vector3 = actors[center_id]["position"]
+        var team: String = str(actors[actor_id]["team"])
+        for other_id in _ids():
+            var other: Dictionary = actors[other_id]
+            if not bool(other["alive"]) or str(other["team"]) == team:
+                continue
+            var position: Vector3 = other["position"]
+            var planar: Vector2 = Vector2(position.x - center.x, position.z - center.z)
+            if planar.length() > radius + maxf(0.0, float(other.get("radius", 0.0))):
+                continue
+            var area_request: Dictionary = proposal.duplicate(true)
+            area_request["event"]["target_id"] = str(other_id)
+            area_request["event"]["command"]["target_policy"] = "current"
+            if str(area_request["event"]["kind"]) == "damage":
+                area_request["event"]["command"]["attack"]["is_area"] = true
+            expanded.append(area_request)
+    return expanded
 
 func _select_command_target(actor_id: String, current_id: String,
         command: Dictionary) -> String:
@@ -373,8 +409,18 @@ func _resolve_event(event: Dictionary) -> Array:
         elif kind == "spawn_projectile":
             if actors.has(actor_id):
                 var aim: Vector2 = actors[actor_id]["aim"]
-                _spawn(actor_id, aim, command.get("attack", {}),
-                    ["plugin", "projectile_hit"], command)
+                var options: Dictionary = command.duplicate(true)
+                options["allowed_proc_triggers"] = event.get("allowed_proc_triggers", []).duplicate()
+                options["on_hit_damage_efficiency"] = float(
+                    event.get("on_hit_damage_efficiency", 1.0))
+                options["proc_path"] = event.get("proc_path", []).duplicate()
+                var count: int = maxi(1, int(command.get("count", 1)))
+                var spread: float = float(command.get("spread_radians", 0.0))
+                for index in range(count):
+                    var offset: float = (float(index) - float(count - 1) / 2.0) * spread
+                    _spawn(actor_id, aim.rotated(offset),
+                        command.get("attack", {}), ["plugin", "projectile_hit"],
+                        options)
         elif actors.has(target_id):
             var status: Dictionary = command.get("status", {}).duplicate(true)
             if kind == "stat_modifier":
@@ -391,7 +437,9 @@ func _resolve_event(event: Dictionary) -> Array:
         return []
     var attacker: Dictionary = actors[actor_id]
     var defender: Dictionary = actors[target_id]
-    if not bool(defender["alive"]) or attacker["team"] == defender["team"]:
+    if not bool(defender["alive"]) or (
+            attacker["team"] == defender["team"] and
+            not bool(event.get("attack", {}).get("is_dot", false))):
         return []
     var attack: Dictionary = event.get("attack", {})
     if event.has("command"):
