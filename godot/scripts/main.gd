@@ -19,6 +19,9 @@ const EnemyCatalog = preload("res://scripts/enemies/enemy_catalog.gd")
 const CombatFX = preload("res://scripts/visuals/legacy_combat_fx.gd")
 const LegacyAudio = preload("res://scripts/audio/legacy_audio.gd")
 const LegacyExit = preload("res://scripts/visuals/legacy_sector_exit.gd")
+const Atmosphere = preload("res://scripts/visuals/legacy_atmosphere.gd")
+const PlayerEcho = preload("res://scripts/visuals/legacy_player_echo.gd")
+const Sparks = preload("res://scripts/visuals/legacy_sparks.gd")
 const WORLD_SCALE: float = 0.01
 const HUB_SPAWN: Vector2 = Vector2(1200.0, 780.0)
 # Frozen Python world/session.py BASE_NODES. Use the same 2D pixel coordinates and
@@ -67,6 +70,9 @@ var avatar_dash: MeshInstance3D
 var visual_fx: Node3D
 var legacy_audio: Node
 var sector_exit: Node3D
+var atmosphere: Node3D
+var player_echo: Node3D
+var legacy_sparks: Node3D
 var _enemy_hp_previous: Dictionary = {}
 var combo_count: int = 0
 var combo_window: float = 0.0
@@ -104,6 +110,16 @@ func _ready() -> void:
     sector_exit = LegacyExit.new()
     sector_exit.name = "LegacySectorExit"
     add_child(sector_exit)
+    atmosphere = Atmosphere.new()
+    atmosphere.name = "LegacyAtmosphere"
+    add_child(atmosphere)
+    player_echo = PlayerEcho.new()
+    player_echo.name = "LegacyPlayerEcho"
+    add_child(player_echo)
+    player_echo.call("bind_mesh", player_visual.mesh)
+    legacy_sparks = Sparks.new()
+    legacy_sparks.name = "LegacySparks"
+    add_child(legacy_sparks)
     actor.set("auto_tick", false)
     actor.call("set_input_source", controls)
     actor.set("camera_source", camera_3d)
@@ -252,6 +268,18 @@ func start_new_run() -> bool:
 func _set_world(combat_world: bool) -> void:
     arena_floor.visible = combat_world
     sector_exit.visible = combat_world
+    if atmosphere != null:
+        atmosphere.call("set_zone", "combat" if combat_world else mode,
+            bool(saved_state.get("settings.json", {}).get("reduced_effects", false)))
+    if legacy_sparks != null:
+        legacy_sparks.call("clear_particles")
+        legacy_sparks.visible = combat_world or mode == "hub"
+    if player_echo != null:
+        player_echo.call("clear_echoes")
+    ui.call("clear_screen_fx")
+    if mode != "base":
+        ui.call("sweep_transition")
+    
     hub_floor.visible = not combat_world
     gate_container.visible = not combat_world
     _sync_hub_markers()
@@ -288,6 +316,10 @@ func start_next_wave() -> bool:
     _enemy_hp_previous.clear()
     mode = "combat"
     legacy_audio.call("play_effect", "wave")
+    ui.call("announce_wave",
+        str(SectorCatalog.SECTORS.get(campaign.active_sector, {}).get(
+            "name", campaign.active_sector)), int(campaign.active_wave),
+        int(campaign.active_wave) == 5)
     _resume_gameplay()
     return true
 
@@ -478,6 +510,10 @@ func _on_card_selected(index: int) -> void:
     _apply_stats()
     ui.call("complete_reward_selection")
     mode = "clean" if campaign.is_sector_clean(campaign.active_sector) else "between"
+    if mode == "clean":
+        ui.call("announce_sector_clean", str(SectorCatalog.SECTORS.get(
+            campaign.active_sector, {}).get("name", campaign.active_sector)))
+        ui.call("flash_impact", Color("#3ff5a0"), 0.28)
     _resume_gameplay()
     # Source Python game.py::pick_upgrade immediately starts the next wave.
     # E has already durably committed this choice; this call only resumes C
@@ -490,6 +526,8 @@ func _on_player_hit(_damage: float, infection_delta: float) -> void:
     campaign.apply_infection(infection_delta)
     legacy_audio.call("play_effect", "hurt")
     visual_fx.call("add_burst", actor.get("logical_position"), "hurt")
+    legacy_sparks.call("emit_sparks", actor.get("logical_position"), "impact")
+    ui.call("flash_impact", Color("#ff4d6d"), 0.17)
     if float(actor.get("hp")) / maxf(1.0, float(actor.get("max_hp"))) < 0.35:
         legacy_audio.call("play_effect", "lowhp", 2.0)
 
@@ -508,8 +546,12 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     if enemy_visuals.has(_enemy_id):
         var death_visual: Node3D = enemy_visuals[_enemy_id]
         var at: Vector3 = death_visual.position
-        visual_fx.call("add_burst", Vector2(at.x / WORLD_SCALE, at.z / WORLD_SCALE),
+        var position_2d: Vector2 = Vector2(at.x / WORLD_SCALE, at.z / WORLD_SCALE)
+        visual_fx.call("add_burst", position_2d,
             "boss" if boss_kill else "kill")
+        legacy_sparks.call("emit_sparks", position_2d, "boss" if boss_kill else "kill")
+        if boss_kill:
+            ui.call("flash_impact", Color("#ff5cf0"), 0.23)
     if SectorCatalog.SECTORS.has(campaign.active_sector):
         if kind == str(SectorCatalog.SECTORS[campaign.active_sector]["boss"]):
             run_boss_kills += 1
@@ -524,12 +566,17 @@ func _on_projectile_visual(kind: String, location: Vector2,
         "impact":
             legacy_audio.call("play_effect", "hit", 0.045)
             visual_fx.call("add_burst", location, "impact")
+            legacy_sparks.call("emit_sparks", location, "impact")
         "critical":
             legacy_audio.call("play_effect", "hit", 0.045)
             visual_fx.call("show_critical", destination)
             visual_fx.call("add_burst", location, "impact")
+            legacy_sparks.call("emit_sparks", location, "critical")
+            ui.call("flash_impact", Color("#fff0a6"), 0.07)
         "explosion":
             visual_fx.call("add_explosion", location, magnitude)
+            legacy_sparks.call("emit_sparks", location, "explosion")
+            ui.call("flash_impact", Color("#ffd166"), 0.12)
         "chain":
             visual_fx.call("add_chain_arc", location, destination)
 
@@ -557,6 +604,7 @@ func _on_dash_visual(_direction: Vector2) -> void:
     if paused or mode not in ["base", "hub", "combat", "between", "clean"]:
         return
     legacy_audio.call("play_effect", "dash", 0.08)
+    legacy_sparks.call("emit_sparks", actor.get("logical_position"), "dash")
     if mode == "combat":
         visual_fx.call("add_burst", actor.get("logical_position"), "dash")
         var blast: float = float(software.stats.get("dash_blast", 0.0))
@@ -589,6 +637,8 @@ func _on_skill_requested(skill: String) -> void:
         legacy_audio.call("play_effect", "hshot" if skill == "pulse" else "phase")
         if skill == "pulse":
             visual_fx.call("add_burst", actor.get("logical_position"), "pulse")
+            legacy_sparks.call("emit_sparks", actor.get("logical_position"), "pulse")
+            ui.call("flash_impact", Color("#6ff2ff"), 0.13)
 
 func nearest_base_terminal(point: Vector2) -> String:
     # Match Python WorldSession.nearest: nearest reachable node, not the first
@@ -666,6 +716,8 @@ func purify() -> bool:
         ui.call("show_error", "정화 기록 저장 실패. 정화 횟수와 감염도를 되돌렸습니다.")
         return false
     visual_fx.call("add_burst", PURIFY_STATION, "purify")
+    legacy_sparks.call("emit_sparks", PURIFY_STATION, "purify")
+    ui.call("flash_impact", Color("#3ff5a0"), 0.22)
     legacy_audio.call("play_effect", "up")
     _update_hud()
     return true
@@ -993,6 +1045,13 @@ func _update_visuals() -> void:
     var active_keys: Dictionary = {}
     var settings: Dictionary = saved_state.get("settings.json", {})
     var reduced_motion: bool = bool(settings.get("reduced_effects", false))
+    if atmosphere != null and (str(atmosphere.get("mode")) != mode or
+        bool(atmosphere.get("reduced_effects")) != reduced_motion):
+        atmosphere.call("set_zone", mode, reduced_motion)
+    legacy_sparks.call("set_reduced_effects", reduced_motion)
+    player_echo.call("sync_echo", player_visual.position, player_visual.rotation.y,
+        float(actor.get("dash_t")) > 0.0 and mode in ["base", "hub", "combat"],
+        reduced_motion, 1.0 / 60.0)
     if mode == "combat":
         for enemy in sim.enemies:
             var id: int = int(enemy["id"])
