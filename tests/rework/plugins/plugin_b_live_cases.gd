@@ -205,14 +205,15 @@ func run() -> bool:
 		"allowed_proc_triggers":["on_hit","on_crit"],"attack":{
 			"damage_type":"physical","base_damage":10.0,"can_crit":true}})
 	critical_run.bus.drain_batch(512,Callable(critical_run,"_resolve_event"))
-	check(float(critical_run.snapshot("E2")["stats"]["health"])==988.0,
-		"critical on_hit/on_crit source triggers only ONE 12-damage lightning")
+	check(is_equal_approx(float(critical_run.snapshot("E2")["stats"]["health"]),986.0),
+		"critical on_hit/on_crit source triggers only ONE 14-damage B lightning (12 base + 0.2 AP)")
 	# Measured bounded load on a mixed full-catalogue build, no fake sink.
 	var crowd = new_encounter("nv_c_move_speed")
 	var all: Dictionary = {}
 	for plugin in plugins:
 		all[str(plugin["plugin_id"])] = 1
 	check(crowd.attach_plugins("P",all,419),"all 27 plugins attach at first level")
+	crowd.actors["P"]["fire_credit"] = 1.0
 	var started_us: int = Time.get_ticks_usec()
 	for frame in range(16):
 		crowd.step_fixed({"P":{"fire":true,"aim_world":Vector3(5,0,0),
@@ -220,8 +221,9 @@ func run() -> bool:
 	var total_us: int = Time.get_ticks_usec()-started_us
 	print("C B FULL-LOAD 27: 16 ticks, %d us total, %d B damage, max queued=%d" %
 		[total_us,int(crowd.counters["damage_events"]),int(crowd.bus.metrics.get("max_pending",0))])
-	check(crowd.bus.pending.size()<int(crowd.settings["event_work_per_tick"]),
-		"27-equipped fixed tick event backlog is not growing unbounded")
+	check(int(crowd.counters["damage_events"])>0
+		and crowd.bus.pending.size()<int(crowd.settings["event_work_per_tick"]),
+		"27-equipped real B fight deals damage and avoids unbounded backlog")
 	check(dispatch_total<2000 and max_pending<512,
 		"bounded real B event throughput 27 catalog tests")
 	verified.clear()
