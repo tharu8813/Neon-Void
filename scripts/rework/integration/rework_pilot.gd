@@ -10,6 +10,7 @@ const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 const RecoveryView = preload("res://scripts/rework/integration/pilot_recovery_view.gd")
+const TacticalHUD = preload("res://scripts/rework/ui/pilot_tactical_hud.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -35,6 +36,8 @@ var pending_extraction: Dictionary = {}
 var pending_reconciliation: Dictionary = {}
 var recovery_panel: PanelContainer
 var recovery_label: Label
+var tactical_hud: PanelContainer
+var _hud_elapsed: float = 0.0
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -77,6 +80,19 @@ func _ready() -> void:
     _accept_saved_state(loaded)
     _refresh()
 
+func _process(delta: float) -> void:
+    if tactical_hud == null or world == null:
+        return
+    _hud_elapsed += delta
+    if _hud_elapsed < 0.15:
+        return
+    _hud_elapsed = 0.0
+    var combat: Variant = world.get("combat")
+    if combat != null and str(combat.get("mode")) == "formal":
+        tactical_hud.render_combat_snapshot(combat.actor_snapshot("VACCINE"))
+    else:
+        tactical_hud.render_combat_snapshot({})
+
 func _create_ui() -> void:
     var layer := CanvasLayer.new()
     layer.name = "PilotHUD"
@@ -84,9 +100,11 @@ func _create_ui() -> void:
     add_child(layer)
     var outer := VBoxContainer.new()
     outer.name = "PilotStatus"
-    outer.position = Vector2(24, 16)
+    outer.position = Vector2(24, 132)
     outer.custom_minimum_size = Vector2(480, 80)
     layer.add_child(outer)
+    tactical_hud = TacticalHUD.new()
+    layer.add_child(tactical_hud)
     status_label = Label.new()
     status_label.text = "Neon Void Rework · 저장형 CPU 파일럿"
     outer.add_child(status_label)
@@ -189,6 +207,10 @@ func _refresh() -> void:
         _halt("save_requires_reconciliation:" + str(loaded.get("reason", "unknown")))
         return
     var saved: Dictionary = loaded.get("snapshot", {})
+    if tactical_hud != null:
+        tactical_hud.render_saved_snapshot(loaded)
+        if frozen:
+            tactical_hud.show_blocked()
     if bool(saved.get("selection_required", false)):
         status_label.text = "백신 최종 파기 · 선택 필요"
         new_vaccine_button.visible = not frozen
@@ -610,6 +632,8 @@ func _show_recovery_report() -> void:
 
 func _halt(reason: String) -> void:
     frozen = true
+    if tactical_hud != null:
+        tactical_hud.show_blocked()
     if message_label != null:
         message_label.text = "저장 안전 정지: " + reason
     if offer_panel != null:
