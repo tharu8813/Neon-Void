@@ -61,7 +61,15 @@ static func stat_cost_fragments(allocations: Dictionary, config: Dictionary = {}
         return -1
     var spent: int = 0
     for stat_id in allocations:
-        if not STAT_COSTS.has(stat_id) or typeof(allocations[stat_id]) != TYPE_INT                 or allocations[stat_id] < 0 or allocations[stat_id] > 1000000:
+        if not STAT_COSTS.has(stat_id):
+            return -1
+        # JSON parses numeric values as floats. Exact whole numbers must remain
+        # valid after restart, while fractional/infinite/NaN costs are rejected.
+        var count: Variant = allocations[stat_id]
+        if (typeof(count) != TYPE_INT and typeof(count) != TYPE_FLOAT) \
+                or is_nan(float(count)) or is_inf(float(count)) \
+                or float(count) != floor(float(count)) \
+                or count < 0 or count > 1000000:
             return -1
         spent += int(allocations[stat_id]) * int(STAT_COSTS[stat_id]) * get_number("fragments_per_point", config)
         if spent > 9007199254740991:
