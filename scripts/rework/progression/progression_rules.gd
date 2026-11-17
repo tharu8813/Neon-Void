@@ -268,7 +268,7 @@ static func reallocate_stats(state: Dictionary, vaccine_id: String, generation: 
     return _finish(output, "stats_reallocated")
 
 static func learn_skill(state: Dictionary, vaccine_id: String, generation: int,
-        receipt_id: String, skill_id: String) -> Dictionary:
+        receipt_id: String, skill_id: String, equip_on_discovery: Array = []) -> Dictionary:
     var prepared: Dictionary = _prepare(state, vaccine_id, generation)
     if not prepared.ok:
         return prepared
@@ -276,9 +276,16 @@ static func learn_skill(state: Dictionary, vaccine_id: String, generation: int,
     var v: Dictionary = output.vaccine
     if not State.valid_id(skill_id) or v.known_skills.has(skill_id):
         return _reject("skill_already_known_or_invalid")
+    if not State._valid_ids(equip_on_discovery, 3):
+        return _reject("invalid_discovery_loadout")
+    for equipped_skill in equip_on_discovery:
+        if equipped_skill != skill_id and not v.known_skills.has(equipped_skill):
+            return _reject("unknown_skill")
     if not _accept_receipt(v, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     v.known_skills.append(skill_id)
+    if not equip_on_discovery.is_empty():
+        v.equipped_skills = equip_on_discovery.duplicate()
     return _finish(output, "skill_learned")
 
 static func equip_skills(state: Dictionary, vaccine_id: String, generation: int,
@@ -288,6 +295,10 @@ static func equip_skills(state: Dictionary, vaccine_id: String, generation: int,
         return prepared
     var output: Dictionary = prepared.state
     var v: Dictionary = output.vaccine
+    # Mid-mission loadout swaps are only possible in the same transaction as
+    # discovering a NEW skill (learn_skill.equip_on_discovery).
+    if v.mission != null:
+        return _reject("hub_only_except_skill_discovery")
     if not State._valid_ids(equipped, 3):
         return _reject("invalid_skill_loadout")
     for skill in equipped:
