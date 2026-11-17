@@ -8,12 +8,16 @@ const MAX_HOSTILE: int = 320
 const MAX_WARNINGS: int = 96
 const MAX_BURSTS: int = 12
 const MAX_FLOAT_TEXT: int = 40
+const MAX_SHARD_VISUALS: int = 128
+const MAX_DRONE_VISUALS: int = 8
 const FRIENDLY := Color("#ccff4d")
 const HOSTILE := Color("#ff9fbb")
 const WARN := Color("#e8ae50")
 const DANGER := Color("#ff4d6d")
 var friendly_trails: MultiMeshInstance3D
 var hostile_trails: MultiMeshInstance3D
+var shard_batch: MultiMeshInstance3D
+var drone_nodes: Array[MeshInstance3D] = []
 var warning_pool: Array[MeshInstance3D] = []
 var burst_pool: Array[MeshInstance3D] = []
 var bursts: Array[Dictionary] = []
@@ -26,6 +30,17 @@ var last_warning_count: int = 0
 func _ready() -> void:
     friendly_trails = _create_trail_batch("FriendlyStreaks", MAX_FRIENDLY, FRIENDLY)
     hostile_trails = _create_trail_batch("HostileStreaks", MAX_HOSTILE, HOSTILE)
+    shard_batch = _create_trail_batch("ScoreShards", MAX_SHARD_VISUALS, Color("#7ef0ff"))
+    for i in range(MAX_DRONE_VISUALS):
+        var satellite := MeshInstance3D.new()
+        satellite.name = "OrbitingDrone%d" % i
+        var body := BoxMesh.new()
+        body.size = Vector3(0.080, 0.035, 0.080)
+        satellite.mesh = body
+        satellite.material_override = _glow(Color("#6ff2ff"))
+        satellite.visible = false
+        add_child(satellite)
+        drone_nodes.append(satellite)
     warning_safe_material = _glow(WARN)
     warning_danger_material = _glow(DANGER)
     var ring := TorusMesh.new()
@@ -113,11 +128,37 @@ func _render_trails(instance: MultiMeshInstance3D, shots: Array,
         batch.set_instance_color(i, tint)
     batch.visible_instance_count = count
 
+func _render_shards(shards: Array) -> void:
+    var mesh: MultiMesh = shard_batch.multimesh
+    var count: int = mini(mesh.instance_count, shards.size())
+    for i in range(count):
+        var shard: Dictionary = shards[i]
+        var p: Vector2 = shard["pos"]
+        var life: float = float(shard.get("life", 14.0))
+        var radius: float = 0.032 if life >= 3.0 else 0.025
+        var basis := Basis().scaled(Vector3(radius * 2.0, 0.016, radius * 2.0))
+        mesh.set_instance_transform(i, Transform3D(basis,
+            Vector3(p.x * SCALE, 0.12, p.y * SCALE)))
+        mesh.set_instance_color(i, Color("#7ef0ff") if life > 3.0 else Color("#3d6b78"))
+    mesh.visible_instance_count = count
+
+func sync_drones(player_location: Vector2, count: int, angle: float) -> void:
+    var shown: int = mini(MAX_DRONE_VISUALS, maxi(0, count))
+    for i in range(MAX_DRONE_VISUALS):
+        var drone: MeshInstance3D = drone_nodes[i]
+        drone.visible = i < shown
+        if not drone.visible:
+            continue
+        var offset: Vector2 = Vector2.RIGHT.rotated(angle + TAU * float(i) / float(shown)) * 52.0
+        drone.position = Vector3((player_location.x + offset.x) * SCALE,
+            0.18, (player_location.y + offset.y) * SCALE)
+
 func sync_battle(friendly: Array, hostile: Array, telegraphs: Array,
-        enemies: Array, reduced: bool = false) -> void:
+        enemies: Array, reduced: bool = false, shards: Array = []) -> void:
     # Mirrors the Python friendly velocity streak (32 ms) and soft enemy tail.
     _render_trails(friendly_trails, friendly, FRIENDLY, 0.032, reduced)
     _render_trails(hostile_trails, hostile, HOSTILE, 0.015, reduced)
+    _render_shards(shards)
     var positions: Dictionary = {}
     for enemy in enemies:
         positions[int(enemy["id"])] = enemy
@@ -147,9 +188,17 @@ func show_damage(logical_position: Vector2, amount: float) -> void:
     if amount <= 0.0 or damage_labels.size() >= MAX_FLOAT_TEXT:
         return
     damage_labels.append({
-        "pos": logical_position,
-        "text": "%d" % int(roundf(amount)),
-        "remaining": 0.68,
+        "pos": logical_position, "text": "%d" % int(roundf(amount)),
+        "remaining": 0.68, "tint": Color("#ffd166"),
+    })
+
+func show_pickup(logical_position: Vector2, value: int) -> void:
+    if value <= 0 or damage_labels.size() >= MAX_FLOAT_TEXT:
+        return
+    damage_labels.append({
+        "pos": logical_position + Vector2(0.0, -26.0),
+        "text": "+%d" % value, "remaining": 0.68,
+        "tint": Color("#7ef0ff"),
     })
 
 func _advance_damage(delta: float, reduced: bool) -> void:
@@ -171,7 +220,9 @@ func _advance_damage(delta: float, reduced: bool) -> void:
         var remaining: float = float(entry["remaining"])
         label.text = str(entry["text"])
         label.position = Vector3(p.x * SCALE, 0.37, (p.y - (1.0 - remaining / 0.68) * (0.0 if reduced else 38.0)) * SCALE)
-        label.modulate = Color(1.0, 0.82, 0.44, minf(1.0, remaining / 0.28))
+        var tint: Color = entry.get("tint", Color("#ffd166"))
+        tint.a = minf(1.0, remaining / 0.28)
+        label.modulate = tint
 
 func add_burst(logical_position: Vector2, kind: String = "impact") -> void:
     if bursts.size() >= MAX_BURSTS:
@@ -200,6 +251,10 @@ func add_burst(logical_position: Vector2, kind: String = "impact") -> void:
         "hurt":
             color = DANGER
             radius = 26.0
+        "shard":
+            color = Color("#7ef0ff")
+            radius = 13.0
+            duration = 0.20
     var instance: MeshInstance3D = burst_pool[bursts.size()]
     instance.material_override = _glow(color)
     instance.position = Vector3(logical_position.x * SCALE, 0.055, logical_position.y * SCALE)
@@ -237,6 +292,9 @@ func _advance_bursts(delta: float, reduced: bool) -> void:
 func clear_battle() -> void:
     friendly_trails.multimesh.visible_instance_count = 0
     hostile_trails.multimesh.visible_instance_count = 0
+    shard_batch.multimesh.visible_instance_count = 0
+    for drone in drone_nodes:
+        drone.visible = false
     for mark in warning_pool:
         mark.visible = false
     for ring in burst_pool:
