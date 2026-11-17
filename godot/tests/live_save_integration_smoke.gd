@@ -37,7 +37,8 @@ func approve_wave(game: Node, index: int) -> void:
     require(str(game.get("mode")) == "reward", "card offer state")
     require(game.get_node("UIShell")._offer.visible, "three card chooser")
     game.call("_on_card_selected", 0)
-    require(str(game.get("mode")) == ("clean" if index == 5 else "between"), "durable card selection")
+    require(str(game.get("mode")) == ("clean" if index == 5 else "combat"),
+        "durably saved card auto-starts the Python next wave")
 
 func _test() -> void:
     var rootdir: String = ProjectSettings.globalize_path(
@@ -64,20 +65,22 @@ func _test() -> void:
 
     game = instance_game()
     require(game.call("resume_checkpoint"), "resume after simulated application relaunch")
-    require(str(game.get("mode")) == "between", "recovered between-wave state")
+    require(str(game.get("mode")) == "combat", "recovered Python automatic second wave")
     require(int(game.get("campaign").progress["CPU"]) == 1, "recovered C's progress")
-    require(game.call("start_next_wave"), "resume pending wave two")
+    require(int(game.get("campaign").active_wave) == 2, "resume pending wave two without extra F")
     for n in range(2, 6):
         approve_wave(game, n)
         if n < 5:
-            require(game.call("start_next_wave"), "progress to CPU next wave")
+            require(int(game.get("campaign").active_wave) == n + 1,
+                "CPU next wave begins after durable reward")
     game.call("retreat_to_hub")
     for sid in ["MEMORY", "NETWORK", "STORAGE"]:
         require(game.call("enter_sector", sid), "enter " + sid)
         for n in range(1, 6):
             approve_wave(game, n)
             if n < 5:
-                require(game.call("start_next_wave"), sid + " next wave")
+                require(int(game.get("campaign").active_wave) == n + 1,
+                    sid + " automatically enters next wave")
         game.call("retreat_to_hub")
     require(game.get("campaign").is_os_clean(), "all 4x5 sectors cleaned")
     state = Store.read(slot)
