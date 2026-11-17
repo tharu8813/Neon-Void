@@ -10,6 +10,10 @@ const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 const RecoveryView = preload("res://scripts/rework/integration/pilot_recovery_view.gd")
+const Balance = preload("res://scripts/rework/progression/balance_config.gd")
+const TacticalHUD = preload("res://scripts/rework/ui/pilot_tactical_hud.gd")
+const CardStyle = preload("res://scripts/rework/ui/pilot_reward_card_style.gd")
+const HubManagement = preload("res://scripts/rework/ui/hub_management_panel.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -35,6 +39,10 @@ var pending_extraction: Dictionary = {}
 var pending_reconciliation: Dictionary = {}
 var recovery_panel: PanelContainer
 var recovery_label: Label
+var tactical_hud: PanelContainer
+var hub_panel: PanelContainer
+var hub_button: Button
+var _hud_elapsed: float = 0.0
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -77,6 +85,29 @@ func _ready() -> void:
     _accept_saved_state(loaded)
     _refresh()
 
+func _process(delta: float) -> void:
+    if tactical_hud == null or world == null:
+        return
+    _hud_elapsed += delta
+    if _hud_elapsed < 0.15:
+        return
+    _hud_elapsed = 0.0
+    var combat: Variant = world.get("combat")
+    if combat != null and str(combat.get("mode")) == "formal":
+        tactical_hud.render_combat_snapshot(combat.actor_snapshot("VACCINE"))
+    else:
+        tactical_hud.render_combat_snapshot({})
+
+func _unhandled_input(event: InputEvent) -> void:
+    if not (event is InputEventKey) or not event.pressed or event.echo:
+        return
+    if event.keycode == KEY_TAB:
+        _toggle_management()
+        get_viewport().set_input_as_handled()
+    elif event.keycode == KEY_ESCAPE and hub_panel != null and hub_panel.visible:
+        _close_management()
+        get_viewport().set_input_as_handled()
+
 func _create_ui() -> void:
     var layer := CanvasLayer.new()
     layer.name = "PilotHUD"
@@ -84,15 +115,28 @@ func _create_ui() -> void:
     add_child(layer)
     var outer := VBoxContainer.new()
     outer.name = "PilotStatus"
-    outer.position = Vector2(24, 16)
+    outer.position = Vector2(24, 140)
     outer.custom_minimum_size = Vector2(480, 80)
     layer.add_child(outer)
+    tactical_hud = TacticalHUD.new()
+    layer.add_child(tactical_hud)
+    hub_panel = HubManagement.new()
+    layer.add_child(hub_panel)
+    hub_panel.close_requested.connect(_close_management)
+    hub_panel.allocate_requested.connect(_on_hub_allocate)
+    hub_panel.plugin_move_requested.connect(_on_hub_plugin_move)
+    hub_panel.equip_requested.connect(_on_hub_equip_skills)
     status_label = Label.new()
     status_label.text = "Neon Void Rework · 저장형 하드웨어 파일럿"
     outer.add_child(status_label)
     message_label = Label.new()
     message_label.text = "F: 상호작용 · 메인보드에서 CPU/GPU/RAM/SSD/HDD 선택"
     outer.add_child(message_label)
+    hub_button = Button.new()
+    hub_button.name = "OpenHubManagement"
+    hub_button.text = "백신·능력치·플러그인·스킬 관리  [Tab]"
+    hub_button.pressed.connect(_toggle_management)
+    outer.add_child(hub_button)
     deposit_button = Button.new()
     deposit_button.text = "허브 소지 플러그인 수동 보관"
     deposit_button.pressed.connect(_deposit_carried)
@@ -106,8 +150,8 @@ func _create_ui() -> void:
     offer_panel = PanelContainer.new()
     offer_panel.name = "PluginChoice"
     offer_panel.visible = false
-    offer_panel.position = Vector2(260, 180)
-    offer_panel.custom_minimum_size = Vector2(690, 330)
+    offer_panel.position = Vector2(260, 150)
+    offer_panel.custom_minimum_size = Vector2(720, 420)
     layer.add_child(offer_panel)
     var panel_column := VBoxContainer.new()
     offer_panel.add_child(panel_column)
@@ -118,7 +162,8 @@ func _create_ui() -> void:
         var row := HBoxContainer.new()
         panel_column.add_child(row)
         var card := Button.new()
-        card.custom_minimum_size = Vector2(490, 72)
+        card.custom_minimum_size = Vector2(520, 106)
+        card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         card.pressed.connect(_choose_card.bind(index))
         row.add_child(card)
         card_buttons.append(card)
@@ -189,10 +234,18 @@ func _refresh() -> void:
         _halt("save_requires_reconciliation:" + str(loaded.get("reason", "unknown")))
         return
     var saved: Dictionary = loaded.get("snapshot", {})
+    if tactical_hud != null:
+        tactical_hud.render_saved_snapshot(loaded)
+        if frozen:
+            tactical_hud.show_blocked()
+    if hub_panel != null and hub_panel.visible:
+        hub_panel.show_saved(loaded, not frozen and str(world.get("current_mode")) == "hub")
     if bool(saved.get("selection_required", false)):
         status_label.text = "백신 최종 파기 · 선택 필요"
         new_vaccine_button.visible = not frozen
         deposit_button.visible = false
+        if hub_button != null:
+            hub_button.disabled = true
         return
     var vaccine: Dictionary = saved.get("vaccine", {})
     if vaccine.is_empty():
@@ -202,7 +255,9 @@ func _refresh() -> void:
         int(vaccine.get("level", 1)),
         int(vaccine.get("copies_remaining", 0)),
         int(loaded.get("revision", 0))]
-    deposit_button.visible = not frozen and vaccine.get("mission") == null and not vaccine.get("carried", {}).is_empty()
+    # Per-plugin DB UI replaces accidental bulk transfers; preserve test API.
+    deposit_button.visible = false
+    hub_button.disabled = frozen
     new_vaccine_button.visible = false
 
 func _on_mission_requested(request: Dictionary) -> void:
@@ -379,10 +434,14 @@ func _render_cards() -> void:
     for index in range(3):
         var card: Dictionary = cards[index]
         var info: Dictionary = offers.get_entry(str(card.get("plugin_id", "")))
-        card_buttons[index].text = "%d. [%s] %s · Lv.%d" % [
-            index + 1, str(card.get("rarity", "")),
-            str(info.get("name", card.get("plugin_id", ""))),
-            int(offers.levels.get(str(card.get("plugin_id", "")), 0)) + 1]
+        var rarity: String = str(card.get("rarity", ""))
+        var level: int = int(offers.levels.get(str(card.get("plugin_id", "")), 0))
+        card_buttons[index].text = CardStyle.card_label(card, info, level)
+        for variant in ["normal", "hover", "pressed", "disabled"]:
+            card_buttons[index].add_theme_stylebox_override(
+                variant, CardStyle.card_style(rarity, variant))
+        card_buttons[index].add_theme_color_override(
+            "font_color", CardStyle.rarity_color(rarity))
         card_buttons[index].disabled = bool(card.get("empty", false)) or frozen
         reroll_buttons[index].disabled = frozen or int(offer.get("rerolls_remaining", 0)) <= 0
         reroll_buttons[index].text = "재추첨 (%d)" % int(offer.get("rerolls_remaining", 0))
@@ -621,6 +680,10 @@ func _show_recovery_report() -> void:
 
 func _halt(reason: String) -> void:
     frozen = true
+    if hub_panel != null:
+        hub_panel.visible = false
+    if tactical_hud != null:
+        tactical_hud.show_blocked()
     if message_label != null:
         message_label.text = "저장 안전 정지: " + reason
     if offer_panel != null:
