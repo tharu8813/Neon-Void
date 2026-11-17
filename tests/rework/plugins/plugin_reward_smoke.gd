@@ -201,6 +201,46 @@ func _run() -> void:
 	var live_suite = preload("res://tests/rework/plugins/plugin_effect_assertions.gd").new()
 	if not _check(live_suite.execute_tests(), "live effect + save acknowledgement regressions"):
 		return
+	var save_source = Offers.new()
+	if not _check(save_source.begin_mission(78123,{},"restore-c-1"),"state source starts"):
+		return
+	save_source.roll_offer({"difficulty_tier":2,"luck_points":3.0})
+	save_source.reroll_card(1)
+	var durable_packet: Dictionary = save_source.export_mission_state()
+	var save_reload = Offers.new()
+	if not _check(save_reload.restore_mission_state(durable_packet,save_source.levels),
+		"reopen E-verified RNG, pity and per-card rerolls"):
+		return
+	if not _check(save_source.offer_snapshot()["cards"]==save_reload.offer_snapshot()["cards"]
+		and save_source.rerolls_remaining==save_reload.rerolls_remaining
+		and save_source.missed_screens==save_reload.missed_screens,
+		"resume preserves existing three cards and reroll budget"):
+		return
+	save_source.dismiss_offer()
+	save_reload.dismiss_offer()
+	if not _check(save_source.roll_offer()["cards"]==save_reload.roll_offer()["cards"],
+		"JSON-safe 64bit RNG state resumes next independent draw"):
+		return
+	var broken_packet: Dictionary = durable_packet.duplicate(true)
+	broken_packet["levels"] = {"unknown":1}
+	if not _check(not Offers.new().restore_mission_state(broken_packet,{}),
+		"reject tampered or uncommitted E levels"):
+		return
+	var preparing = Offers.new()
+	preparing.begin_mission(188,{},"resume-prepared")
+	preparing.roll_offer()
+	var preparing_choice: Dictionary = preparing.prepare_card(0)
+	var pending_packet: Dictionary = preparing.export_mission_state()
+	var recovery = Offers.new()
+	if not _check(recovery.restore_mission_state(pending_packet,preparing.levels)
+		and bool(recovery.offer_snapshot()["reconciliation_required"])
+		and recovery.reroll_card(0).is_empty(),
+		"interrupted prepared receipt stays frozen until E reconciliation"):
+		return
+	if not _check(recovery.reconcile_card(str(preparing_choice["receipt_id"]),
+		{"receipt_definitely_absent":true}).get("retry_same_receipt",false),
+		"E-authorized definitely-absent receipt may retry without duplicate"):
+		return
 	var actual_b = preload("res://tests/rework/plugins/plugin_b_live_cases.gd").new()
 	if not _check(actual_b.run(), "production B runtime plugin tests"):
 		quit(1)
