@@ -32,6 +32,32 @@ func _kill_formal_actor(world_combat: Variant, actor_id: String,
     ## through B's 60Hz projectile collision and damage/event pipeline.
     if not world_combat.enemies.has(actor_id):
         return false
+    # Short-circuit only the long physical traversal for CI, not combat.
+    # Reposition the fixture to an adjacent, connected CPU floor tile so a
+    # different nearby virus cannot intercept every B projectile.
+    var world_map: Dictionary = world_combat.live.map_plan
+    if not world_map.is_empty():
+        var enemy_place: Vector3 = world_combat.enemies[actor_id]["node"].global_position
+        var enemy_cell := Vector2i(
+            floori(enemy_place.x / Maps.TILE_SIZE),
+            floori(enemy_place.z / Maps.TILE_SIZE))
+        for direction in [Vector2i.RIGHT, Vector2i.UP, Vector2i.LEFT, Vector2i.DOWN]:
+            var neighbor: Vector2i = enemy_cell + direction
+            if not Maps.is_floor(world_map, neighbor):
+                continue
+            var candidate: Vector3 = Maps.cell_to_world(neighbor) + Vector3.UP * 0.5
+            var occupied: bool = false
+            for other_id in world_combat.enemies:
+                if str(other_id) == actor_id:
+                    continue
+                var other_position: Vector3 = world_combat.enemies[other_id]["node"].global_position
+                if Vector2(other_position.x, other_position.z).distance_to(
+                        Vector2(candidate.x, candidate.z)) < 0.65:
+                    occupied = true
+                    break
+            if not occupied:
+                player_node.global_position = candidate
+                break
     for tick in range(max_ticks):
         if not world_combat.enemies.has(actor_id):
             return true
