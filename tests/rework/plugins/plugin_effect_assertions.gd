@@ -4,6 +4,7 @@ const Runtime = preload("res://scripts/rework/plugins/plugin_effect_runtime.gd")
 const Sink = preload("res://scripts/rework/plugins/plugin_b_combat_sink.gd")
 const Catalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
+const View = preload("res://scripts/rework/plugins/plugin_offer_view.gd")
 
 var failures: Array[String] = []
 var sink_reject: bool = false
@@ -133,6 +134,9 @@ func _run() -> void:
 	var offers = Offers.new()
 	check(offers.begin_mission(777,{},"durable-run-777"),"offers begin")
 	var opened: Dictionary = offers.roll_offer()
+	var view_model: Dictionary = View.reward_screen(offers)
+	check(view_model.get("active",false) and view_model.get("cards",[]).size()==3
+		and view_model.get("rerolls_remaining",-1)==3, "read-only UI returns 3 cards, rerolls")
 	var prepared: Dictionary = offers.choose_card(0)
 	check(not prepared.is_empty() and offers.levels.is_empty()
 		and offers.offer_snapshot()["active"],"prepare is not a grant")

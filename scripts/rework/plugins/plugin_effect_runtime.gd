@@ -8,6 +8,7 @@ const TICKS_PER_SECOND := 60
 
 var levels: Dictionary = {}
 var _specs: Dictionary = {}
+var _entries: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _cooldowns: Dictionary = {}
 var _seen: Dictionary = {}
@@ -25,6 +26,7 @@ func _init() -> void:
 		validation_errors.append("missing_plugin_effect_specs")
 	var existing: Array[Dictionary] = Catalog.entries()
 	for entry in existing:
+		_entries[str(entry["plugin_id"])] = entry.duplicate(true)
 		if not _specs.has(str(entry["plugin_id"])):
 			validation_errors.append("missing_effect:" + str(entry["plugin_id"]))
 
@@ -32,7 +34,7 @@ func configure(new_levels: Dictionary, seed_value: int = 0) -> bool:
 	if not validation_errors.is_empty():
 		return false
 	for uid in new_levels:
-		var entry: Dictionary = Catalog.find_by_id(str(uid), Catalog.entries())
+		var entry: Dictionary = _entries.get(str(uid), {})
 		if entry.is_empty() or typeof(new_levels[uid]) != TYPE_INT or int(new_levels[uid]) < 0 or int(new_levels[uid]) > int(entry["max_level"]):
 			return false
 	levels = new_levels.duplicate(true)
@@ -44,7 +46,7 @@ func configure(new_levels: Dictionary, seed_value: int = 0) -> bool:
 	return true
 
 func set_plugin_level(plugin_id: String, new_level: int) -> bool:
-	var entry: Dictionary = Catalog.find_by_id(plugin_id, Catalog.entries())
+	var entry: Dictionary = _entries.get(plugin_id, {})
 	if entry.is_empty() or new_level <= 0 or new_level > int(entry["max_level"]):
 		return false
 	var old_level: int = int(levels.get(plugin_id, 0))
@@ -168,7 +170,7 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 				eligible = kind in ["on_hit_proc", "kill"]
 		if not eligible:
 			continue
-		var entry: Dictionary = Catalog.find_by_id(uid, Catalog.entries())
+		var entry: Dictionary = _entries.get(uid, {})
 		# B supplies per-attack derived permissions. Do not let a derived attack
 		# masquerade as a new basic attack and launch an unbounded loop.
 		var derived: bool = source.has("plugin_attack") or source.has("derived_attack")
