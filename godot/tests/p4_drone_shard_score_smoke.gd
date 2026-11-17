@@ -95,6 +95,19 @@ func _run() -> void:
     expect(fx.drone_nodes[0].visible and fx.drone_nodes[1].visible
         and not fx.drone_nodes[2].visible,
         "only the acquired number of drone meshes is visible")
+
+    var game_sim: Variant = game.get("sim")
+    var blast_id: int = game_sim.spawn_enemy("guardian", Vector2(430, 360))
+    var actor: Node3D = game.get_node("LegacyPlayer")
+    actor.call("set_logical_position", Vector2(420, 360))
+    game.get("software").stats["dash_blast"] = 40.0
+    var original_hp: float = float(game_sim.get_enemy(blast_id)["hp"])
+    game.call("_on_dash_visual", Vector2.RIGHT)
+    var target: Dictionary = game_sim.get_enemy(blast_id)
+    expect(not target.is_empty() and float(target["hp"]) < original_hp,
+        "installed dash-blast software damages nearby C enemy through true mitigation")
+    expect(not target.is_empty() and Vector2(target["vel"]).x > 0.0,
+        "dash-blast applies the source outward 140px/s knockback")
     game.queue_free()
 
     if failures == 0:
