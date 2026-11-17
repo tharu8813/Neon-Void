@@ -83,13 +83,21 @@ func _boost_b_combat(router: Variant) -> void:
     b_actor["stats"]["attack_speed"] = 25.0
     b_actor["stats"]["projectile_speed_mult"] = 2.5
 
+func _was_certified_dead(actor_id: String) -> bool:
+    if world.current_mode == "motherboard":
+        return world.intro_receipts.has(actor_id)
+    var session: Variant = world.cpu_session if world.current_mode == "cpu" else world.region_session
+    return session != null and session.defeated_hostiles.has(actor_id)
+
 func _kill_real_B(router: Variant, actor_id: String,
         max_ticks: int = 280) -> bool:
+    # A previously targeted B projectile can kill a second nearby enemy
+    # before its own turn. Its B/D receipt is valid; absence alone is NOT.
     if not router.enemies.has(actor_id):
-        return false
+        return _was_certified_dead(actor_id) and _drain_offers()
     for tick in range(max_ticks):
         if not router.enemies.has(actor_id):
-            return _drain_offers()
+            return _was_certified_dead(actor_id) and _drain_offers()
         if bool(pilot.get("frozen")) or not _drain_offers():
             return false
         var target: Vector3 = router.enemies[actor_id]["node"].global_position
@@ -99,7 +107,8 @@ func _kill_real_B(router: Variant, actor_id: String,
             commands[str(enemy)] = {"move": Vector2.ZERO,
                 "aim_world": world.player.global_position, "fire": false}
         router.live.advance_test_tick(commands)
-    return not router.enemies.has(actor_id) and _drain_offers()
+    return not router.enemies.has(actor_id) and _was_certified_dead(actor_id) \
+        and _drain_offers()
 
 func _kill_all_real_B(router: Variant, boss: bool = false) -> void:
     # Snapshot actor IDs to avoid false skipping caused by B removals.
