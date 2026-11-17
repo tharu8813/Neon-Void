@@ -5,6 +5,7 @@ const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Fence = preload("res://scripts/rework/persistence/lifetime_fence.gd")
 const STATE_FILE := "state.json"
 const BACKUP_FILE := "state.json.bak"
+const RECOVERY_FILE := "state.json.recovery"
 const INTENT_FILE := "state.json.intent"
 const FORMAT: int = 1
 const MAX_BYTES: int = 16 * 1024 * 1024
@@ -123,10 +124,13 @@ static func _cleanup_committed_intent(slot_path: String) -> Dictionary:
     var pending: Dictionary = _read_intent(slot_path)
     if not pending.ok:
         return pending
-    # read() checks both the checksum and the lifetime fence.
+    # A missing acknowledgment does not mean the state failed to commit.
+    # Only a byte-for-byte equivalent current state can clear the intent.
     var current: Dictionary = read(slot_path)
     if not current.ok or not _same_snapshot(current, pending):
         return {"ok": false, "reason": "intent_requires_reconciliation"}
+    if not _write_atomic(slot_path.path_join(RECOVERY_FILE), pending.bytes):
+        return {"ok": false, "reason": "recovery_copy_write_failed"}
     if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
         return {"ok": false, "reason": "intent_cleanup_failed"}
     return {"ok": true}
@@ -177,6 +181,10 @@ static func initialize(slot_path: String, state: Dictionary) -> Dictionary:
         ## A failed staging write is not an initialized save; never touch existing slots.
         DirAccess.remove_absolute(staging)
         return {"ok": false, "reason": "initial_write_failed"}
+    # Complete, same-revision recovery copy. The older .bak remains diagnostic
+    # only; recovering it could roll back awarded receipts.
+    if not _write_atomic(staging.path_join(RECOVERY_FILE), encoded.bytes):
+        return {"ok": false, "reason": "initial_recovery_write_failed"}
     var initial_fence: PackedByteArray = Fence.encode(Fence.from_state(state))
     if initial_fence.is_empty() or not _write_atomic(
             staging.path_join(Fence.FILENAME), initial_fence):
@@ -323,6 +331,8 @@ static func _transact_locked(slot_path: String, transition: Callable,
     var checked: Dictionary = read(slot_path)
     if not checked.ok or int(checked.revision) != int(loaded.revision) + 1:
         return {"applied": false, "reason": "post_write_verification_failed"}
+    if not _write_atomic(slot_path.path_join(RECOVERY_FILE), encoded.bytes):
+        return {"applied": false, "reason": "committed_recovery_copy_pending"}
     if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
         # State is already committed; caller may retry same receipt, which
         # remains in the committed envelope and cannot be awarded twice.
@@ -344,36 +354,39 @@ static func restore_backup(slot_path: String, explicit_consent: bool = false) ->
     return result
 
 static func _restore_locked(slot_path: String) -> Dictionary:
-    # A pending full-state transaction must be reconciled before any old
-    # backup can be promoted, or a receipt could be silently undone.
+    # Pending intent must be reconciled before restoring the primary.
     if FileAccess.file_exists(slot_path.path_join(INTENT_FILE)):
         return {"ok": false, "reason": "intent_requires_reconciliation"}
-    if read(slot_path).ok:
+    var primary: Dictionary = read(slot_path)
+    if primary.ok:
         return {"ok": false, "reason": "primary_is_valid"}
-    var backup_bytes: Dictionary = _read_bytes(slot_path.path_join(BACKUP_FILE))
-    if not backup_bytes.ok:
-        return backup_bytes
-    var parsed: Dictionary = _decode(backup_bytes.bytes)
-    if not parsed.ok or parsed.state.slot_id != slot_path.get_file().trim_prefix("rework-slot-"):
-        return {"ok": false, "reason": "backup_invalid"}
-    var sealed: Dictionary = _read_fence(slot_path)
-    if not sealed.ok:
-        return sealed
-    if not Fence.allows(parsed.state, sealed.fence):
-        return {"ok": false, "reason": "backup_would_restore_consumed_clone"}
-    # Never downgrade an unsupported FUTURE schema using an older backup.
-    var original: Dictionary = read(slot_path)
-    if ["future_format", "future_schema"].has(original.get("reason", "")):
+    if ["future_format", "future_schema"].has(primary.get("reason", "")):
         return {"ok": false, "reason": "future_version_must_not_rollback"}
+    # NEVER silently restore state.json.bak: it is one receipt/revision old.
+    # The verified recovery copy has the most recent acknowledged receipts.
+    var copy_bytes: Dictionary = _read_bytes(slot_path.path_join(RECOVERY_FILE))
+    if not copy_bytes.ok:
+        return {"ok": false, "reason": "last_committed_copy_unavailable"}
+    var copy: Dictionary = _decode(copy_bytes.bytes)
+    if not copy.ok or copy.state.slot_id != slot_path.get_file().trim_prefix("rework-slot-"):
+        return {"ok": false, "reason": "last_committed_copy_invalid"}
+    var fenced: Dictionary = _read_fence(slot_path)
+    if not fenced.ok:
+        return fenced
+    if not Fence.allows(copy.state, fenced.fence):
+        return {"ok": false, "reason": "copy_would_refund_consumed_clone"}
     var damaged: Dictionary = _read_bytes(slot_path.path_join(STATE_FILE))
     if damaged.ok:
         var archive_path: String = slot_path.path_join(
             "state.invalid-" + str(Time.get_ticks_usec()) + ".json")
         if not _write_atomic(archive_path, damaged.bytes):
             return {"ok": false, "reason": "failed_to_preserve_damaged_primary"}
-    if not _write_atomic(slot_path.path_join(STATE_FILE), backup_bytes.bytes):
+    if not _write_atomic(slot_path.path_join(STATE_FILE), copy_bytes.bytes):
         return {"ok": false, "reason": "restore_write_failed"}
-    return read(slot_path)
+    var confirmed: Dictionary = read(slot_path)
+    if not confirmed.ok or not _same_snapshot(confirmed, copy):
+        return {"ok": false, "reason": "post_restore_validation_failed"}
+    return confirmed
 
 static func recover_interrupted_commit(slot_path: String,
         explicit_consent: bool = false) -> Dictionary:
@@ -429,6 +442,8 @@ static func _recover_intent_locked(slot_path: String) -> Dictionary:
     var checked: Dictionary = read(slot_path)
     if not checked.ok or not _same_snapshot(checked, pending):
         return {"ok": false, "reason": "intent_post_recovery_mismatch"}
+    if not _write_atomic(slot_path.path_join(RECOVERY_FILE), pending.bytes):
+        return {"ok": false, "reason": "recovery_copy_write_failed"}
     if DirAccess.remove_absolute(slot_path.path_join(INTENT_FILE)) != OK:
         return {"ok": false, "reason": "intent_cleanup_failed"}
     return {"ok": true, "revision": checked.revision,
