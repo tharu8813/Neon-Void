@@ -98,6 +98,10 @@ jobs:
             tests/rework/camera/look_ahead_smoke.gd
             tests/rework/world/hub_motherboard_smoke.gd
             tests/rework/world/cpu_vertical_slice_smoke.gd
+            tests/rework/world/gpu_playable_smoke.gd
+            tests/rework/world/ram_playable_smoke.gd
+            tests/rework/world/ssd_playable_smoke.gd
+            tests/rework/world/hdd_playable_smoke.gd
             tests/rework/world/hardware_rules_smoke.gd
             tests/rework/progression/progression_smoke.gd
             tests/rework/persistence/persistence_smoke.gd
@@ -105,6 +109,7 @@ jobs:
             tests/rework/integration/rework_pilot_smoke.gd
             tests/rework/integration/rare_bonus_pilot_smoke.gd
             tests/rework/integration/pilot_recovery_view_smoke.gd
+            tests/rework/integration/hardware_checkpoint_contract_smoke.gd
           )
           count=0
           failures=0
@@ -136,13 +141,18 @@ jobs:
             'tests/rework/camera/look_ahead_smoke.gd',
             'tests/rework/world/hub_motherboard_smoke.gd',
             'tests/rework/world/cpu_vertical_slice_smoke.gd',
+            'tests/rework/world/gpu_playable_smoke.gd',
+            'tests/rework/world/ram_playable_smoke.gd',
+            'tests/rework/world/ssd_playable_smoke.gd',
+            'tests/rework/world/hdd_playable_smoke.gd',
             'tests/rework/world/hardware_rules_smoke.gd',
             'tests/rework/progression/progression_smoke.gd',
             'tests/rework/persistence/persistence_smoke.gd',
             'tests/rework/integration/mission_commit_bridge_smoke.gd',
             'tests/rework/integration/rework_pilot_smoke.gd',
             'tests/rework/integration/rare_bonus_pilot_smoke.gd',
-            'tests/rework/integration/pilot_recovery_view_smoke.gd'
+            'tests/rework/integration/pilot_recovery_view_smoke.gd',
+            'tests/rework/integration/hardware_checkpoint_contract_smoke.gd'
           )
           $count = 0
           $failures = 0
