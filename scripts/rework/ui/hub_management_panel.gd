@@ -47,6 +47,8 @@ var stat_summary: Label
 var stat_submit: Button
 var skill_submit: Button
 var _built: bool = false
+var _last_combat_projection: String = ""
+var combat_render_count: int = 0
 
 func _ready() -> void:
     name = "HubManagement"
@@ -100,8 +102,8 @@ func _layout_to_viewport() -> void:
     if get_viewport() == null:
         return
     var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-    size = Vector2(minf(960.0, maxf(360.0, viewport_size.x - 36.0)),
-        minf(610.0, maxf(260.0, viewport_size.y - 36.0)))
+    size = Vector2(minf(960.0, maxf(280.0, viewport_size.x - 36.0)),
+        minf(610.0, maxf(180.0, viewport_size.y - 36.0)))
     position = ((viewport_size - size) * 0.5).max(Vector2.ZERO)
 
 func _page(title: String) -> VBoxContainer:
@@ -402,6 +404,19 @@ func _request_skills() -> void:
 func show_live_combat(actor: Dictionary) -> void:
     if combat_body == null:
         return
+    # Live B snapshots may be polled at 60 Hz. Rebuilding hundreds of Control
+    # nodes on every poll destroys scroll/focus and wastes CPU/GPU frames.
+    var projection: Dictionary = {
+        "stats": actor.get("stats", {}),
+        "mana": actor.get("mana", null)
+    }
+    var signature: String = JSON.stringify(projection)
+    if signature == _last_combat_projection and combat_body.get_child_count() > 0:
+        return
+    _last_combat_projection = signature
+    combat_render_count += 1
+    var scroll: ScrollContainer = combat_body.get_parent() as ScrollContainer
+    var scroll_before: int = scroll.scroll_vertical if scroll != null else 0
     _clear(combat_body)
     var stats: Dictionary = actor.get("stats", {})
     combat_body.add_child(_label("전투 능력치 · 실제 B 런타임", 17))
@@ -451,3 +466,5 @@ func show_live_combat(actor: Dictionary) -> void:
     combat_body.add_child(_label(
         "보호막: %.1f" % float(stats["shield"]) if stats.has("shield")
             else "보호막: 공개된 B 데이터 없음", 14, MUTED))
+    if scroll != null and scroll_before > 0:
+        scroll.set_deferred("scroll_vertical", scroll_before)
