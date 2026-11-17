@@ -71,6 +71,10 @@ static func run(check: Callable) -> void:
     check.call(first.vaccine.receipts.has("run-rare-proof:1:0") and
         first.vaccine.receipts.has("run-rare-proof:1:0:rare:0"),
         "source and bonus each have unique atomic receipts")
+    var malformed: Dictionary = first.duplicate(true)
+    malformed.vaccine.receipts.erase(str(grant.bonus_receipt))
+    check.call(not Model.validate(malformed),
+        "E refuses rare rewards missing their actual bonus receipt")
     check.call(int(mission.pending_plugin_offers) == 0 and
         mission.claimed_offer_ids.has("run-rare-proof:1"),
         "source only consumes one C reward choice")
