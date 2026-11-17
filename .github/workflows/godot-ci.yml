@@ -93,9 +93,11 @@ jobs:
             tests/rework/combat/combat_foundation_smoke.gd
             tests/rework/skills/skill_foundation_smoke.gd
             tests/rework/plugins/plugin_reward_smoke.gd
+            tests/rework/plugins/plugin_live_effects_smoke.gd
             tests/rework/world/world_foundation_smoke.gd
             tests/rework/camera/look_ahead_smoke.gd
             tests/rework/world/hub_motherboard_smoke.gd
+            tests/rework/world/cpu_vertical_slice_smoke.gd
             tests/rework/world/hardware_rules_smoke.gd
             tests/rework/progression/progression_smoke.gd
             tests/rework/persistence/persistence_smoke.gd
@@ -126,9 +128,11 @@ jobs:
             'tests/rework/combat/combat_foundation_smoke.gd',
             'tests/rework/skills/skill_foundation_smoke.gd',
             'tests/rework/plugins/plugin_reward_smoke.gd',
+            'tests/rework/plugins/plugin_live_effects_smoke.gd',
             'tests/rework/world/world_foundation_smoke.gd',
             'tests/rework/camera/look_ahead_smoke.gd',
             'tests/rework/world/hub_motherboard_smoke.gd',
+            'tests/rework/world/cpu_vertical_slice_smoke.gd',
             'tests/rework/world/hardware_rules_smoke.gd',
             'tests/rework/progression/progression_smoke.gd',
             'tests/rework/persistence/persistence_smoke.gd',
