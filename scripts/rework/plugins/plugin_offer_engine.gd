@@ -1,0 +1,211 @@
+extends RefCounted
+## Isolated reward engine. A owns UI, B combat, E persistence.
+const Catalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
+const RARITIES := ["common", "rare", "legendary", "mythic"]
+
+var _rng := RandomNumberGenerator.new()
+var _catalog: Array[Dictionary] = []
+var _settings: Dictionary = {}
+var _started: bool = false
+var _seed: int = 0
+var _offer_sequence: int = 0
+var _pending: Dictionary = {}
+var levels: Dictionary = {}
+var missed_screens: int = 0
+var rerolls_remaining: int = 0
+var validation_errors: Array[String] = []
+
+func _init(custom_entries: Array[Dictionary] = [], custom_settings: Dictionary = {}) -> void:
+	_catalog = custom_entries.duplicate(true) if not custom_entries.is_empty() else Catalog.entries()
+	_settings = custom_settings.duplicate(true) if not custom_settings.is_empty() else Catalog.odds_settings()
+	validation_errors = Catalog.validate(_catalog)
+	if not _settings.has("rarity_weights") or not _settings.has("modifiers") or not _settings.has("pity"):
+		validation_errors.append("Missing odds settings")
+
+func begin_mission(seed_value: int, initial_levels: Dictionary = {}) -> bool:
+	if not validation_errors.is_empty():
+		return false
+	for uid in initial_levels:
+		var entry: Dictionary = Catalog.find_by_id(str(uid), _catalog)
+		var value: Variant = initial_levels[uid]
+		if entry.is_empty() or typeof(value) != TYPE_INT or value < 0 or value > int(entry["max_level"]):
+			return false
+	_seed = seed_value
+	_rng.seed = seed_value
+	_started = true
+	_offer_sequence = 0
+	_pending.clear()
+	levels = initial_levels.duplicate(true)
+	missed_screens = 0
+	rerolls_remaining = maxi(0, int(_settings.get("base_rerolls", 3)))
+	return true
+
+func get_catalog() -> Array[Dictionary]:
+	return _catalog.duplicate(true)
+
+func get_entry(plugin_id: String) -> Dictionary:
+	return Catalog.find_by_id(plugin_id, _catalog)
+
+func is_eligible(plugin_id: String) -> bool:
+	var entry: Dictionary = get_entry(plugin_id)
+	return not entry.is_empty() and int(levels.get(plugin_id, 0)) < int(entry["max_level"])
+
+func add_rerolls(amount: int) -> bool:
+	if not _started or amount <= 0:
+		return false
+	rerolls_remaining += amount
+	return true
+
+func offer_snapshot() -> Dictionary:
+	var snapshot: Dictionary = _pending.duplicate(true)
+	snapshot["rerolls_remaining"] = rerolls_remaining
+	snapshot["missed_screens"] = missed_screens
+	snapshot["active"] = not _pending.is_empty()
+	return snapshot
+
+func roll_offer(context: Dictionary = {}) -> Dictionary:
+	if not _started:
+		return {}
+	if not _pending.is_empty():
+		return offer_snapshot()
+	_offer_sequence += 1
+	var safe_context: Dictionary = _clean_context(context)
+	var cards: Array[Dictionary] = []
+	var high_seen: bool = false
+	for slot in range(3):
+		var card: Dictionary = _draw_card(safe_context)
+		card["slot"] = slot
+		cards.append(card)
+		high_seen = high_seen or _is_high(card)
+	_pending = {
+		"offer_id": str(_seed) + ":" + str(_offer_sequence),
+		"context": safe_context,
+		"cards": cards,
+		"high_seen": high_seen
+	}
+	return offer_snapshot()
+
+func reroll_card(slot: int) -> Dictionary:
+	if _pending.is_empty() or rerolls_remaining <= 0 or slot < 0 or slot >= 3:
+		return {}
+	var cards: Array = _pending["cards"]
+	var replacement: Dictionary = _draw_card(_pending["context"])
+	replacement["slot"] = slot
+	cards[slot] = replacement
+	_pending["cards"] = cards
+	_pending["high_seen"] = bool(_pending["high_seen"]) or _is_high(replacement)
+	rerolls_remaining -= 1
+	return offer_snapshot()
+
+func choose_card(slot: int) -> Dictionary:
+	if _pending.is_empty() or slot < 0 or slot >= 3:
+		return {}
+	var cards: Array = _pending["cards"]
+	var card: Dictionary = cards[slot]
+	var plugin_id: String = str(card.get("plugin_id", ""))
+	if plugin_id.is_empty() or not is_eligible(plugin_id):
+		return {}
+	var entry: Dictionary = get_entry(plugin_id)
+	var new_level: int = int(levels.get(plugin_id, 0)) + 1
+	var choice: Dictionary = {
+		"offer_id": _pending["offer_id"],
+		"receipt_id": str(_pending["offer_id"]) + ":" + str(slot),
+		"plugin_id": plugin_id,
+		"rarity": entry["rarity"],
+		"level": new_level,
+		"learnable": Catalog.is_learnable(entry)
+	}
+	levels[plugin_id] = new_level
+	_settle_offer()
+	return choice
+
+func dismiss_offer() -> bool:
+	if _pending.is_empty():
+		return false
+	_settle_offer()
+	return true
+
+func rarity_probabilities(context: Dictionary = {}) -> Dictionary:
+	return _eligible_weights(_clean_context(context), _eligible_pools())
+
+func _clean_context(context: Dictionary) -> Dictionary:
+	return {
+		"cleared_hardware": clampi(int(context.get("cleared_hardware", 0)), 0, 5),
+		"difficulty_tier": maxi(0, int(context.get("difficulty_tier", 0))),
+		"luck_points": maxf(0.0, float(context.get("luck_points", 0.0)))
+	}
+
+func _eligible_pools() -> Dictionary:
+	var pools: Dictionary = {"common": [], "rare": [], "legendary": [], "mythic": []}
+	for entry in _catalog:
+		var plugin_id: String = str(entry["plugin_id"])
+		if is_eligible(plugin_id):
+			pools[str(entry["rarity"])].append(plugin_id)
+	return pools
+
+func _eligible_weights(context: Dictionary, pools: Dictionary) -> Dictionary:
+	var weights: Dictionary = {"common": 0.0, "rare": 0.0, "legendary": 0.0, "mythic": 0.0}
+	var base: Dictionary = _settings.get("rarity_weights", {})
+	var mod: Dictionary = _settings.get("modifiers", {})
+	var pity: Dictionary = _settings.get("pity", {})
+	var cleared: float = float(context["cleared_hardware"])
+	var difficulty: float = float(context["difficulty_tier"])
+	var luck: float = float(context["luck_points"])
+	var threshold: int = maxi(0, int(pity.get("missed_screens_before_boost", 5)))
+	var extra: int = mini(maxi(0, missed_screens - threshold + 1), maxi(0, int(pity.get("max_extra_screens_for_boost", 20))))
+	var total: float = 0.0
+	for rarity in RARITIES:
+		if pools[rarity].is_empty():
+			continue
+		var chance: float = maxf(0.0, float(base.get(rarity, 0.0)))
+		if rarity != "common":
+			chance *= 1.0 + cleared * float(mod.get("per_cleared_hardware_" + rarity, 0.0))
+			chance *= 1.0 + difficulty * float(mod.get("per_difficulty_tier_" + rarity, 0.0))
+			chance *= 1.0 + luck * float(mod.get("per_luck_point_" + rarity, 0.0))
+		if rarity == "legendary" or rarity == "mythic":
+			chance *= 1.0 + float(extra) * float(pity.get(rarity + "_multiplier_per_extra_screen", 0.0))
+		weights[rarity] = maxf(0.0, chance)
+		total += float(weights[rarity])
+	if total > 0.0:
+		for rarity in RARITIES:
+			weights[rarity] = float(weights[rarity]) * 100.0 / total
+	return weights
+
+func _draw_card(context: Dictionary) -> Dictionary:
+	var pools: Dictionary = _eligible_pools()
+	var weights: Dictionary = _eligible_weights(context, pools)
+	var total: float = 0.0
+	for rarity in RARITIES:
+		total += float(weights[rarity])
+	if total <= 0.0:
+		return {"plugin_id": "", "rarity": "", "empty": true}
+	var rolled: float = _rng.randf() * total
+	var cumulative: float = 0.0
+	var chosen: String = ""
+	for rarity in RARITIES:
+		var weight: float = float(weights[rarity])
+		if weight <= 0.0:
+			continue
+		cumulative += weight
+		chosen = rarity
+		if rolled < cumulative:
+			break
+	var candidates: Array = pools[chosen]
+	var selected_index: int = _rng.randi_range(0, candidates.size() - 1)
+	return {"plugin_id": str(candidates[selected_index]), "rarity": chosen, "empty": false}
+
+func _is_high(card: Dictionary) -> bool:
+	return str(card.get("rarity", "")) in ["legendary", "mythic"]
+
+func _settle_offer() -> void:
+	var has_candidates: bool = false
+	for card in _pending["cards"]:
+		if not bool(card.get("empty", true)):
+			has_candidates = true
+			break
+	if has_candidates:
+		if bool(_pending["high_seen"]):
+			missed_screens = 0
+		else:
+			missed_screens += 1
+	_pending.clear()
