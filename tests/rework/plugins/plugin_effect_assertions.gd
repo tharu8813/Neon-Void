@@ -7,12 +7,13 @@ const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const View = preload("res://scripts/rework/plugins/plugin_offer_view.gd")
 
 var failures: Array[String] = []
+var _completed: bool = false
 var sink_reject: bool = false
 var sink_calls: int = 0
 
 func execute_tests() -> bool:
 	_run()
-	return failures.is_empty()
+	return _completed and failures.is_empty()
 
 func check(yes: bool, why: String) -> void:
 	if not yes:
@@ -118,7 +119,8 @@ func _run() -> void:
 		and hit3["commands"].size()==1,"lightning per-target ICD")
 	var looped: Dictionary = event("on_hit",300)
 	looped["proc_path"] = ["nv_c_chain_lightning|vaccine-1|virus-1"]
-	check(lightning.process(looped,sample.duplicate(true),Callable(self,"fake_sink"))["commands"].is_empty(),"cycle suppressed, independent root allowed")
+	var cycle: Dictionary = lightning.process(looped,sample.duplicate(true),Callable(self,"fake_sink"))
+	check(cycle.get("ok",false) and cycle.get("commands",[]).is_empty(),"cycle suppressed, independent root allowed")
 
 	# Failures cannot consume counters, ICDs or event IDs.
 	var failing = Runtime.new()
@@ -174,6 +176,7 @@ func _run() -> void:
 	else:
 		print("B not installed on C-only stacked branch; real B damage/status path awaits A combined runner.")
 
+	_completed = true
 	if failures.is_empty():
 		print("C LIVE EFFECTS PASS: 27 executable kinds, real B if available, proc/ICD, E prepare-ack/rollback")
 

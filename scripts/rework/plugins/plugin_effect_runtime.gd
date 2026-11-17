@@ -201,13 +201,15 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 				next_state["sprint_active"] = false
 			"chain_lightning":
 				command = _attack_command(uid,actor_id,target_id,tick,event,spec,level,"lightning",_value(spec,"base_damage",level)*_value(spec,"level_multipliers",level))
-				command["attack"]["ap_ratio"] = _value(spec,"ap_ratio",level) * _value(spec,"level_multipliers",level)
-				command["chain_targets"] = int(_value(spec,"target_count",level))
-				command["search_distance_mult"] = _value(spec,"search_distance_mult",level)
+				if not command.is_empty():
+					command["attack"]["ap_ratio"] = _value(spec,"ap_ratio",level) * _value(spec,"level_multipliers",level)
+					command["chain_targets"] = int(_value(spec,"target_count",level))
+					command["search_distance_mult"] = _value(spec,"search_distance_mult",level)
 			"hit_explosion", "dash_explosion":
 				command = _attack_command(uid,actor_id,target_id,tick,event,spec,level,"explosion",_value(spec,"base_damage",level))
-				command["attack"]["is_area"] = true
-				command["area_radius"] = _value(spec,"area_radius",level)
+				if not command.is_empty():
+					command["attack"]["is_area"] = true
+					command["area_radius"] = _value(spec,"area_radius",level)
 			"armor_shred":
 				command = {"type":"status","target_id":target_id,"plugin_id":uid,
 					"definition":{"id":uid,"source_id":actor_id,"duration_ticks":int(spec["duration_ticks"]),"stack_mode":"stack",
