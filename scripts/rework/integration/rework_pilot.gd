@@ -9,6 +9,7 @@ const Bridge = preload("res://scripts/rework/integration/mission_commit_bridge.g
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
+const RecoveryView = preload("res://scripts/rework/integration/pilot_recovery_view.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -31,6 +32,9 @@ var learn_panel: PanelContainer
 var learn_list: VBoxContainer
 var learn_checks: Array[CheckBox] = []
 var pending_extraction: Dictionary = {}
+var pending_reconciliation: Dictionary = {}
+var recovery_panel: PanelContainer
+var recovery_label: Label
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -141,6 +145,28 @@ func _create_ui() -> void:
     finish_button.text = "선택 확정 및 안전 철수"
     finish_button.pressed.connect(_finish_extraction)
     learn_column.add_child(finish_button)
+
+    # An incident inspector stays responsive even while world ticks are paused.
+    # It offers NO resume, retry, abort, restore or overwrite action.
+    recovery_panel = PanelContainer.new()
+    recovery_panel.name = "RecoveryInspection"
+    recovery_panel.position = Vector2(680, 16)
+    recovery_panel.custom_minimum_size = Vector2(570, 300)
+    recovery_panel.visible = false
+    layer.add_child(recovery_panel)
+    var recovery_column := VBoxContainer.new()
+    recovery_panel.add_child(recovery_column)
+    var recovery_heading := Label.new()
+    recovery_heading.text = "저장 안전 진단 · 읽기 전용"
+    recovery_column.add_child(recovery_heading)
+    recovery_label = Label.new()
+    recovery_label.custom_minimum_size = Vector2(530, 220)
+    recovery_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    recovery_column.add_child(recovery_label)
+    var recovery_refresh := Button.new()
+    recovery_refresh.text = "저장 상태 다시 확인 (읽기 전용)"
+    recovery_refresh.pressed.connect(_show_recovery_report)
+    recovery_column.add_child(recovery_refresh)
 
 func _accept_saved_state(loaded: Dictionary) -> void:
     var saved: Dictionary = loaded.get("snapshot", {})
@@ -571,8 +597,16 @@ func _on_unavailable(region_id: String) -> void:
 func _on_world_error(reason: String) -> void:
     _halt("world:" + reason)
 
-func _on_reconciliation_required(reason: String, _event: Dictionary) -> void:
+func _on_reconciliation_required(reason: String, event: Dictionary) -> void:
+    pending_reconciliation = event.duplicate(true)
     _halt("E_reconciliation_required:" + reason)
+
+func _show_recovery_report() -> void:
+    if recovery_panel == null or recovery_label == null:
+        return
+    var report: Dictionary = RecoveryView.inspect(slot_path, pending_reconciliation)
+    recovery_label.text = str(report.get("text", "저장 상태 검증 불가"))
+    recovery_panel.visible = true
 
 func _halt(reason: String) -> void:
     frozen = true
@@ -588,3 +622,4 @@ func _halt(reason: String) -> void:
     if world != null and world.get("player") != null:
         var player: Node = world.get("player") as Node
         player.set("movement_enabled", false)
+    _show_recovery_report()
