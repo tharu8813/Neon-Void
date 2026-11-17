@@ -62,7 +62,8 @@ func _run() -> void:
             "physical emitter switch %d" % index)
     check(bool(game.region_session.objectives.progress["disable_emitter"]["completed"]),
         "three unique emitter controls completed")
-    check(game.combat.enemies.size() == 8, "eight encounter enemies spawned")
+    check(game.combat.enemies.size() == game.region_session.wave_target_count,
+        "environment-scaled B encounter enemies spawned")
     var coolant: Vector3 = game.hardware.objective_world("stabilize_coolant")
     game.player.global_position = coolant + Vector3.UP * 0.5
     check(game.interact().get("objective_id", "") == "stabilize_coolant",
@@ -79,7 +80,7 @@ func _run() -> void:
         check(bool(game.region_session.objectives.progress["stabilize_coolant"]["completed"]),
             "eight actual telegraphed dodge windows completed")
     check(not game.world_state.is_extraction_open("GPU"), "no extraction before boss")
-    for i in range(8):
+    for i in range(game.region_session.wave_target_count):
         _hit_preview(game, "GPU-OVERLOAD-%02d" % i)
     check(game.combat.enemies.has("GPU-BOSS"), "boss requires objectives and hostiles")
     _hit_preview(game, "GPU-BOSS")

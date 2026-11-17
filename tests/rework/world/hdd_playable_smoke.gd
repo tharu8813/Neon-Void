@@ -53,9 +53,11 @@ func _run() -> void:
                 "four platter stations required before index")
     check(bool(game.region_session.objectives.progress["restore_index"]["completed"]),
         "three index restorations finished")
-    check(game.combat.enemies.size() == 12, "12 B-routed disk defenders")
+    var expected_enemies: int = game.region_session.known_hostiles.size()
+    check(game.combat.enemies.size() == expected_enemies and expected_enemies >= 12,
+        "HDD stack-overflow-scaled B disk defenders")
     check(not game.combat.enemies.has("HDD-BOSS"), "B boss waits for defenders")
-    for i in range(12):
+    for i in range(expected_enemies):
         _hit_preview(game, "HDD-HOSTILE-%02d" % i)
     check(game.combat.enemies.has("HDD-BOSS"), "disk_leviathan boss B actor")
     _hit_preview(game, "HDD-BOSS")

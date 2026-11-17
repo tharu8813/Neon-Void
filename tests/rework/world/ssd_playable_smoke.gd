@@ -45,7 +45,9 @@ func _run() -> void:
             "on-foot data capture " + str(i))
     check(bool(game.region_session.objectives.progress["capture_node"]["completed"]),
         "all capture receipts credited once")
-    check(game.combat.enemies.size() == 10, "ten B-routed rapid defenders spawned")
+    var expected_enemies: int = game.region_session.known_hostiles.size()
+    check(game.combat.enemies.size() == expected_enemies and expected_enemies >= 10,
+        "SSD stack-overflow-scaled defenders spawned")
     var seal: Vector3 = game.hardware.objective_world("seal_transfer")
     game.player.global_position = seal + Vector3.UP * 0.5
     check(game.interact().get("objective_id", "") == "seal_transfer",
@@ -55,7 +57,7 @@ func _run() -> void:
     check(bool(game.region_session.objectives.progress["seal_transfer"]["completed"]),
         "transfer needs full 1800 defended 60Hz ticks")
     check(not game.combat.enemies.has("SSD-BOSS"), "boss requires all B deaths")
-    for i in range(10):
+    for i in range(expected_enemies):
         hit_preview(game, "SSD-HOSTILE-%02d" % i)
     check(game.combat.enemies.has("SSD-BOSS"), "flash_daemon is a B actor")
     hit_preview(game, "SSD-BOSS")
