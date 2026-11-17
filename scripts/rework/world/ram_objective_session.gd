@@ -8,6 +8,7 @@ signal boss_spawned(actor_id: String)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
+const Environment = preload("res://scripts/rework/world/environment_rules.gd")
 var run_id: String = ""
 var world_state: Variant
 var region_plan: Dictionary = {}
@@ -152,8 +153,11 @@ func _spawn_mirrors() -> void:
             var cell := Vector2i(x, y)
             if Maps.is_floor(plan, cell) and field[y * int(plan["width"]) + x] >= 5                     and cell != plan["boss"]:
                 cells.append(cell)
-    if cells.size() < 8:
-        push_error("RAM: no valid eight-way combat spawn")
+    var descriptor: Dictionary = Environment.describe(
+        region_plan, [], int(region_plan["encounter_seed"]))
+    var wave_count: int = ceili(8.0 * float(descriptor.get("enemy_spawn_multiplier", 1.0)))
+    if cells.size() < wave_count:
+        push_error("RAM: no valid distinct combat spawn cells")
         return
     for i in range(cells.size() - 1, 0, -1):
         var j: int = encounter_rng.randi_range(0, i)
@@ -161,7 +165,7 @@ func _spawn_mirrors() -> void:
         cells[i] = cells[j]
         cells[j] = temp
     wave_started = true
-    for i in range(8):
+    for i in range(wave_count):
         _emit_hostile("RAM-MIRROR-%02d" % i, "mirror" if i % 2 == 0 else "duplicator",
             Maps.cell_to_world(cells[i]), false)
 

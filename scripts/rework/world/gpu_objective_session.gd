@@ -8,6 +8,7 @@ signal boss_spawned(actor_id: String)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
+const Environment = preload("res://scripts/rework/world/environment_rules.gd")
 var run_id: String = ""
 var world_state: Variant
 var region_plan: Dictionary = {}
@@ -17,6 +18,7 @@ var encounter_rng := RandomNumberGenerator.new()
 var known_hostiles: Dictionary = {}
 var defeated_hostiles: Dictionary = {}
 var wave_started: bool = false
+var wave_target_count: int = 8
 var boss_spawned_once: bool = false
 var coolant_started: bool = false
 var physics_tick: int = 0
@@ -118,8 +120,11 @@ func _spawn_overload_wave() -> void:
                 reserved = reserved or objective["cell"] == cell
             if not reserved:
                 candidates.append(cell)
-    if candidates.size() < 8:
-        push_error("GPU map has fewer than 8 valid enemy spawn cells")
+    var descriptor: Dictionary = Environment.describe(
+        region_plan, [], int(region_plan["encounter_seed"]))
+    wave_target_count = ceili(8.0 * float(descriptor.get("enemy_spawn_multiplier", 1.0)))
+    if candidates.size() < wave_target_count:
+        push_error("GPU map lacks required distinct enemy spawn cells")
         return
     for i in range(candidates.size() - 1, 0, -1):
         var j: int = encounter_rng.randi_range(0, i)
@@ -127,7 +132,7 @@ func _spawn_overload_wave() -> void:
         candidates[i] = candidates[j]
         candidates[j] = tmp
     wave_started = true
-    for i in range(8):
+    for i in range(wave_target_count):
         var actor_id: String = "GPU-OVERLOAD-%02d" % i
         known_hostiles[actor_id] = true
         enemy_spawn_requested.emit({
@@ -163,7 +168,7 @@ func _on_progress_changed(snapshot: Dictionary) -> void:
 func _maybe_spawn_boss() -> void:
     if boss_spawned_once or not wave_started or not objectives.all_objectives_completed():
         return
-    if defeated_hostiles.size() < 8 or not geometry.set_boss_available():
+    if defeated_hostiles.size() < wave_target_count or not geometry.set_boss_available():
         return
     boss_spawned_once = true
     known_hostiles["GPU-BOSS"] = true
