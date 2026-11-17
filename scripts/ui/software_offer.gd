@@ -61,8 +61,8 @@ func _render_cards() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(300, 190)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.text = "%d   %s\n\n%s\n\nLv. %d / %d" % [i + 1, data["name"], data["description"], int(_levels.get(uid, 0)), int(data["max_stack"])]
-		button.tooltip_text = str(data["description"])
+		button.text = "%d   %s\n\n%s\n\nLv. %d / %d" % [i + 1, data["name"], (str(data["description"]) if uid == "bonus" else Catalog.description_for_display(uid)), int(_levels.get(uid, 0)), int(data["max_stack"])]
+		button.tooltip_text = str((str(data["description"]) if uid == "bonus" else Catalog.description_for_display(uid)))
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.add_theme_font_size_override("font_size", 17)
 		button.add_theme_color_override("font_color", GOLD if int(data["tier"]) == 2 else CYAN)

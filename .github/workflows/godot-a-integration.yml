@@ -61,6 +61,7 @@ jobs:
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/integration_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/save_bridge_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/live_save_integration_smoke.gd
+          timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/p0_run_integrity_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/integration_import_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/combat_smoke.gd
           timeout 80 "$NEON_GODOT" --headless --path . --script res://tests/sector_smoke.gd
@@ -91,6 +92,7 @@ jobs:
           Invoke-CheckedGodot '--headless --path . --script res://tests/integration_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --script res://tests/save_bridge_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --script res://tests/live_save_integration_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/p0_run_integrity_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --script res://tests/integration_import_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --script res://tests/combat_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --script res://tests/sector_smoke.gd'
