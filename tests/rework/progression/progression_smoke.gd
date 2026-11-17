@@ -20,6 +20,19 @@ func accepted(previous: Dictionary, outcome: Dictionary, note: String) -> Dictio
 func _run() -> void:
     var s: Dictionary = State.new_slot("domain-test", "vaccine-A")
     check(State.validate(s), "fresh v1 state")
+    var malformed_root: Dictionary = s.duplicate(true)
+    malformed_root.erase("vaccine")
+    check(not State.validate(malformed_root), "missing root save key fails closed")
+    var malformed_mission: Dictionary = State.new_mission("shape-test", 1)
+    check(State._valid_mission(malformed_mission), "generated mission has exact schema keys")
+    malformed_mission.erase("claimed_offer_ids")
+    malformed_mission["unapproved_field"] = []
+    check(not State._valid_mission(malformed_mission),
+        "same-size mission with missing required field rejected")
+    check(Balance.stat_cost_fragments({"max_hp": 1.0}) == 100,
+        "whole-number JSON float stat allocation accepted after reload")
+    check(Balance.stat_cost_fragments({"max_hp": 1.5}) == -1,
+        "fractional stat allocations rejected")
     check(State.valid_id("run-a:1:0"), "C colon-delimited card receipts accepted")
     check(not State.valid_slot_id("invalid:filename"), "unsafe filesystem slot rejected")
     check(Balance.needed_xp(1, false) == 100, "mission level XP draft")
@@ -29,6 +42,10 @@ func _run() -> void:
     check(not Balance.valid_config({"unapproved_rule": 1}), "unknown balance setting rejected")
 
     s = accepted(s, Rules.start_mission(s, "vaccine-A", 1, "run-1", 111), "mission 1")
+    if failures > 0 or s.vaccine.mission == null:
+        printerr("REWORK E: aborting after invalid mission creation")
+        quit(1)
+        return
     s = accepted(s, Rules.add_mission_xp(s, "vaccine-A", 1, "run-1", "kill-001", 100),
         "mission XP")
     check(s.vaccine.mission.mission_level == 2 and s.vaccine.level == 1,
