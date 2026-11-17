@@ -163,6 +163,9 @@ static func run(check: Callable, root: Node) -> void:
     var battle: Variant = fixture["battle"]
     check.call(bool(fixture["started"]), "E-approved production B encounter begins")
     var applied: Dictionary = battle.configure_authorized_progression(approved)
+    if not bool(applied.get("ok", false)):
+        printerr("B E PROFILE DIAG: ", applied, " E rev=", approved.get("revision",null),
+            " parse=", battle._parse_authorized_progression(approved))
     check.call(bool(applied.get("ok", false)), "E readback installed into live B player")
     var actor: Dictionary = battle.actor_snapshot()
     check.call(_near(float(actor["stats"]["attack_damage"]),6.0)
@@ -235,6 +238,9 @@ static func run(check: Callable, root: Node) -> void:
     fixture["scene"].queue_free()
 
     var cleared: Dictionary = Gateway.snapshot(slot)
+    if bool(cleared.get("ok", false)) and cleared["snapshot"]["vaccine"]["invested_stats"] != increments:
+        printerr("B E ROUNDTRIP DIAG: ", cleared["snapshot"]["vaccine"]["invested_stats"],
+            " expected=", increments)
     check.call(bool(cleared.get("ok", false))
         and cleared["snapshot"]["vaccine"]["invested_stats"] == increments,
         "B combat never modifies E storage or committed investments")
