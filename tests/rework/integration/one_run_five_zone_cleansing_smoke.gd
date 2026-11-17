@@ -186,15 +186,18 @@ func _drive_objectives(region: String) -> void:
                 session.tick_player(center)
             check(bool(session.objectives.progress["seal_transfer"]["completed"]),
                 "SSD real 1800 transfer ticks complete")
+    # CPU stop_intruders is a B-confirmed KILL objective; the 10th actual
+    # B projectile kill is its final progress event. Do not assert completion
+    # before processing those kills.
+    check(not bool(world.world_state.progress[region]["cleared"]),
+        region + ": objectives alone do not grant a fake boss clean")
+    _kill_all_real_B(router)
     check(session.objectives.all_objectives_completed(),
-        region + ": all D gameplay objectives are completed. progress=" +
+        region + ": all D gameplay objectives completed after B kill events. progress=" +
         str(session.objectives.progress) + " D_known=" +
         str(session.known_hostiles.size()) + " D_defeated=" +
         str(session.defeated_hostiles.size()) + " B_remaining=" +
         str(router.enemies.keys()) + " frozen=" + str(pilot.get("frozen")))
-    check(not bool(world.world_state.progress[region]["cleared"]),
-        region + ": objectives alone do not grant a fake boss clean")
-    _kill_all_real_B(router)
     check(router.enemies.has(region + "-BOSS"),
         region + ": real B boss spawned only after goals and hostile deaths")
     if errors == 0:
