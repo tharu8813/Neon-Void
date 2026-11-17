@@ -193,6 +193,25 @@ static func recover_stale_lock_offline(slot_path: String, expected_token: String
     var backup_bytes: Dictionary = _read_bytes(backup_path) if backup_present else {"ok": true, "bytes": PackedByteArray()}
     if not primary_bytes.get("ok", false) or not backup_bytes.get("ok", false):
         return {"ok": false, "reason": "snapshot_unreadable"}
+    if backup_present:
+        # A readable backup may still contain a bad payload or checksum.
+        # Refuse to expose this slot to new writes until reviewed.
+        var parsed_backup: Dictionary = _parse(backup_bytes.bytes)
+        if not parsed_backup.get("ok", false) or typeof(parsed_backup.get("data")) != TYPE_DICTIONARY:
+            return {"ok": false, "reason": "backup_requires_manual_review"}
+        var backup_envelope: Dictionary = parsed_backup.data
+        if backup_envelope.size() != 4 or not Validator._integer(backup_envelope.get("format"), 1, 1) \
+                or not Validator._integer(backup_envelope.get("revision"), 1, 1000000000) \
+                or typeof(backup_envelope.get("payload_json")) != TYPE_STRING \
+                or typeof(backup_envelope.get("payload_sha256")) != TYPE_STRING:
+            return {"ok": false, "reason": "backup_requires_manual_review"}
+        if backup_envelope.payload_json.sha256_text() != backup_envelope.payload_sha256:
+            return {"ok": false, "reason": "backup_checksum_mismatch"}
+        var backup_payload: Dictionary = _parse(backup_envelope.payload_json.to_utf8_buffer())
+        if not backup_payload.get("ok", false) or not validate_state(backup_payload.get("data")):
+            return {"ok": false, "reason": "backup_payload_invalid"}
+        if int(backup_envelope.revision) > int(primary.revision):
+            return {"ok": false, "reason": "backup_revision_in_future"}
     var quarantine: String = slot_path + ".abandoned-lock-" + expected_token
     if DirAccess.dir_exists_absolute(quarantine) or FileAccess.file_exists(quarantine):
         return {"ok": false, "reason": "quarantine_already_exists"}
