@@ -67,6 +67,7 @@ var avatar_material: StandardMaterial3D
 var avatar_hit_material: StandardMaterial3D
 var avatar_aura: MeshInstance3D
 var avatar_dash: MeshInstance3D
+var avatar_thrust: MeshInstance3D
 var visual_fx: Node3D
 var legacy_audio: Node
 var sector_exit: Node3D
@@ -1024,6 +1025,18 @@ func _setup_player_visual() -> void:
     avatar_dash.position.y = -0.030
     avatar_dash.visible = false
     player_visual.add_child(avatar_dash)
+    avatar_thrust = MeshInstance3D.new()
+    avatar_thrust.name = "MovingEngineGlow"
+    var exhaust := BoxMesh.new()
+    exhaust.size = Vector3(0.11, 0.022, 0.075)
+    avatar_thrust.mesh = exhaust
+    var engine_material := ActorShapes.lit_material(Color("#1c6d7d"))
+    engine_material.emission_enabled = true
+    engine_material.emission = Color("#1c6d7d")
+    avatar_thrust.material_override = engine_material
+    avatar_thrust.position = Vector3(-0.20, 0.015, 0.0)
+    avatar_thrust.visible = false
+    player_visual.add_child(avatar_thrust)
 
 func _make_enemy_visual(kind: String, boss: bool, radius: float) -> Node3D:
     # The boss flag must agree with C's catalog; never invent a different
@@ -1042,6 +1055,17 @@ func _update_visuals() -> void:
     player_visual.material_override = avatar_hit_material if float(actor.get("invulnerability_t")) > 0.0 \
         and int(run_frames / 3) % 2 == 0 else avatar_material
     avatar_dash.visible = float(actor.get("dash_t")) > 0.0
+    var cosmetic_time: float = float(Engine.get_physics_frames()) / 60.0
+    var reduced_fx: bool = bool(saved_state.get("settings.json", {}).get("reduced_effects", false))
+    var breathing: float = 1.0 if reduced_fx else 1.0 + sin(cosmetic_time * 3.4) * 0.048
+    avatar_aura.scale = Vector3(breathing, 1.0, breathing)
+    if avatar_dash.visible:
+        var dash_radius: float = 1.0 if reduced_fx else 1.0 + 0.25 * sin(cosmetic_time * 18.0)
+        avatar_dash.scale = Vector3(dash_radius, 1.0, dash_radius)
+    var motion: float = Vector2(actor.get("velocity_px")).length()
+    avatar_thrust.visible = motion > 40.0 and not reduced_fx
+    if avatar_thrust.visible:
+        avatar_thrust.scale = Vector3(0.85 + minf(0.9, motion * 0.0015), 1.0, 1.0)
     var active_keys: Dictionary = {}
     var settings: Dictionary = saved_state.get("settings.json", {})
     var reduced_motion: bool = bool(settings.get("reduced_effects", false))
