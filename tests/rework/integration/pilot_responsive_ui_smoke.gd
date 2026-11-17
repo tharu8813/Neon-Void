@@ -53,10 +53,19 @@ func _run() -> void:
         _within(result, viewport, "result %s" % dimensions)
         _within(status, viewport, "status %s" % dimensions)
         _within(hub, viewport, "hub %s" % dimensions)
+        var children: Array[String] = []
+        var layout: Control = hub.get_child(0) as Control
+        if layout != null:
+            for child in layout.get_children():
+                var control: Control = child as Control
+                if control != null:
+                    children.append("%s:%s" % [control.name,
+                        control.get_combined_minimum_size()])
         check(hub.position.y + hub.size.y <= viewport.y + 1.0,
-            "hub vertically centered at %s, pos=%s size=%s min=%s tabs_min=%s" %
+            "hub vertically centered at %s, pos=%s size=%s min=%s custom=%s layout_min=%s tabs_min=%s children=%s" %
             [dimensions, hub.position, hub.size, hub.get_combined_minimum_size(),
-                hub.get("tabs").get_combined_minimum_size()])
+                hub.custom_minimum_size, layout.get_combined_minimum_size(),
+                hub.get("tabs").get_combined_minimum_size(), children])
         if dimensions.x < 1100:
             check(tracker.position.y >= 160.0,
                 "narrow mission tracker moves below top tactical bars")
