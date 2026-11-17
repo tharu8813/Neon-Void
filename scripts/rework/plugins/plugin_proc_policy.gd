@@ -1,10 +1,14 @@
 extends RefCounted
-## Pure contract helper for B-owned attack/event queue, not a damage dispatcher.
-static func try_extend_path(parent_path: Array, plugin_id: String) -> Dictionary:
-	if plugin_id.is_empty() or parent_path.has(plugin_id):
+## B-compatible source/target-aware ancestry. B is authoritative for FIFO, ICD and hits.
+## Signature exactly matches B PR #100 events.gd effect_id|actor_id|target_id.
+static func try_extend_path(parent_path: Array, effect_id: String, actor_id: String, target_id: String) -> Dictionary:
+	if effect_id.is_empty() or actor_id.is_empty() or target_id.is_empty():
+		return {"allowed": false, "proc_path": parent_path.duplicate()}
+	var signature: String = effect_id + "|" + actor_id + "|" + target_id
+	if parent_path.has(signature):
 		return {"allowed": false, "proc_path": parent_path.duplicate()}
 	var next_path: Array = parent_path.duplicate()
-	next_path.append(plugin_id)
+	next_path.append(signature)
 	return {"allowed": true, "proc_path": next_path}
 
 static func may_emit_tag(entry: Dictionary, emitted_tag: String) -> bool:

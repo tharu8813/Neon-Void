@@ -162,11 +162,15 @@ func _run() -> void:
 	if not _check(not exhausted.begin_mission(9, {"invalid_id": 1}) and exhausted.levels == all_maxed, "invalid saved levels rejected atomically"):
 		return
 
-	# A -> B -> C is legal, but A -> B -> A is a cycle.
-	var ab: Dictionary = Policy.try_extend_path(["A"], "B")
-	var abc: Dictionary = Policy.try_extend_path(ab["proc_path"], "C")
-	var looped: Dictionary = Policy.try_extend_path(ab["proc_path"], "A")
-	if not _check(ab["allowed"] and abc["allowed"] and not looped["allowed"], "multi-hop valid / cyclic path rejected"):
+	# The same effect can chain onto a NEW target, but may not revisit its own
+	# effect + actor + target tuple in this ancestry (B PR #100 semantics).
+	var first_hop: Dictionary = Policy.try_extend_path([], "lightning", "vaccine", "enemy1")
+	var second_hop: Dictionary = Policy.try_extend_path(first_hop["proc_path"], "explosion", "vaccine", "enemy1")
+	var looped: Dictionary = Policy.try_extend_path(second_hop["proc_path"], "lightning", "vaccine", "enemy1")
+	var different_target: Dictionary = Policy.try_extend_path(second_hop["proc_path"], "lightning", "vaccine", "enemy2")
+	if not _check(first_hop["allowed"] and second_hop["allowed"] and not looped["allowed"] and different_target["allowed"], "target-aware multi-hop, reject only cyclic signature"):
+		return
+	if not _check(not Policy.try_extend_path([], "", "vaccine", "enemy1")["allowed"], "invalid proc identity rejected"):
 		return
 	var lightning: Dictionary = Catalog.find_by_id("nv_c_chain_lightning", entries)
 	if not _check(Policy.may_emit_tag(lightning, "proc_damage") and Policy.may_trigger_from_source(lightning, ["basic_attack"]), "proc event permissions"):
