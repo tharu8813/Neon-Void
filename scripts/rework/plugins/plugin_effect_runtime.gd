@@ -104,7 +104,7 @@ func derived_stats(b_stats: Dictionary, tick: int = 0) -> Dictionary:
 				result["projectile_speed_mult"] = float(result.get("projectile_speed_mult", 1.0)) + _value(spec, "projectile_speed_mult", level)
 			"breakable_sprint":
 				if bool(_state.get("sprint_active", false)):
-					result["move_speed"] = float(result.get("move_speed", 0.0)) * (1.0 + _value(spec, "move_speed_bonus_fraction", level))
+					result["move_speed"] = float(result.get("move_speed", 0.0)) * (1.0 + _value(spec, "move_speed_bonus_fraction", level) + _value(spec, "level_bonus", level))
 			"kill_power":
 				result["attack_damage"] = float(result.get("attack_damage", 0.0)) + int(_state.get("kill_power_stacks", 0)) * _value(spec, "attack_damage_per_kill", level)
 			"fever":
@@ -225,7 +225,7 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 			"skill_followup":
 				command = {"type":"projectiles","plugin_id":uid,"actor_id":actor_id,"target_id":target_id,"count":int(spec["projectile_count"]),"shape":"homing","base_damage":_value(spec,"base_damage",level),"source_tags":["plugin_attack"],"allowed_proc_triggers":[]}
 			"grant_rare":
-				command = {"type":"rare_reward_request","plugin_id":uid,"actor_id":actor_id,"count":int(spec["grant_count"]),"requires_E_receipt":true}
+				command = {"type":"rare_reward_request","plugin_id":uid,"actor_id":actor_id,"count":int(_value(spec,"grant_count",level)),"requires_E_receipt":true}
 			"kill_power":
 				next_state["kill_power_stacks"] = int(next_state.get("kill_power_stacks",0))+1
 			"disassembly":
