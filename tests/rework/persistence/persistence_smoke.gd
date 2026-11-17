@@ -276,6 +276,40 @@ func _run() -> void:
         check(Store.release_orphan_lock_offline(slot, lock_owner.token, true).ok,
             "offline token-authorized orphan lock recovery accepts old PID")
 
+    var recovery_fault_slot: String = root_dir.path_join("rework-slot-copy-failure")
+    check(Store.initialize(recovery_fault_slot,
+        Model.new_slot("copy-failure", "vaccine-1")).ok,
+        "initialize recovery-copy failure test slot")
+    check(Gateway.transact_command(recovery_fault_slot, command).applied,
+        "recovery-copy failure test mission started")
+    var latest_path: String = recovery_fault_slot.path_join("state.json.recovery")
+    var held_latest: String = latest_path + ".synthetic-held"
+    if DirAccess.rename_absolute(latest_path, held_latest) == OK:
+        check(DirAccess.make_dir_absolute(latest_path) == OK,
+            "inject unwritable latest-copy destination")
+        var lost_ack: Dictionary = Gateway.transact_command(recovery_fault_slot, event)
+        check(not lost_ack.applied and
+            lost_ack.reason == "committed_recovery_copy_pending",
+            "primary already committed but recovery-copy failure not acknowledged")
+        var recoverable: Dictionary = Store.read(recovery_fault_slot)
+        check(recoverable.ok and
+            recoverable.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "pending intent keeps the committed reward visible exactly once")
+        DirAccess.remove_absolute(latest_path)
+        check(DirAccess.rename_absolute(held_latest, latest_path) == OK,
+            "restore original synthetic latest-copy path")
+        check(not Gateway.transact_command(recovery_fault_slot, event).applied,
+            "ack-lost retry reconciles copy without duplicating receipt")
+        check(not FileAccess.file_exists(
+            recovery_fault_slot.path_join("state.json.intent")),
+            "after recovery-copy repair the pending intent is removed")
+        var durable_copy: Dictionary = Store._decode(
+            _bytes(recovery_fault_slot.path_join("state.json.recovery")))
+        check(durable_copy.ok and durable_copy.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "latest committed copy carries the correct receipt balance")
+    else:
+        check(false, "latest committed copy should exist for fault injection")
+
     var irreversible: String = root_dir.path_join("rework-slot-irreversible")
     check(Store.initialize(irreversible, Model.new_slot("irreversible", "vaccine-1")).ok,
         "initialize fenced clone test slot")
