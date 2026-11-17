@@ -8,7 +8,7 @@ const DT_C: float = 1.0 / 60.0
 var effect_owners: Dictionary = {}
 var b_event_hits: Dictionary = {}
 var outstanding_boomerangs: Dictionary = {}
-var pending_e_rewards: Array[Dictionary] = []
+var pending_e_rewards: Array[Dictionary] = [] # Deprecated: no C/B bonus grants.
 var plugin_metrics: Dictionary = {"routed":0,"commands":0,"blocked":0,"pending_max":0,"physical_hits":0}
 var _active_parent: Dictionary = {}
 var _in_effect_dispatch: bool = false
@@ -245,8 +245,9 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 		elif typ=="projectile_transform":
 			# Existing shot is modified by _spawn; don't double-spawn it.
 			continue
-		elif typ=="rare_reward_request":
-			delayed_mutations.append(command.duplicate(true))
+		elif typ=="rare_reward_notice":
+			# An unverified acquisition event must never request another E payout.
+			continue
 		elif typ=="shield":
 			# No shield absorption API in B yet. Track pending, do NOT count as
 			# actual combat shield success until B/A supplies real mitigation.
@@ -282,8 +283,8 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 	# C side effects must NEVER survive a rejected B proc batch.
 	for item in delayed_mutations:
 		match str(item.get("type","")):
-			"rare_reward_request":
-				pending_e_rewards.append(item)
+			"rare_reward_notice":
+				pass # E is sole authority; no C-side payout queue.
 			"shield":
 				actors[actor_id]["c_shield_pending"] = float(actors[actor_id].get("c_shield_pending",0.0))+float(item.get("amount",0.0))
 			"knockback":
