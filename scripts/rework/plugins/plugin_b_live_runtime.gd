@@ -137,6 +137,7 @@ func _resolve_event(event: Dictionary) -> Array:
 	var tags: Array = event.get("source_tags",[])
 	if kind=="damage" and float(event.get("actual_damage",0.0))>0.0:
 		mapped.append("on_hit")
+		mapped.append("damage_dealt")
 		if bool(event.get("critical",false)):
 			mapped.append("on_crit")
 		if tags.has("skill_damage"):
@@ -225,9 +226,9 @@ func _submit_effect_commands(commands: Array, _world: Dictionary) -> Dictionary:
 			else:
 				targets.append(target_id)
 			for tid in targets:
-				proposals.append({"effect":uid,"kind":"damage","target":tid,"trigger":"on_hit","attack":command["attack"],"tags":["plugin","plugin_attack","proc_damage"],"allowed":command.get("allowed_proc_triggers",[])})
+				proposals.append({"effect":uid,"kind":"damage","target":tid,"trigger":str(_active_parent.get("trigger_kind","on_hit")),"attack":command["attack"],"tags":["plugin","plugin_attack","proc_damage"],"allowed":command.get("allowed_proc_triggers",[])})
 		elif typ=="status":
-			proposals.append({"effect":uid,"kind":"status","target":target_id,"trigger":"on_hit","command":{"status":command["definition"],"target_policy":"current"},"tags":["plugin"],"allowed":[]})
+			proposals.append({"effect":uid,"kind":"status","target":target_id,"trigger":str(_active_parent.get("trigger_kind","on_hit")),"command":{"status":command["definition"],"target_policy":"current"},"tags":["plugin"],"allowed":[]})
 		elif typ=="buff":
 			var field: String = str(command.get("stat",""))
 			if field!="all_stats_fraction":
