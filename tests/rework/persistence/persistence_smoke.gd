@@ -746,6 +746,23 @@ func _test_combat_observation(root_dir: String) -> void:
     var committed: Dictionary = Gateway.transact_command(slot, observed)
     if not committed.get("applied", false):
         var before_probe: Dictionary = Store.read(slot)
+        printerr("REWORK E COMBAT DISK: " + str(before_probe))
+        var disk: Dictionary = Store._read_bytes(slot.path_join("state.json"))
+        if disk.get("ok", false):
+            var env: Variant = JSON.parse_string(disk.bytes.get_string_from_utf8())
+            if env is Dictionary:
+                var decoded: Variant = JSON.parse_string(env.get("payload_json", "{}"))
+                if decoded is Dictionary and decoded.get("vaccine") is Dictionary:
+                    var mission_disk: Dictionary = decoded.vaccine.get("mission", {})
+                    var ob: Dictionary = mission_disk.get("environment_rolls", {}).get(
+                        "e_combat_observation_v1", {})
+                    if not ob.is_empty():
+                        printerr("REWORK E COMBAT RAW: model=" +
+                            str(Model.validate(decoded)) + " observation=" +
+                            str(Observation.valid(mission_disk)) +
+                            " original_sha=" + str(ob.get("state_sha256", "")) +
+                            " recomputed_sha=" + Observation._digest(
+                                ob.b_state, ob.d_state))
         if before_probe.get("ok", false):
             var manual: Dictionary = Observation.record(
                 before_probe.state.vaccine.mission, str(observed.region_id),
