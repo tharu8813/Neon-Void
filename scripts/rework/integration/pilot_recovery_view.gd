@@ -4,6 +4,7 @@ extends RefCounted
 ## This helper never calls Gateway.transact_command or changes C/B runtime.
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
 const Rare = preload("res://scripts/rework/progression/rare_bonus.gd")
+const Catalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 
 static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dictionary:
     var report: Dictionary = {
@@ -49,6 +50,13 @@ static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dict
             report["receipt_status"] = "missing_identity"
             lines.append("보상 영수증: 식별 정보 부족. 재지급 금지.")
         else:
+            # A durable receipt may belong to an older or already closed run.
+            # Never misattribute it to a different live mission.
+            if not mission is Dictionary or str(mission.get("run_id", "")) != run_id:
+                report["receipt_status"] = "unverified"
+                lines.append("보상 영수증: 현재 의뢰 ID와 일치하지 않아 확인 보류.")
+                report["text"] = "\n".join(lines)
+                return report
             var reconciled: Dictionary = Gateway.reconcile_receipt(slot_path,
                 vaccine_id, generation, run_id, receipt_id,
                 str(pending_command.get("offer_id", "")))
@@ -67,13 +75,19 @@ static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dict
                     var bonus_id: String = str(bonus.get("plugin_id", ""))
                     var bonus_receipt: String = str(bonus.get("bonus_receipt", ""))
                     var earned: Dictionary = active.get("obtained_plugins", {}) if active is Dictionary else {}
+                    var canonical: Dictionary = Catalog.find_by_id(bonus_id, Catalog.entries())
                     var receipts: Dictionary = vaccine.get("receipts", {}) if vaccine is Dictionary else {}
-                    if not bonus.is_empty() and bonus_receipt == receipt_id + ":rare:0" \
+                    if not bonus.is_empty() and Rare.valid(active) \
+                            and not canonical.is_empty() and str(canonical.get("rarity", "")) == "rare" \
+                            and int(bonus.get("level", 0)) >= 1 \
+                            and int(bonus.get("level", 0)) <= int(canonical.get("max_level", 0)) \
+                            and bonus_receipt == receipt_id + ":rare:0" \
                             and str(bonus.get("rarity", "")) == "rare" \
                             and str(bonus.get("rng_policy", "")) == Rare.RNG_POLICY \
                             and receipts.has(receipt_id) and receipts.has(bonus_receipt) \
                             and earned.has(Rare.SOURCE_ID) and earned.has(bonus_id) \
-                            and int(earned[bonus_id].get("level", 0)) == int(bonus.get("level", -1)):
+                            and int(earned[Rare.SOURCE_ID].get("level", 0)) >= int(pending_command.get("level", 1)) \
+                            and int(earned[bonus_id].get("level", 0)) >= int(bonus.get("level", -1)):
                         report["rare_bonus_verified"] = true
                         lines.append("레어 보너스: E 원본·파생 영수증 모두 검증됨 (" + bonus_id + ").")
                     else:
