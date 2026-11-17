@@ -192,6 +192,7 @@ func _world() -> Dictionary:
     }
 
 func _validate_commands(commands: Array) -> Dictionary:
+    var transform_shapes: Dictionary = {}
     for command in commands:
         if not (command is Dictionary):
             return {"ok": false, "reason": "invalid_C_command"}
@@ -201,9 +202,14 @@ func _validate_commands(commands: Array) -> Dictionary:
             return {"ok": false, "reason": "E_receipt_callback_required"}
         if kind == "projectiles" and int(command.get("count", 0)) > 128:
             return {"ok": false, "reason": "invalid_projectile_count"}
-        if kind == "projectile_transform" and not str(command.get("shape", "")) in [
-                "laser", "boomerang"]:
-            return {"ok": false, "reason": "unsupported_projectile_transform"}
+        if kind == "projectile_transform":
+            var shape: String = str(command.get("shape", ""))
+            if not shape in ["laser", "boomerang"]:
+                return {"ok": false, "reason": "unsupported_projectile_transform"}
+            transform_shapes[shape] = true
+    if transform_shapes.size() > 1:
+        # The GDD leaves simultaneous laser+boomerang ordering unresolved.
+        return {"ok": false, "reason": "conflicting_projectile_transforms_need_approval"}
     return {"ok": true}
 
 func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
@@ -211,7 +217,30 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
     if not bool(validation["ok"]):
         return validation
     var next: Dictionary = world.duplicate(true)
-    var applied: Dictionary = c_sink.apply(commands, next)
+    var executable: Array = []
+    for command in commands:
+        if str(command.get("type", "")) == "damage" and str(command.get("shape", "")) == "lightning":
+            # C's standalone sink rejects a one-target map. An empty chain is
+            # an acknowledged no-op, never a fabricated adjacent victim.
+            var impact_id: String = str(command.get("target_id", ""))
+            var positions: Dictionary = next.get("target_positions", {})
+            var origin: Variant = positions.get(impact_id, null)
+            var other_found: bool = false
+            if origin is Vector2:
+                var reach: float = float(command.get("search_distance_mult", 1.0)) * float(next.get("lightning_base_reach", 8.0))
+                for other_id in next.get("targets", {}).keys():
+                    if str(other_id) == impact_id:
+                        continue
+                    var other_position: Variant = positions.get(other_id, null)
+                    if other_position is Vector2 and origin.distance_to(other_position) <= reach and float(next["targets"][other_id].get("health", 0.0)) > 0.0:
+                        other_found = true
+                        break
+            if not other_found:
+                continue
+        executable.append(command)
+    if executable.is_empty():
+        return {"ok": true, "commands_applied": 0}
+    var applied: Dictionary = c_sink.apply(executable, next)
     if not bool(applied.get("ok", false)):
         return applied
     # Preflight target updates before publishing a single change.

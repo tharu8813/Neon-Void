@@ -119,6 +119,41 @@ static func run(check: Callable, scene_root: Node) -> void:
         check.call(battle.effects.outstanding_events() == 0,
             "C multi-step proc chain drained without runaway feedback")
     battle.reset()
+    battle.begin_encounter(player, camera, {}, "solo-lightning")
+    battle.spawn_hostile({"actor_id":"SOLO", "position":Vector3(2,0,0)})
+    check.call(battle.configure_plugins({"nv_c_chain_lightning":1}, 234),
+        "C lightning enabled when alone")
+    battle._apply_hit("SOLO", "solo:hit")
+    check.call(battle.effects.fault.is_empty() and
+        float(battle.simulation.snapshot("SOLO")["stats"]["health"]) < 20.0,
+        "single enemy: C lightning no-op must not break B normal attack")
+    battle.reset()
+
+    # P2 synthetic crowd: real actor bodies + B pooled projectiles, without
+    # making a machine-specific FPS assertion from a GitHub runner.
+    battle.begin_encounter(player, camera, {}, "crowd-100")
+    for i in range(100):
+        var row: int = floori(float(i) / 10.0)
+        check.call(battle.spawn_hostile({"actor_id": "mob-" + str(i),
+            "position": Vector3(float(8 + (i % 10) * 3), 0.0, float(8 + row * 3))}),
+            "crowd actor registered: " + str(i))
+    var attack: Dictionary = battle.simulation.actors["VACCINE"]["attack_definition"]
+    for j in range(250):
+        battle.simulation._spawn("VACCINE", Vector2.RIGHT, attack)
+    var clock: int = Time.get_ticks_usec()
+    for tick in range(5):
+        battle.set_combat_input({"fire": false, "move": Vector2.ZERO,
+            "aim_world": Vector3(12,0,0)})
+        battle.advance_production_tick()
+    var elapsed: int = Time.get_ticks_usec() - clock
+    check.call(battle.simulation.counters["shots"] >= 250 and
+        battle.simulation.counters["broadphase_candidates"] < 2500,
+        "100 enemies / 250 bullets processed with spatial candidate reduction")
+    check.call(battle.enemies.size() == 100 and battle.effects.fault.is_empty(),
+        "crowd canary preserves stable enemy registry and C runtime")
+    print("B PRODUCTION LOAD CANARY: 100 live enemies, 250 projectiles, 5 ticks; elapsed_us=", elapsed,
+        " (not a measured Windows FPS guarantee)")
+    battle.reset()
     host.queue_free()
 
     # Actual D CPU scene is reused unchanged: hot-swap only in test memory.

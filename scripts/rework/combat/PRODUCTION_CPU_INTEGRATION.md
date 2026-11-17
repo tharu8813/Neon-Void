@@ -57,3 +57,7 @@ godot --headless --path . --script res://tests/rework/combat/combat_foundation_s
 ```
 
 A remains sole owner of merge order: #100 → #110 → this B follow-up, with separate C and D owner PRs and A scene wiring. The PR targeting A's #115 is a **stacked review artifact, not an instruction to merge the composite**. Require all newest-head CI checks and manual Windows DPI/aim/dash/scene/FPS/audio/GPU and clean-save checks before release.
+
+### Additional fail-closed guards and scalability canary
+If C asks for laser and boomerang transforms in the same command batch, B rejects the unapproved mixing order before mutating either C or B state. B does not silently choose the last transform. A/C must decide the intended composition.
+The B production suite also checks a **single enemy** with C lightning (empty chain does not halt the live attack), then steps 100 real enemy actors and 250 B projectiles over five fixed ticks. It reports elapsed microseconds as an instrumentation canary only; no CI-runner threshold is treated as a promise of 60 FPS on Windows. Independent B foundation tests still cover 2048 queued events and 400 spatially indexed actors.
