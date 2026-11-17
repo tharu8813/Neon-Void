@@ -265,13 +265,15 @@ static func run(check: Callable, root: Node) -> void:
     battle.reset()
     check.call(battle.authorized_growth_snapshot().is_empty(),
         "region reset clears previous encounter's authorized build and temporary effects")
+    var preauth: Dictionary = battle.configure_authorized_progression(approved)
+    check.call(bool(preauth.get("ok", false)) and bool(preauth.get("staged", false)),
+        "A can stage E-confirmed growth before new hardware encounter")
     check.call(bool(battle.begin_encounter(
         fixture["scene"].get_child(0), fixture["scene"].get_child(1),
         {}, "b-growth-run")), "new hardware encounter starts fresh B runtime")
-    check.call(bool(battle.configure_authorized_progression(approved).get("ok", false))
-        and _near(float(battle.actor_snapshot()["stats"]["attack_damage"]),6.0)
+    check.call(_near(float(battle.actor_snapshot()["stats"]["attack_damage"]),6.0)
         and battle.skill_snapshot()["slots"].size() == 3,
-        "same E durable snapshot reapplies on new region without stacking")
+        "staged E durable snapshot reapplies on new region without stacking")
     fixture["scene"].queue_free()
 
     var cleared: Dictionary = Gateway.snapshot(slot)
