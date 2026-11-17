@@ -101,6 +101,12 @@ func _run() -> void:
     expect(not Store.persist_document(slot, "antivirus_db.json", {}, settings_revision + 1).applied,
         "UI cannot bypass XP receipt authority")
     expect(Store.read(slot).state["settings.json"].show_fps, "changed settings durable")
+    var intact_before_recovery: Dictionary = Store._read_bytes(slot.path_join("state.json"))
+    var healthy_recovery: Dictionary = Store.recover_from_backup(slot, true)
+    expect(not healthy_recovery.ok and healthy_recovery.reason == "primary_is_valid",
+        "manual recovery must NEVER roll back healthy XP or settings")
+    expect(Store._read_bytes(slot.path_join("state.json")).bytes == intact_before_recovery.bytes,
+        "refused recovery leaves healthy current snapshot byte-identical")
     for name in Migration.FILES:
         var source_copy: Dictionary = Store._read_bytes(legacy.path_join(name))
         var backup: Dictionary = Store._read_bytes(slot.path_join("legacy_originals").path_join(name))
@@ -166,6 +172,23 @@ func _run() -> void:
     DirAccess.remove_absolute(primary_backup)
     expect(DirAccess.rename_absolute(preserved_backup, primary_backup) == OK,
         "restore synthetic previous snapshot after failure test")
+    var before_size_test: Dictionary = Store.read(slot)
+    var primary_before_size: Dictionary = Store._read_bytes(slot.path_join("state.json"))
+    var backup_before_size: Dictionary = Store._read_bytes(slot.path_join("state.json.bak"))
+    var huge_save: Dictionary = Store.transact(slot, func(payload):
+        # Unknown legacy save fields are allowed; preflight must still
+        # limit the entire serialized state BEFORE writing any snapshot.
+        payload["save.json"]["synthetic_padding"] = "X".repeat(Store.MAX_STATE_BYTES + 1024)
+        return {"ok": true, "changed": true, "state": payload, "reason": "oversized"}
+    )
+    expect(not huge_save.applied and huge_save.reason == "state_too_large",
+        "preflight rejects oversized outgoing envelope before disk write")
+    expect(Store.read(slot).revision == before_size_test.revision,
+        "oversized outgoing envelope cannot advance revision")
+    expect(Store._read_bytes(slot.path_join("state.json")).bytes == primary_before_size.bytes,
+        "oversized write cannot alter primary bytes")
+    expect(Store._read_bytes(slot.path_join("state.json.bak")).bytes == backup_before_size.bytes,
+        "oversized write cannot rotate previous valid backup")
     var before: Dictionary = Store.read(slot)
     var invalid: Dictionary = Store.transact(slot, func(payload):
         payload["antivirus_db.json"].xp = 777777
@@ -186,6 +209,25 @@ func _run() -> void:
     expect(not Store.recover_from_backup(slot).ok, "recovery requires explicit consent")
     expect(Store.recover_from_backup(slot, true).ok, "explicit previous snapshot recovery")
     expect(Store.read(slot).ok, "recovery restores validated snapshot")
+    var partial_legacy: String = root_dir.path_join("partial-legacy")
+    expect(DirAccess.make_dir_absolute(partial_legacy) == OK,
+        "create mismatched cross-file source fixture")
+    var inconsistent_cp: Dictionary = checkpoint_fixture("partial-run")
+    inconsistent_cp.campaign.completed_waves.CPU = 1
+    expect(write_json(partial_legacy.path_join("antivirus_db.json"),
+        Store.fresh_state()["antivirus_db.json"]), "write synthetic DB without receipt")
+    expect(write_json(partial_legacy.path_join("os_checkpoint.json"), inconsistent_cp),
+        "write checkpoint with already-confirmed wave")
+    var partial_original: Dictionary = Store._read_bytes(partial_legacy.path_join("os_checkpoint.json"))
+    var partial_slot: String = root_dir.path_join("partial-target")
+    var inconsistent_import: Dictionary = Migration.import_legacy(partial_legacy, partial_slot, true)
+    expect(not inconsistent_import.ok
+        and str(inconsistent_import.reason).begins_with("checkpoint_missing_xp_receipt:"),
+        "mismatched checkpoint+DB import fails closed instead of trapping resume")
+    expect(not DirAccess.dir_exists_absolute(partial_slot),
+        "failed inconsistent import never creates a playable slot")
+    expect(Store._read_bytes(partial_legacy.path_join("os_checkpoint.json")).bytes == partial_original.bytes,
+        "inconsistent legacy checkpoint remains byte-identical")
     var invalid_legacy: String = root_dir.path_join("invalid-legacy")
     expect(DirAccess.make_dir_absolute(invalid_legacy) == OK, "create corrupt fixture")
     var badfile: FileAccess = FileAccess.open(invalid_legacy.path_join("antivirus_db.json"), FileAccess.WRITE)
