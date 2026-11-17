@@ -105,7 +105,7 @@ jobs:
           for script in "${scripts[@]}"; do
             if [ -f "$script" ]; then
               echo "::group::Rework smoke: $script"
-              if ! "$NEON_GODOT" --headless --path . --script "res://$script"; then
+              if ! timeout --signal=TERM --kill-after=5s 25s "$NEON_GODOT" --headless --path . --script "res://$script"; then
                 echo "::error::Failed rework smoke: $script"
                 failures=$((failures + 1))
               fi
@@ -138,8 +138,17 @@ jobs:
             if (Test-Path -LiteralPath $script) {
               Write-Host "Rework smoke: $script"
               $args = '--headless --path . --script res://' + $script
-              $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $args -NoNewWindow -Wait -PassThru
-              if ($p.ExitCode -ne 0) { Write-Host "::error::Rework smoke failed (exit $($p.ExitCode)): $script"; $failures++ }
+              $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $args -NoNewWindow -PassThru
+              $finished = $p.WaitForExit(25000)
+              if (-not $finished) {
+                Write-Host "::error::Rework smoke timed out (25 seconds): $script"
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                $p.WaitForExit()
+                $failures++
+              } elseif ($p.ExitCode -ne 0) {
+                Write-Host "::error::Rework smoke failed (exit $($p.ExitCode)): $script"
+                $failures++
+              }
               $count++
             }
           }
