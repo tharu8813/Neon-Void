@@ -71,12 +71,18 @@ func _ready() -> void:
     var top := HBoxContainer.new()
     layout.add_child(top)
     header = _label("백신 관리 / DEFENDER DATABASE", 20, TEXT)
+    # Root chrome must NOT request thousands of pixels of min-height while
+    # the Container has zero width during its first minimum-size pass.
+    header.autowrap_mode = TextServer.AUTOWRAP_OFF
+    header.clip_text = true
     header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     top.add_child(header)
     var exit_btn := _button("닫기  [Tab / Esc]")
     exit_btn.pressed.connect(func() -> void: close_requested.emit())
     top.add_child(exit_btn)
     hint = _label("E 저장 정보를 확인하는 중", 13, MUTED)
+    hint.autowrap_mode = TextServer.AUTOWRAP_OFF
+    hint.clip_text = true
     layout.add_child(hint)
 
     tabs = TabContainer.new()
@@ -89,7 +95,9 @@ func _ready() -> void:
     skills_body = _page("스킬 장착")
     combat_body = _page("전투 상세")
     var footer := _label(
-        "허브에서만 편집 가능 · 실제 저장 승인 후 결과 반영 · 의뢰 중 변경 불가", 12, MUTED)
+        "허브에서만 편집 · E 저장 확인 후 반영 · 의뢰 중 읽기 전용", 12, MUTED)
+    footer.autowrap_mode = TextServer.AUTOWRAP_OFF
+    footer.clip_text = true
     layout.add_child(footer)
     _built = true
     _layout_to_viewport()
