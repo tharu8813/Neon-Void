@@ -133,7 +133,7 @@ func _run() -> void:
     var forbidden: Dictionary = bus.submit_root({"kind": "manual", "allowed_proc_triggers": ["on_kill"]})
     check(bus.submit_proc(forbidden, "on_hit_plugin", {"trigger_kind": "on_hit", "target_id": "B"}).is_empty(), "proc trigger permission")
     RuntimeCases.run(Callable(self, "check"))
-    ProductionCases.run(Callable(self, "check"), root)
+    ProductionCases.run(Callable(self, "check"), get_root())
     if failures == 0:
         print("REWORK B COMBAT PASS (damage/status/procs/60 Hz, seed=7452)")
     quit(1 if failures > 0 else 0)
