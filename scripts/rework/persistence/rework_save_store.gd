@@ -2,6 +2,7 @@ extends RefCounted
 ## Rework-only save namespace. Never imports or writes Python or existing P8 files.
 ## Durable unit: one revisioned, checksummed envelope (all receipts and growth together).
 const Model = preload("res://scripts/rework/progression/state_model.gd")
+const Fence = preload("res://scripts/rework/persistence/lifetime_fence.gd")
 const STATE_FILE := "state.json"
 const BACKUP_FILE := "state.json.bak"
 const FORMAT: int = 1
@@ -92,6 +93,12 @@ static func _write_atomic(path: String, content: PackedByteArray) -> bool:
         return false
     return true
 
+static func _read_fence(slot_path: String) -> Dictionary:
+    var raw: Dictionary = _read_bytes(slot_path.path_join(Fence.FILENAME))
+    if not raw.ok:
+        return {"ok": false, "reason": "lifetime_fence_missing_or_unreadable"}
+    return Fence.parse(raw.bytes)
+
 static func read(slot_path: String) -> Dictionary:
     if not _valid_slot(slot_path):
         return {"ok": false, "reason": "invalid_slot_path"}
@@ -101,6 +108,12 @@ static func read(slot_path: String) -> Dictionary:
     var result: Dictionary = _decode(raw.bytes)
     if result.ok and result.state.slot_id != slot_path.get_file().trim_prefix("rework-slot-"):
         return {"ok": false, "reason": "slot_mismatch"}
+    if result.ok:
+        var sealed: Dictionary = _read_fence(slot_path)
+        if not sealed.ok:
+            return sealed
+        if not Fence.allows(result.state, sealed.fence):
+            return {"ok": false, "reason": "lifetime_fence_violation"}
     return result
 
 static func initialize(slot_path: String, state: Dictionary) -> Dictionary:
@@ -126,6 +139,11 @@ static func initialize(slot_path: String, state: Dictionary) -> Dictionary:
         ## A failed staging write is not an initialized save; never touch existing slots.
         DirAccess.remove_absolute(staging)
         return {"ok": false, "reason": "initial_write_failed"}
+    var initial_fence: PackedByteArray = Fence.encode(Fence.from_state(state))
+    if initial_fence.is_empty() or not _write_atomic(
+            staging.path_join(Fence.FILENAME), initial_fence):
+        # Leave incomplete staging for offline inspection; the final slot is absent.
+        return {"ok": false, "reason": "initial_fence_write_failed"}
     if DirAccess.rename_absolute(staging, slot_path) != OK:
         # Leave the failed staging directory for offline inspection.
         return {"ok": false, "reason": "initial_commit_failed"}
@@ -239,7 +257,18 @@ static func _transact_locked(slot_path: String, transition: Callable,
         return {"applied": false, "reason": "primary_read_failed"}
     if not _write_atomic(slot_path.path_join(BACKUP_FILE), old.bytes):
         return {"applied": false, "reason": "backup_failed"}
-    if fault_at == "after_backup" or fault_at == "before_primary":
+    if fault_at == "after_backup":
+        return {"applied": false, "reason": "simulated_before_primary"}
+    var fence_before: Dictionary = _read_fence(slot_path)
+    if not fence_before.ok:
+        return {"applied": false, "reason": fence_before.reason}
+    var fence_after: Dictionary = Fence.next_fence(loaded.state, next_state, fence_before.fence)
+    if fence_after.is_empty():
+        return {"applied": false, "reason": "invalid_lifetime_transition"}
+    if fence_after != fence_before.fence:
+        if not _write_atomic(slot_path.path_join(Fence.FILENAME), Fence.encode(fence_after)):
+            return {"applied": false, "reason": "lifetime_fence_write_failed"}
+    if fault_at == "before_primary":
         return {"applied": false, "reason": "simulated_before_primary"}
     if not _write_atomic(slot_path.path_join(STATE_FILE), encoded.bytes):
         return {"applied": false, "reason": "primary_write_failed"}
@@ -273,6 +302,11 @@ static func _restore_locked(slot_path: String) -> Dictionary:
     var parsed: Dictionary = _decode(backup_bytes.bytes)
     if not parsed.ok or parsed.state.slot_id != slot_path.get_file().trim_prefix("rework-slot-"):
         return {"ok": false, "reason": "backup_invalid"}
+    var sealed: Dictionary = _read_fence(slot_path)
+    if not sealed.ok:
+        return sealed
+    if not Fence.allows(parsed.state, sealed.fence):
+        return {"ok": false, "reason": "backup_would_restore_consumed_clone"}
     # Never downgrade an unsupported FUTURE schema using an older backup.
     var original: Dictionary = read(slot_path)
     if ["future_format", "future_schema"].has(original.get("reason", "")):
