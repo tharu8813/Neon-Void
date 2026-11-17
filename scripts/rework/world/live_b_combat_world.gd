@@ -95,7 +95,8 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         stats = c.derived_stats(stats)
     if not bridge.register_node(PLAYER_ID, "player", player, stats, {
         "player_controlled": true, "radius": 0.3,
-        "attack_range": 18.0, "projectile_speed": 18.0
+        "attack_range": 18.0, "projectile_speed": 18.0,
+        "dash_definition": config.get("dash_definition", {}).duplicate(true)
     }):
         reset()
         return false
@@ -137,6 +138,8 @@ func spawn_hostile(info: Dictionary) -> bool:
     if not active or bool(info.get("boss", false)) and str(info.get("actor_id", "")) == PLAYER_ID:
         return false
     var actor_id: String = str(info.get("actor_id", ""))
+    if info.has("run_id") and str(info["run_id"]) != run_id:
+        return false
     if actor_id.is_empty() or actor_id == PLAYER_ID or enemies.has(actor_id):
         return false
     var position: Vector3 = info.get("position", Vector3.ZERO)
@@ -219,7 +222,7 @@ func _physics_process(_delta: float) -> void:
     bridge.set_input(PLAYER_ID, input)
     _set_enemy_commands()
 
-func _pressed_once(code: Key) -> bool:
+func _pressed_once(code: int) -> bool:
     var now: bool = Input.is_key_pressed(code)
     var was: bool = bool(key_latches.get(code, false))
     key_latches[code] = now
@@ -246,7 +249,9 @@ func _set_enemy_commands() -> void:
         }
         var decision: Dictionary = BAI.decide(enemy, player_state)
         var movement: Vector2 = decision["move"]
-        if not map_plan.is_empty() and distances.size() > 0:
+        # Respect B's stop/retreat range decision. D only changes *how* an
+        # actor reaches B's chosen destination when a maze obstructs it.
+        if movement.length_squared() > 0.0001 and not map_plan.is_empty() and distances.size() > 0:
             movement = _maze_steering(snap["position"], player_position, distances, movement)
         var can_fire: bool = bool(decision["shoot"]) and _line_of_sight(
             snap["position"], player_position)
