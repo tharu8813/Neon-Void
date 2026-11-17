@@ -7,7 +7,8 @@ const TERMINALS := {
     "vaccine": {"position": Vector3(7.0, 0.0, 5.0), "radius": 1.8, "action": "vaccine_config", "label": "VACCINE CONFIG"},
     "database": {"position": Vector3(19.0, 0.0, 5.0), "radius": 1.8, "action": "plugin_database", "label": "PLUGIN DATABASE"},
     "skills": {"position": Vector3(7.0, 0.0, 13.0), "radius": 1.8, "action": "skill_loadout", "label": "SKILL LOADOUT"},
-    "dispatch": {"position": Vector3(19.0, 0.0, 13.0), "radius": 2.0, "action": "start_mission", "label": "DISPATCH"}
+    "dispatch": {"position": Vector3(19.0, 0.0, 13.0), "radius": 2.0, "action": "start_mission", "label": "DISPATCH"},
+    "status": {"position": Vector3(13.0, 0.0, 3.0), "radius": 1.8, "action": "vaccine_status", "label": "VACCINE STATUS"}
 }
 
 static func terminals() -> Dictionary:

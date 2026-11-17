@@ -36,9 +36,12 @@ func _run() -> void:
             check(region["environment"]["id"] == repeat_with_history["regions"][id]["environment"]["id"], "history does not alter mutation frequency")
             if region["environment"]["id"] == "mutation":
                 check(int(region["environment"]["mutation_stage"]) >= 1 and int(region["environment"]["mutation_stage"]) <= 5, "mutation stage range")
-            if seed > 6:
+            if seed > 19:
                 continue
             var map_a: Dictionary = Maps.generate(id, region["map_seed"], region["environment"])
+            check(not map_a.is_empty(), "map generation succeeds " + id)
+            if map_a.is_empty():
+                continue
             var map_b: Dictionary = Maps.generate(id, region["map_seed"], region["environment"])
             check(map_a == map_b, "map replay %s seed %d" % [id, seed])
             check(Maps.all_floor_reachable(map_a), "connected floor " + id)
@@ -52,6 +55,7 @@ func _run() -> void:
                 check(Maps.is_floor(map_a, point), "reachable objective tile " + id)
                 check(distances[point.y * map_a["width"] + point.x] >= 0, "objective accessible " + id)
                 check(not seen_cells.has(point), "objectives use separate tiles " + id)
+                check(point != map_a["spawn"] and point != map_a["boss"], "objective must not overlap spawn or boss")
                 seen_cells[point] = true
     var varied: Dictionary = Planner.create_mission(42)
     var normal: Dictionary = Maps.generate("CPU", varied["regions"]["CPU"]["map_seed"], {"id": "normal"})

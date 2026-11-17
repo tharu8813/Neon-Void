@@ -16,7 +16,7 @@ func _initialize() -> void:
 
 func _run() -> void:
     check(HubLayout.is_inside(HubLayout.SPAWN), "valid spawn")
-    check(HubLayout.TERMINALS.size() >= 3, "required hub terminals")
+    check(HubLayout.TERMINALS.size() == 5, "all five hub service terminals")
     for id in HubLayout.TERMINALS:
         var position: Vector3 = HubLayout.TERMINALS[id]["position"]
         check(HubLayout.is_inside(position), "terminal inside hub " + id)
@@ -28,6 +28,8 @@ func _run() -> void:
     root.add_child(hub)
     check(hub.get_node_or_null("WorldGeometry/HubFloor") != null, "hub 3D floor")
     check(hub.get_node_or_null("WorldGeometry/HubFloorCollider") != null, "hub collision floor")
+    check(hub.get_node_or_null("WorldGeometry/statusNameplate") != null, "vaccine status world label")
+    check(HubLayout.TERMINALS["status"]["action"] == "vaccine_status", "vaccine information terminal")
     var requests: Array = []
     hub.terminal_requested.connect(func(event: Dictionary) -> void: requests.append(event))
     check(not hub.request_interaction(Vector3(-20, 0, -20)), "outside hub no remote requests")
@@ -62,6 +64,7 @@ func _run() -> void:
     var board_scene: Node3D = BoardScene.instantiate()
     root.add_child(board_scene)
     check(board_scene.get_node_or_null("BoardGeometry/MainboardFloor") != null, "3D motherboard floor")
+    check(board_scene.get_node_or_null("BoardGeometry/CPUGateNameplate") != null, "CPU gate physical label")
     board_scene.setup_run("run-hub-smoke", snapshot)
     check(board_scene.request_gate_near_player(Motherboard.GATES["CPU"]["position"]).is_empty(), "scene starts locked")
     for enemy in Motherboard.INTRO:

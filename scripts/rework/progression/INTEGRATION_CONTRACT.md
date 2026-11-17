@@ -16,7 +16,7 @@ Owner: E / #99. No existing save files or Godot root scenes modified.
 1. `Gateway.snapshot(slot_path) -> {ok, revision, snapshot}`; treat the returned snapshot as read-only.
 2. `Gateway.transact_command(slot_path, command: Dictionary, expected_revision: int = -1) -> {applied, revision?, event?, reason?}`.
 3. `Store.default_slot_path(slot_id)` and `Gateway.initialize(slot_id, vaccine_id, config={})`.
-4. `Store.restore_backup(slot_path, explicit_consent=true)` is an **offline recovery action**, not an automatic startup fallback. A lock surviving a crash must be diagnosed offline before `release_orphan_lock_offline(slot, exact_owner_token, true)`.
+4. `Store.restore_backup(slot_path, explicit_consent=true)` restores only the **latest verified committed recovery copy**, not the older `.bak`. `Store.recover_interrupted_commit(slot_path, explicit_consent=true)` explicitly rolls forward a verified in-flight intent. Both are **offline recovery actions**, not automatic startup fallbacks. A lock surviving a crash must be diagnosed offline before `release_orphan_lock_offline(slot, exact_owner_token, true)`.
 
 All regular commands except `choose_new_vaccine` carry `action`, `vaccine_id`, `generation`. Mission-scoped commands also carry `run_id`. Every award or irreversible action carries **globally unique per-vaccine** `receipt_id` (e.g. `run-abc.CPU.clear`); never reuse it on another mission. Replaying a committed receipt is rejected without changing the revision.
 
@@ -64,14 +64,20 @@ Level-up plugin offers are counted in `mission.pending_plugin_offers`. A C selec
 
 ## Storage guarantees and failure semantics
 
-- Slot creation is new-target-only. A checksummed JSON envelope stores one state and a monotonically increasing revision.
-- Under a per-slot directory lock: read and validate -> compute pure transition -> write verified previous primary to `state.json.bak` -> write staged new primary -> atomic rename -> verify. A single receipt and its XP/DB update share that one state commit.
-- **Irreversible life fence:** an additional tiny `lifetime_fence.json` is written *ahead of* a clone decrement, destruction, or new-vaccine generation. It records generation, vaccine identity, minimal remaining clones, and terminal destruction. It never increases clones within a generation. On load and explicit backup restore, an older snapshot that would refund a clone or resurrect a destroyed vaccine is rejected. Corrupt or missing fences also fail closed.
-- **Two-file interruption tradeoff:** a crash between the write-ahead fence and primary state promotion may leave the old primary valid but *blocked* by a newer fence. This is intentionally not auto-healed; an offline, separately reviewed reconciliation flow is needed to avoid refunding a clone. A must surface a recovery-required UI rather than silently reset/restore. Normal rewards without clone changes keep the fence unchanged.
-- Crash before primary promotion leaves the previous primary authoritative; crash after primary promotion may lose acknowledgement but repeated receipt cannot award twice. Orphaned temps and locks are **not** automatically promoted, deleted or stolen.
-- Corrupt, truncated, future-format, future-schema and checksum-mismatch primaries block all writes and initialization. Explicit verified backup restoration refuses valid primaries or future formats; offline operator review is needed.
-- Storage bound: 16 MiB JSON envelope per slot. No arbitrary DB item-count limit, but excessively large saves fail safely. Store JSON integers are limited to 2^53-1 to avoid IEEE-754 rounding.
-- No automatic migration. Any future import must be opt-in, copy-first and separately reviewed by A.
+- The new slot is created only if absent. A checksum-verified JSON envelope (`state.json`) stores a single revision and all committed receipts/XP/DB updates. `lifetime_fence.json` prevents an irrevocable clone decrement or destroyed vaccine from being rolled back.
+- Under an exclusive per-slot lock the writer: validates primary + lifetime fence + any old intent, computes a pure state change, writes its verified prior `state.json.bak`, writes **the full proposed new envelope** to `state.json.intent`, advances the monotonic lifetime fence first when necessary, promotes the proposed primary via atomic rename, verifies it, writes an identical `state.json.recovery` (latest committed recovery copy), then deletes the intent. Only after these steps does `{applied:true}` acknowledge the operation.
+- `state.json.bak` is a diagnostic **previous-revision** copy. Restoring it could remove the latest receipt and re-award a prize. **Never auto-promote it** and never treat it as a safe substitute for `state.json.recovery`.
+- **Crash before intent:** the previous primary and latest recovery copy remain valid; no receipt was committed.
+- **Crash after intent but before primary:** reads/writes fail closed (`intent_requires_reconciliation` or `lifetime_fence_violation`). With explicit offline consent, `recover_interrupted_commit()` checks matching previous-revision backup, stable slot IDs, strictly monotonic receipts/level/clones, intended future revision, and lifetime fence, then **rolls forward** the exact intended saved state. A/D must not translate an app crash into an additional death.
+- **Crash after primary but before recovery-copy/acknowledgment:** the primary contains the award, and the intent remains. On next transaction the committed intent is verified against primary, the latest recovery copy is repaired, and the old receipt is rejected as duplicate. No second payout or additional clone cost.
+- **Corrupted primary without intent:** only the *same-revision*, checksum-verified `state.json.recovery` may be restored with explicit operator consent. The previous-revision `.bak` is intentionally NOT used. Future formats, mismatched lifetime fences, missing/corrupt latest copy, or unreconciled intent block recovery rather than silently losing progression.
+- Owner locks are not stolen automatically. Offline recovery requires that **every game process be stopped**; an operator must supply the actual owner token and consent. Temp files, partial initializations and damaged files are left for offline diagnosis rather than cleaning arbitrary paths.
+- Storage is capped at 16 MiB per JSON envelope; there is no plugin-count quota, but writes beyond safe storage bounds fail without mutating the primary. Integer values are limited to exact IEEE-754 range (2^53 - 1).
+- Legacy Python five files and the old Godot P8 slot are never auto-imported or overwritten. Import/migration is a future opt-in, copy-first task owned by A after a separate security review.
+
+### Recovery UX requirement for A
+
+An interrupted save must **freeze the affected slot** and show a clear recovery-required state, not grant another reward, rerun the mission, or silently reset clone/XP. The CLI/API recovery consent parameter is only an offline safety gate; A must provide a user-facing diagnosis and explicit backup preservation policy before a shipped recovery button exists. These recovery procedures are **not yet validated on physical Windows hardware**.
 
 ## Actual C/D branch compatibility (requires A to wire)
 

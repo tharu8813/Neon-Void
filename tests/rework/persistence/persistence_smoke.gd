@@ -78,6 +78,11 @@ func _run() -> void:
     }
     var started: Dictionary = Gateway.transact_command(slot, command)
     check(started.get("applied", false), "mission start persisted")
+    if not started.get("applied", false) or not Store.read(slot).get("ok", false):
+        printerr("REWORK E: abort on failed initial transaction")
+        _remove_tree(root_dir)
+        quit(1)
+        return
     var first_revision: int = int(Store.read(slot).revision)
     check(first_revision == 2, "one revision per committed state")
 
@@ -107,6 +112,8 @@ func _run() -> void:
         "idempotent replay after crash does not duplicate pending rewards")
     check(Store.read(slot).revision == saved.revision,
         "duplicate replay cannot advance revision")
+    check(not FileAccess.file_exists(slot.path_join("state.json.intent")),
+        "replay after lost ACK safely removes an already-committed intent")
 
     var temp: String = slot.path_join("state.json.tmp-abandoned")
     _write(temp, "{uncommitted broken staging file")
@@ -134,31 +141,43 @@ func _run() -> void:
         "corrupt existing slot must not silently reset")
     check(not Store.restore_backup(slot).ok, "recovery needs explicit consent")
     var recovered: Dictionary = Store.restore_backup(slot, true)
-    check(recovered.ok and recovered.revision == first_revision,
-        "manual verified backup recovery rolls back to previous revision")
+    check(recovered.ok and recovered.revision == saved.revision,
+        "explicit recovery restores latest committed revision, not previous rollback")
     check(FileAccess.file_exists(slot.path_join("state.json.bak")),
         "backup remains available after recovery")
-    check(_bytes(slot.path_join("state.json")) != current,
-        "recovery uses prior verified backup, not newer damaged primary")
+    check(_bytes(slot.path_join("state.json")) == current,
+        "latest committed recovery copy matches the original primary byte-for-byte")
 
     # Hard storage invariants hold even if a future caller bypasses the gateway.
     var lower_copies: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.copies_remaining = 2
         return {"ok": true, "state": next}
-    check(Store.transact(slot, lower_copies).applied, "synthetic copy use stored")
+    check(Store.transact(slot, lower_copies).reason == "invalid_transition",
+        "clone decrement without closed death run is refused")
+    check(Gateway.transact_command(slot, {
+        "action": "die", "vaccine_id": "vaccine-1", "generation": 1,
+        "run_id": "run-a", "receipt_id": "unit-death"
+    }).applied, "one death consumes exactly one clone transactionally")
     var recharge: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.copies_remaining = 3
         return {"ok": true, "state": next}
     check(Store.transact(slot, recharge).reason == "invalid_transition",
         "save boundary blocks clone restoration even by direct writer")
-    check(Gateway.transact_command(slot, event).applied,
-        "recovered backup can recommit lost receipt exactly once")
+    check(not Gateway.transact_command(slot, event).applied,
+        "restored committed receipt cannot be granted again")
     var drop_receipt: Callable = func(next: Dictionary) -> Dictionary:
         next.vaccine.receipts.clear()
         return {"ok": true, "state": next}
     check(Store.transact(slot, drop_receipt).reason == "invalid_transition",
         "save boundary disallows removal of committed receipt ledger")
     check(not Gateway.transact_command(slot, event).applied, "receipt remains exactly once")
+
+    # The previous mission ended with death; use a NEW live run to exercise
+    # the actual backup write failure instead of receiving run_not_active.
+    check(Gateway.transact_command(slot, {
+        "action": "start_mission", "vaccine_id": "vaccine-1",
+        "generation": 1, "run_id": "run-after-death", "seed": 909
+    }).applied, "fresh mission for backup permission failure test")
 
     var backup_name: String = slot.path_join("state.json.bak")
     var parked_backup: String = slot.path_join("state.json.bak.synthetic-held")
@@ -168,6 +187,7 @@ func _run() -> void:
             "unwritable backup destination fault injected")
         var fresh_event: Dictionary = event.duplicate(true)
         fresh_event.receipt_id = "reward-should-not-commit"
+        fresh_event.run_id = "run-after-death"
         var blocked: Dictionary = Gateway.transact_command(slot, fresh_event)
         check(not blocked.applied and blocked.reason == "backup_failed",
             "backup write failure blocks primary commit")
@@ -206,9 +226,10 @@ func _run() -> void:
     check(Gateway.transact_command(second_slot, another).applied,
         "second slot write creates safe backup")
     _write(second_slot.path_join("state.json.bak"), "{invalid backup")
+    _write(second_slot.path_join("state.json.recovery"), "{invalid latest copy")
     _write(second_slot.path_join("state.json"), "{invalid primary")
     check(not Store.restore_backup(second_slot, true).ok,
-        "corrupt backup never silently restored")
+        "damaged latest copy and backup cannot silently roll back receipts")
     check(not Store.initialize(second_slot, Model.new_slot("bad-backup", "again")).ok,
         "corrupt existing slot cannot be overwritten")
 
@@ -218,6 +239,89 @@ func _run() -> void:
         "future format must never silently downgrade from backup")
     check(not Gateway.transact_command(slot, event).applied,
         "unsupported format never accepts writes")
+
+    # Stat purchases must remain valid after JSON parsing turns whole numbers into floats.
+    var stat_slot: String = root_dir.path_join("rework-slot-stat-roundtrip")
+    check(Store.initialize(stat_slot, Model.new_slot("stat-roundtrip", "stat-vaccine")).ok,
+        "isolated stat validation slot")
+    var stat_start: Dictionary = command.duplicate(true)
+    stat_start.vaccine_id = "stat-vaccine"
+    check(Gateway.transact_command(stat_slot, stat_start).applied,
+        "stat-roundtrip mission starts")
+    var stat_cache: Dictionary = event.duplicate(true)
+    stat_cache.vaccine_id = "stat-vaccine"
+    stat_cache.fragments = 100
+    check(Gateway.transact_command(stat_slot, stat_cache).applied,
+        "stat-roundtrip fragments earned")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "hardware_cleaned", "vaccine_id": "stat-vaccine",
+        "generation": 1, "run_id": "run-a",
+        "receipt_id": "world:run-a:CPU:clean", "hardware_id": "CPU"
+    }).applied, "stat-roundtrip extraction enabled")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "extract", "vaccine_id": "stat-vaccine",
+        "generation": 1, "run_id": "run-a",
+        "receipt_id": "world:run-a:extraction", "learn_plugin_ids": []
+    }).applied, "stat-roundtrip fragments committed")
+    check(Gateway.transact_command(stat_slot, {
+        "action": "reallocate_stats", "vaccine_id": "stat-vaccine",
+        "generation": 1, "receipt_id": "stat-allocation", "allocations": {"max_hp": 1}
+    }).applied, "stat purchase persists successfully")
+    var stat_reloaded: Dictionary = Store.read(stat_slot)
+    check(stat_reloaded.get("ok", false), "stat purchase can be reloaded after JSON parse")
+    if stat_reloaded.get("ok", false):
+        check(stat_reloaded.state.vaccine.invested_stats.max_hp == 1,
+            "purchased stat survives restart")
+        check(stat_reloaded.state.vaccine.unspent_fragments == 100,
+            "stat purchase consumes 100 fragments; vaccine level grants 100 more")
+
+    # A crash leaves a lock that must be released only with offline approval
+    # and the exact owner token; the previous process PID cannot be the validator.
+    var lock_owner: Dictionary = Store._take_lock(slot)
+    check(lock_owner.get("ok", false), "synthetic orphan lock acquired")
+    if lock_owner.get("ok", false):
+        var lock_owner_path: String = slot + ".write-lock/owner.json"
+        var lock_meta: Dictionary = JSON.parse_string(_bytes(lock_owner_path).get_string_from_utf8())
+        lock_meta.pid = 123456789
+        _write(lock_owner_path, JSON.stringify(lock_meta))
+        check(not Store._release_lock(slot, lock_owner.token),
+            "normal lock release rejects foreign process PID")
+        check(Store.release_orphan_lock_offline(slot, lock_owner.token, true).ok,
+            "offline token-authorized orphan lock recovery accepts old PID")
+
+    var recovery_fault_slot: String = root_dir.path_join("rework-slot-copy-failure")
+    check(Store.initialize(recovery_fault_slot,
+        Model.new_slot("copy-failure", "vaccine-1")).ok,
+        "initialize recovery-copy failure test slot")
+    check(Gateway.transact_command(recovery_fault_slot, command).applied,
+        "recovery-copy failure test mission started")
+    var latest_path: String = recovery_fault_slot.path_join("state.json.recovery")
+    var held_latest: String = latest_path + ".synthetic-held"
+    if DirAccess.rename_absolute(latest_path, held_latest) == OK:
+        check(DirAccess.make_dir_absolute(latest_path) == OK,
+            "inject unwritable latest-copy destination")
+        var lost_ack: Dictionary = Gateway.transact_command(recovery_fault_slot, event)
+        check(not lost_ack.applied and
+            lost_ack.reason == "committed_recovery_copy_pending",
+            "primary already committed but recovery-copy failure not acknowledged")
+        var recoverable: Dictionary = Store.read(recovery_fault_slot)
+        check(recoverable.ok and
+            recoverable.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "pending intent keeps the committed reward visible exactly once")
+        DirAccess.remove_absolute(latest_path)
+        check(DirAccess.rename_absolute(held_latest, latest_path) == OK,
+            "restore original synthetic latest-copy path")
+        check(not Gateway.transact_command(recovery_fault_slot, event).applied,
+            "ack-lost retry reconciles copy without duplicating receipt")
+        check(not FileAccess.file_exists(
+            recovery_fault_slot.path_join("state.json.intent")),
+            "after recovery-copy repair the pending intent is removed")
+        var durable_copy: Dictionary = Store._decode(
+            _bytes(recovery_fault_slot.path_join("state.json.recovery")))
+        check(durable_copy.ok and durable_copy.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "latest committed copy carries the correct receipt balance")
+    else:
+        check(false, "latest committed copy should exist for fault injection")
 
     var irreversible: String = root_dir.path_join("rework-slot-irreversible")
     check(Store.initialize(irreversible, Model.new_slot("irreversible", "vaccine-1")).ok,
@@ -233,9 +337,14 @@ func _run() -> void:
     check(Store.read(irreversible).state.vaccine.copies_remaining == 2,
         "first spent clone persisted")
     _write(irreversible.path_join("state.json"), "{damaged after clone used")
-    check(Store.restore_backup(irreversible, true).reason ==
-        "backup_would_restore_consumed_clone",
-        "backup cannot resurrect a consumed clone after primary corruption")
+    var safe_death_restore: Dictionary = Store.restore_backup(irreversible, true)
+    check(safe_death_restore.get("ok", false),
+        "latest committed recovery restores death without refunding a clone")
+    if safe_death_restore.get("ok", false):
+        check(safe_death_restore.state.vaccine.copies_remaining == 2,
+            "latest recovery copy retains consumed clone")
+        check(safe_death_restore.state.vaccine.receipts.has("death-finality"),
+            "latest recovery copy retains death receipt")
 
     var interrupted: String = root_dir.path_join("rework-slot-interrupted")
     check(Store.initialize(interrupted, Model.new_slot("interrupted", "vaccine-1")).ok,
@@ -247,8 +356,49 @@ func _run() -> void:
     check(Store.read(interrupted).reason == "lifetime_fence_violation",
         "interrupted irreversible transition fails closed, never refunds clone")
     check(Store.restore_backup(interrupted, true).reason ==
-        "backup_would_restore_consumed_clone",
-        "unsafe predeath snapshot cannot be recovered behind lifetime fence")
+        "intent_requires_reconciliation",
+        "never roll back a pending clone-consuming transaction from old backup")
+    check(not Store.recover_interrupted_commit(interrupted).ok,
+        "interrupted commit recovery requires explicit offline consent")
+    var rolled_forward: Dictionary = Store.recover_interrupted_commit(interrupted, true)
+    check(rolled_forward.get("ok", false),
+        "verified write-ahead death intent rolls forward without refunding a clone")
+    if rolled_forward.get("ok", false):
+        var after_roll_forward: Dictionary = Store.read(interrupted)
+        check(after_roll_forward.ok and after_roll_forward.state.vaccine.copies_remaining == 2,
+            "recovered death leaves exactly two clones")
+        check(not Gateway.transact_command(interrupted, death_cmd).applied,
+            "replaying death after recovery never consumes another copy")
+        check(not FileAccess.file_exists(interrupted.path_join("state.json.intent")),
+            "recovery cleans only its validated intent file")
+
+    var reward_intent_slot: String = root_dir.path_join("rework-slot-reward-intent")
+    check(Store.initialize(reward_intent_slot,
+        Model.new_slot("reward-intent", "vaccine-1")).ok,
+        "isolated non-death intent slot")
+    check(Gateway.transact_command(reward_intent_slot, command).applied,
+        "reward intent mission started")
+    check(not Gateway.transact_command(reward_intent_slot, event,
+        -1, "before_primary").applied,
+        "simulate non-death reward crash after intent, before primary")
+    check(Store.read(reward_intent_slot).reason == "intent_requires_reconciliation",
+        "no stale XP snapshot exposed while an uncommitted receipt is pending")
+    check(not Gateway.transact_command(reward_intent_slot, event).applied,
+        "new awards blocked until interrupted reward intent is reconciled")
+    check(Store.restore_backup(reward_intent_slot, true).reason ==
+        "intent_requires_reconciliation",
+        "backup cannot erase an interrupted reward receipt")
+    var restored_reward: Dictionary = Store.recover_interrupted_commit(
+        reward_intent_slot, true)
+    check(restored_reward.get("ok", false),
+        "pending reward is promoted atomically with its original receipt")
+    if restored_reward.get("ok", false):
+        var reward_loaded: Dictionary = Store.read(reward_intent_slot)
+        check(reward_loaded.ok and
+            reward_loaded.state.vaccine.mission.uncommitted_vaccine_xp == 100,
+            "restored intent contains exact pre-crash reward")
+        check(not Gateway.transact_command(reward_intent_slot, event).applied,
+            "reward receipt replay is refused after intentional roll-forward")
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)

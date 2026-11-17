@@ -91,20 +91,32 @@ static func new_mission(run_id: String, seed: int, config: Dictionary = {}) -> D
     }
 
 static func _valid_mission(mission: Variant) -> bool:
-    if typeof(mission) != TYPE_DICTIONARY or mission.size() != 16             or not valid_id(mission.get("run_id")) or not natural(mission.get("seed")):
+    if typeof(mission) != TYPE_DICTIONARY:
+        return false
+    if not _exact_keys(mission, ["run_id", "seed", "mission_level", "mission_xp",
+            "pending_plugin_offers", "uncommitted_vaccine_xp", "uncommitted_point_fragments",
+            "hardware_cleaned_ids", "objective_ids", "obtained_plugins",
+            "claimed_offer_ids", "generated_map_seeds", "mission_difficulty",
+            "environment_rolls", "rerolls_left", "pity_counter"]):
+        return false
+    if not valid_id(mission.run_id) or not natural(mission.seed):
         return false
     for key in ["mission_level", "mission_xp", "pending_plugin_offers",
-                "uncommitted_vaccine_xp", "uncommitted_point_fragments",
-                "rerolls_left", "pity_counter"]:
-        if not natural(mission.get(key), 1000000000000):
+            "uncommitted_vaccine_xp", "uncommitted_point_fragments",
+            "rerolls_left", "pity_counter"]:
+        if not natural(mission[key], 1000000000000):
             return false
-    if int(mission.mission_level) < 1             or not _valid_ids(mission.get("hardware_cleaned_ids"), 5)             or not _valid_ids(mission.get("objective_ids"))             or not _valid_plugins(mission.get("obtained_plugins"), true):
+    if int(mission.mission_level) < 1 \
+            or not _valid_ids(mission.hardware_cleaned_ids, 5) \
+            or not _valid_ids(mission.objective_ids) \
+            or not _valid_ids(mission.claimed_offer_ids) \
+            or not _valid_plugins(mission.obtained_plugins, true):
         return false
     for region in mission.hardware_cleaned_ids:
         if not HARDWARE.has(region):
             return false
     for key in ["generated_map_seeds", "mission_difficulty", "environment_rolls"]:
-        if typeof(mission.get(key)) != TYPE_DICTIONARY:
+        if typeof(mission[key]) != TYPE_DICTIONARY:
             return false
     return true
 
@@ -146,7 +158,17 @@ static func _valid_vaccine(vaccine: Variant, config: Dictionary) -> bool:
     return true
 
 static func validate(state: Variant) -> bool:
-    if typeof(state) != TYPE_DICTIONARY or state.size() != 6             or state.get("schema_version") != VERSION             or not valid_id(state.get("slot_id"))             or not natural(state.get("generation"), 1000000000)             or state.generation < 1 or typeof(state.get("selection_required")) != TYPE_BOOL             or typeof(state.get("balance")) != TYPE_DICTIONARY             or not Balance.valid_config(state.balance):
+    if typeof(state) != TYPE_DICTIONARY:
+        return false
+    if not _exact_keys(state, ["schema_version", "slot_id", "generation",
+            "selection_required", "balance", "vaccine"]):
+        return false
+    if state.schema_version != VERSION or not valid_slot_id(state.slot_id) \
+            or not natural(state.generation, 1000000000) \
+            or int(state.generation) < 1 \
+            or typeof(state.selection_required) != TYPE_BOOL \
+            or typeof(state.balance) != TYPE_DICTIONARY \
+            or not Balance.valid_config(state.balance):
         return false
     if state.vaccine == null:
         return state.selection_required

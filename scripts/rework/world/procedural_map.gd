@@ -101,8 +101,7 @@ static func generate(region_id: String, map_seed: int, environment: Dictionary =
                 farthest = d
                 boss = Vector2i(x, y)
     var objectives: Array[Dictionary] = []
-    # Reserve each objective tile. A distance/separation score alone is not enough:
-    # a far-away occupied tile can still win and create duplicate objectives.
+    # Explicit reservation; distance-based scoring alone allows duplicate objective tiles.
     var occupied_objective_cells: Dictionary = {}
     for objective_id in Catalog.objectives(region_id):
         var best: Vector2i = spawn
@@ -122,7 +121,7 @@ static func generate(region_id: String, map_seed: int, environment: Dictionary =
                     best_score = score
                     best = candidate
         if best_score < 0.0:
-            # Never silently place an objective at spawn or on an occupied tile.
+            # Fail closed instead of placing an objective on spawn, boss or another objective.
             return {}
         occupied_objective_cells[best] = true
         objectives.append({"id": str(objective_id), "cell": best, "world": cell_to_world(best)})
