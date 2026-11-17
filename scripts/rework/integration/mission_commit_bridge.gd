@@ -59,6 +59,26 @@ func _commit(action: String, receipt_id: String, extra: Dictionary = {}) -> Dict
     transaction_committed.emit(ack.duplicate(true))
     return ack
 
+## E #118 optional checkpoint. This is a separate durable write BEFORE
+## A presents or re-rolls C cards. It is never a substitute for plugin_picked.
+func checkpoint_offer(offer: Dictionary, rng_state_text: String) -> Dictionary:
+    if frozen:
+        return {"ok": false, "reason": "reconciliation_required"}
+    var offer_id: String = str(offer.get("offer_id", ""))
+    if offer_id.is_empty() or not bool(offer.get("active", false)):
+        return {"ok": false, "reason": "invalid_offer_checkpoint"}
+    if rng_state_text.is_empty() or not rng_state_text.is_valid_int():
+        return _fail("missing_lossless_offer_rng_checkpoint", offer)
+    var used_rerolls: int = 3 - int(offer.get("rerolls_remaining", -1))
+    if used_rerolls < 0:
+        return _fail("invalid_offer_reroll_count", offer)
+    # Stable unique receipt for each in-offer C state transition.
+    var receipt_id: String = offer_id + ":checkpoint:" + str(used_rerolls)
+    return _commit("checkpoint_offer", receipt_id, {
+        "offer_snapshot": offer.duplicate(true),
+        "rng_state_text": rng_state_text
+    })
+
 func begin_mission(seed: int) -> Dictionary:
     if seed < 0:
         return {"ok": false, "reason": "invalid_seed"}
