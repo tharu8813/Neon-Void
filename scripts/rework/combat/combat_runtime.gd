@@ -143,8 +143,11 @@ func snapshot(actor_id: String) -> Dictionary:
     var a: Dictionary = actors[actor_id]
     return {"id": actor_id, "team": a["team"], "alive": a["alive"],
         "position": a["position"], "stats": a["stats"].duplicate(true),
+        "effective_stats": _effective_stats(a).duplicate(true),
         "status_state": a["status_state"].duplicate(true),
-        "mana": a["skills"].mana, "slots": a["skills"].slots.duplicate()}
+        "mana": a["skills"].mana, "slots": a["skills"].slots.duplicate(),
+        "skill_state": a["skills"].read_only_state(fixed_tick,
+            int(_effective_stats(a).get("skill_haste", 0)))} 
 
 func projectile_snapshots() -> Array[Dictionary]:
     return projectiles.duplicate(true)
@@ -232,7 +235,8 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
         "allowed_proc_triggers": overrides.get("allowed_proc_triggers",
             ["on_hit", "on_crit"] if tags.has("basic_attack") or tags.has("skill_damage") else []).duplicate(),
         "on_hit_damage_efficiency": float(overrides.get("on_hit_damage_efficiency", 1.0)),
-        "proc_path": overrides.get("proc_path", []).duplicate()
+        "proc_path": overrides.get("proc_path", []).duplicate(),
+        "skill_id": str(overrides.get("skill_id", ""))
     })
     projectiles.append(projectile)
     counters["shots"] += 1
@@ -319,22 +323,30 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
     if not bool(actor.get("external_movement", false)):
         _move(actor_id, direction)
     if bool(actor["player_controlled"]) and input.has("skill_slot"):
+        var slot: int = int(input["skill_slot"])
         var control: Dictionary = Statuses.active_flags(actor["status_state"])
         var stats: Dictionary = _effective_stats(actor)
-        var cast: Dictionary = actor["skills"].cast(int(input["skill_slot"]), fixed_tick,
+        var cast: Dictionary = actor["skills"].cast(slot, fixed_tick,
             int(stats.get("skill_haste", 0)), control)
         if bool(cast.get("ok", false)):
             presentation.append({"kind": "skill_cast", "actor_id": actor_id,
-                "skill_id": cast["skill_id"], "mana": actor["skills"].mana})
-            var root: Dictionary = bus.submit_root({"kind": "skill_cast",
+                "skill_id": cast["skill_id"], "slot": slot,
+                "mana_spent": cast["mana_spent"], "mana": actor["skills"].mana,
+                "ready_at_tick": cast["ready_at_tick"]})
+            bus.submit_root({"kind": "skill_cast",
                 "actor_id": actor_id, "target_id": _closest_opponent(actor_id),
                 "trigger_kind": "skill_cast", "source_tags": ["skill_cast"],
-                "allowed_proc_triggers": ["skill_cast"]})
-            if not root.is_empty():
-                pass
+                "allowed_proc_triggers": ["skill_cast"],
+                "skill_id": cast["skill_id"]})
             if not cast["attack"].is_empty():
-                _spawn(actor_id, aim, cast["attack"],
-                    ["skill_damage", "projectile_hit"])
+                var skill_attack: Dictionary = cast["attack"].duplicate(true)
+                skill_attack["can_crit"] = bool(cast["can_crit"])
+                skill_attack["status_effects"] = cast["status_effects"].duplicate(true)
+                _spawn(actor_id, aim, skill_attack,
+                    ["skill_damage", "projectile_hit"], {"skill_id": cast["skill_id"]})
+        else:
+            presentation.append({"kind": "skill_rejected", "actor_id": actor_id,
+                "slot": slot, "reason": str(cast.get("reason", "unknown"))})
     if firing:
         _fire_if_ready(actor_id, aim)
 
@@ -389,7 +401,8 @@ func _step_projectiles() -> void:
                 "attack_id": "projectile", "hit_key": p["hit_key"],
                 "attack": p["attack"], "source_tags": p["source_tags"],
                 "on_hit_damage_efficiency": p["on_hit_damage_efficiency"],
-                "allowed_proc_triggers": p["allowed_proc_triggers"]
+                "allowed_proc_triggers": p["allowed_proc_triggers"],
+                "skill_id": str(p.get("skill_id", ""))
             }
             var root: Dictionary = {}
             if p["proc_path"].is_empty():
@@ -559,6 +572,11 @@ func _resolve_event(event: Dictionary) -> Array:
     presentation.append({"kind": "hit", "actor_id": actor_id, "target_id": target_id,
         "amount": actual, "damage_type": str(attack.get("damage_type", "physical")),
         "critical": crit, "event_id": event["event_id"]})
+    if not str(event.get("skill_id", "")).is_empty():
+        presentation.append({"kind": "skill_impact", "actor_id": actor_id,
+            "skill_id": str(event["skill_id"]), "target_id": target_id,
+            "actual_damage": actual, "critical": crit,
+            "event_id": event["event_id"]})
     var vamp: Dictionary = Damage.vamp_components(source, attack, actual)
     var omni: float = float(vamp["omni_vamp_heal"])
     var on_hit: float = float(vamp["on_hit_vamp_heal"])
