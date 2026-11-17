@@ -31,7 +31,7 @@ func _run() -> void:
     close(four_three.size, Vector2(1024, 576), "letterbox size")
     check(not Math.window_to_logical(Vector2(512, 20), Vector2(1024, 768)).get("valid", true), "bar rejected")
     for scale in [1.0, 1.25, 1.5, 2.0]:
-        var window := Vector2(1280, 720) * scale
+        var window: Vector2 = Vector2(1280, 720) * float(scale)
         for pointer in [Vector2(0, 0), Vector2(640, 360), Vector2(1280, 720)]:
             var mapped: Dictionary = Math.window_to_logical(pointer * scale, window)
             check(mapped.get("valid", false), "DPI pointer valid")
