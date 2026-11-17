@@ -61,6 +61,29 @@ func _commit(action: String, receipt_id: String, extra: Dictionary = {}) -> Dict
 
 ## E #118 optional checkpoint. This is a separate durable write BEFORE
 ## A presents or re-rolls C cards. It is never a substitute for plugin_picked.
+## Persist the D region's exact procedural generator + map seed before
+## entering its geometry. Never record a map only in a transient Godot scene.
+func checkpoint_hardware_entry(fact: Dictionary) -> Dictionary:
+    if frozen:
+        return {"ok": false, "reason": "reconciliation_required"}
+    if int(fact.get("schema", -1)) != 1 \
+            or str(fact.get("type", "")) != "hardware_checkpoint_requested" \
+            or str(fact.get("run_id", "")) != run_id:
+        return _fail("invalid_map_checkpoint_run_or_schema", fact)
+    var region: String = str(fact.get("region_id", ""))
+    var receipt: String = str(fact.get("receipt_id", ""))
+    var generator: String = str(fact.get("generator_id", ""))
+    var seed: int = int(fact.get("map_seed", -1))
+    var plan: Variant = fact.get("region_plan")
+    if region != "CPU" or receipt != run_id + ":" + region + ":map-checkpoint" \
+            or generator.is_empty() or seed <= 0 \
+            or seed > 9007199254740991 or typeof(plan) != TYPE_DICTIONARY \
+            or int(plan.get("map_seed", -1)) != seed:
+        return _fail("invalid_map_checkpoint_identity", fact)
+    return _commit("checkpoint_region", receipt, {
+        "region_id": region, "map_seed": seed, "generator_id": generator
+    })
+
 func checkpoint_offer(offer: Dictionary, rng_state_text: String) -> Dictionary:
     if frozen:
         return {"ok": false, "reason": "reconciliation_required"}
