@@ -497,8 +497,12 @@ func _test_mission_checkpoint(root_dir: String) -> void:
     reroll.receipt_id = "offer:02"
     reroll.offer_snapshot = reroll_snapshot
     reroll.rng_state_text = "-725413"
-    check(Gateway.transact_command(slot, reroll).applied,
-        "one-card reroll atomically saves remaining count and exact cards")
+    var reroll_ack: Dictionary = Gateway.transact_command(slot, reroll)
+    check(reroll_ack.get("applied", false),
+        "one-card reroll atomically saves remaining count and exact cards: " +
+        str(reroll_ack.get("reason", "ok")))
+    if not reroll_ack.get("applied", false):
+        return # Avoid cascading failed-state assertions and null/property errors.
     var altered: Dictionary = reroll.duplicate(true)
     altered.receipt_id = "offer:03"
     altered.offer_snapshot = reroll_snapshot.duplicate(true)
