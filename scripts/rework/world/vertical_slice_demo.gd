@@ -4,6 +4,7 @@ extends Node3D
 ## mission/extraction ACKs; demo_mode=true uses visibly non-durable local ACKs.
 signal terminal_requested(fact: Dictionary)
 signal mission_start_requested(fact: Dictionary)
+signal hardware_checkpoint_requested(fact: Dictionary)
 signal world_fact_requested(fact: Dictionary)
 signal extraction_commit_requested(fact: Dictionary)
 signal death_commit_requested(fact: Dictionary)
@@ -40,6 +41,7 @@ var player: Variant
 var camera: Variant
 var progression_bridge: Variant
 var pending_world_receipts: Dictionary = {}
+var pending_hardware_entry: Dictionary = {}
 var pending_death: Dictionary = {}
 var last_error: String = ""
 var preview_counter: int = 0
@@ -104,7 +106,10 @@ func interact() -> Dictionary:
             var result: Dictionary = board.request_gate_near_player(player.global_position)
             if result.has("region_id"):
                 if str(result["region_id"]) == "CPU":
-                    _enter_cpu(result["region_plan"])
+                    if demo_mode:
+                        _enter_cpu(result["region_plan"])
+                    else:
+                        _request_hardware_checkpoint(result)
                 else:
                     board.return_to_board(str(result["region_id"]))
                     unavailable_hardware_requested.emit(str(result["region_id"]))
@@ -125,6 +130,7 @@ func enter_hub() -> void:
     hardware = null
     cpu_session = null
     pending_world_receipts.clear()
+    pending_hardware_entry.clear()
     pending_death.clear()
     combat.reset()
     active_level = HubScene.instantiate()
@@ -165,6 +171,7 @@ func confirm_mission_started(run_id: String, seed: int) -> bool:
     if planned.is_empty() or Planner.count_easy(planned) < 1:
         return false
     current_run_id = run_id
+    pending_hardware_entry.clear()
     mission = planned
     world_state = WorldState.new(run_id)
     world_state.world_fact.connect(_on_world_fact)
@@ -202,7 +209,64 @@ func _enter_motherboard() -> bool:
             return false
     return true
 
-func _enter_cpu(region_plan: Dictionary) -> bool:
+## In real mode D must not generate a map before E durably stores the
+## map seed AND the generator identity. No map is drawn on an unacknowledged
+## request. Preview mode never touches E or generates a real reward receipt.
+func _request_hardware_checkpoint(gate_request: Dictionary) -> void:
+    if demo_mode or current_mode != "motherboard" or board == null \
+            or not pending_hardware_entry.is_empty():
+        _freeze_with_error("invalid_hardware_checkpoint_request")
+        return
+    var region_id: String = str(gate_request.get("region_id", ""))
+    var requested_plan: Variant = gate_request.get("region_plan")
+    if region_id != "CPU" or typeof(requested_plan) != TYPE_DICTIONARY \
+            or str(gate_request.get("run_id", "")) != current_run_id:
+        _freeze_with_error("invalid_region_or_run_for_checkpoint")
+        return
+    var region_plan: Dictionary = requested_plan
+    var original_plan: Dictionary = mission.get("regions", {}).get(region_id, {})
+    var map_seed: int = int(region_plan.get("map_seed", -1))
+    if original_plan.is_empty() or original_plan != region_plan \
+            or map_seed <= 0 or map_seed > 9007199254740991:
+        _freeze_with_error("hardware_plan_seed_mismatch")
+        return
+    var fact: Dictionary = {
+        "schema": 1, "type": "hardware_checkpoint_requested",
+        "run_id": current_run_id, "region_id": region_id,
+        "map_seed": map_seed, "generator_id": Maps.GENERATOR_ID,
+        "region_plan": region_plan.duplicate(true),
+        "receipt_id": current_run_id + ":" + region_id + ":map-checkpoint"
+    }
+    pending_hardware_entry = fact.duplicate(true)
+    hardware_checkpoint_requested.emit(fact.duplicate(true))
+
+func acknowledge_hardware_checkpoint(receipt_id: String, ack: Dictionary) -> bool:
+    if demo_mode or current_mode != "motherboard" or board == null \
+            or pending_hardware_entry.is_empty():
+        return false
+    var fact: Dictionary = pending_hardware_entry
+    if receipt_id != str(fact.get("receipt_id", "")) \
+            or str(ack.get("receipt_id", "")) != receipt_id \
+            or not bool(ack.get("ok", false)) \
+            or int(ack.get("revision", -1)) < 1:
+        _freeze_with_error("hardware_checkpoint_ack_missing_or_invalid")
+        return false
+    if str(fact.get("run_id", "")) != current_run_id \
+            or str(fact.get("region_id", "")) != "CPU" \
+            or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
+            or str(board.board.active_region) != "CPU" \
+            or mission.get("regions", {}).get("CPU", {}) != fact.get("region_plan", {}):
+        _freeze_with_error("hardware_checkpoint_plan_diverged")
+        return false
+    pending_hardware_entry.clear()
+    # This is the *only* production caller with the verified E ACK. Any direct
+    # entry without it fails closed before invoking Maps.generate.
+    return _enter_cpu(fact["region_plan"], true)
+
+func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) -> bool:
+    if not demo_mode and not E_checkpoint_verified:
+        _freeze_with_error("CPU_map_requires_E_checkpoint_before_generation")
+        return false
     var planned_map: Dictionary = Maps.generate("CPU",
         int(region_plan.get("map_seed", 0)), region_plan.get("environment", {}))
     if planned_map.is_empty():
