@@ -22,6 +22,11 @@ var enemy_bullets: Array[Dictionary] = []
 var shards: Array[Dictionary] = []
 var drone_angle: float = 0.0
 var drone_cd: float = 0.0
+# Original Python game.py scales world motion under kill hitstop and slow
+# software, while cooldown/auto-fire/XP receipts stay on a real 60Hz clock.
+var hitstop_t: float = 0.0
+var slow_t: float = 0.0
+var last_time_scale: float = 1.0
 var spawn_queue: Array[Dictionary] = []
 var telegraphs: Array[Dictionary] = []
 var events: Array[Dictionary] = []
@@ -84,6 +89,9 @@ func begin_wave(wave_index: int, schedule: Array, expected_boss: String = "") ->
     events.clear()
     next_enemy_id = 1
     frames = 0
+    hitstop_t = 0.0
+    slow_t = 0.0
+    last_time_scale = 1.0
     total_replications = 0
     boss_defeated = false
     wave_ready_sent = false
@@ -129,10 +137,19 @@ func _spawn_point() -> Vector2:
         return Vector2(-50.0, rng.randf_range(60.0, 660.0))
     return Vector2(1330.0, rng.randf_range(60.0, 660.0))
 
+func current_time_scale() -> float:
+    # Match game.py::step's order: hitstop *0.16 and slow *0.45 stack.
+    return (0.16 if hitstop_t > 0.0 else 1.0) * (0.45 if slow_t > 0.0 else 1.0)
+
 func step_fixed() -> void:
     ## Must be called at exactly one 1/60 simulated second, not render _process.
     if not active or paused:
         return
+    var clock_scale: float = current_time_scale()
+    var scaled_dt: float = DT * clock_scale
+    last_time_scale = clock_scale
+    hitstop_t = maxf(0.0, hitstop_t - DT)
+    slow_t = maxf(0.0, slow_t - DT)
     frames += 1
     # With B player attached, its own P3 simulation already decrements inv.
     if not external_invulnerability_clock:
@@ -144,14 +161,14 @@ func step_fixed() -> void:
     player["mana"] = minf(float(player["max_mana"]), float(player["mana"]) + float(stats["mana_regen"]) * DT)
     var regeneration: float = float(stats["hp_regen"]) + (1.8 if float(player["guard"]) > 0 else 0.0)
     player["hp"] = minf(float(player["max_hp"]), float(player["hp"]) + regeneration * DT)
-    _step_statuses()
+    _step_statuses(scaled_dt)
     _step_spawns()
-    _step_enemies()
-    _step_telegraphs()
+    _step_enemies(scaled_dt)
+    _step_telegraphs(scaled_dt)
     _auto_fire()
     _step_drones()
-    _step_bullets()
-    _step_shards()
+    _step_bullets(scaled_dt)
+    _step_shards(scaled_dt)
     _step_contacts()
     if spawn_queue.is_empty() and enemies.is_empty():
         wave_empty_time += DT
@@ -173,11 +190,11 @@ func _step_spawns() -> void:
             remaining.append(entry)
     spawn_queue = remaining
 
-func _step_enemies() -> void:
+func _step_enemies(scaled_dt: float = DT) -> void:
     for enemy in enemies.duplicate():
         if not enemies.has(enemy) or float(enemy["hp"]) <= 0:
             continue
-        var actions: Array = Brain.advance(enemy, player["pos"], DT, rng)
+        var actions: Array = Brain.advance(enemy, player["pos"], scaled_dt, rng)
         for action in actions:
             if action["type"] == "virus":
                 _plan_virus_action(enemy, action)
@@ -202,13 +219,13 @@ func _plan_virus_action(enemy: Dictionary, action: Dictionary) -> void:
     else:
         _execute_action(enemy, action)
 
-func _step_telegraphs() -> void:
+func _step_telegraphs(scaled_dt: float = DT) -> void:
     var remains: Array[Dictionary] = []
     for pending in telegraphs:
         var owner: Dictionary = get_enemy(int(pending["source_id"]))
         if owner.is_empty():
             continue
-        pending["remaining"] = float(pending["remaining"]) - DT
+        pending["remaining"] = float(pending["remaining"]) - scaled_dt
         if float(pending["remaining"]) <= 0.0:
             _execute_action(owner, pending["action"])
         else:
@@ -316,7 +333,7 @@ func _step_drones() -> void:
         var angle: float = (Vector2(victim["pos"]) - origin).angle()
         _fire_friendly(origin, angle, 0.62, 0.8)
 
-func _step_shards() -> void:
+func _step_shards(scaled_dt: float = DT) -> void:
     # Original collectible: 14s lifetime, 1500px/s² magnet pull, 1.2/s
     # damping, and a pickup within player radius+8.
     var kept: Array[Dictionary] = []
@@ -324,14 +341,14 @@ func _step_shards() -> void:
     var player_pos: Vector2 = player["pos"]
     var collect_radius: float = float(player["radius"]) + 8.0
     for shard in shards:
-        shard["life"] = float(shard["life"]) - DT
+        shard["life"] = float(shard["life"]) - scaled_dt
         var displacement: Vector2 = player_pos - Vector2(shard["pos"])
         var distance: float = maxf(0.0001, displacement.length())
         var velocity: Vector2 = shard["vel"]
         if magnet > 0.0 and distance < magnet:
-            velocity += displacement / distance * (1.0 - distance / magnet) * 1500.0 * DT
-        shard["pos"] = Vector2(shard["pos"]) + velocity * DT
-        shard["vel"] = velocity * (1.0 - 1.2 * DT)
+            velocity += displacement / distance * (1.0 - distance / magnet) * 1500.0 * scaled_dt
+        shard["pos"] = Vector2(shard["pos"]) + velocity * scaled_dt
+        shard["vel"] = velocity * (1.0 - 1.2 * scaled_dt)
         if distance < collect_radius:
             shard_collected.emit(int(shard["value"]), player_pos)
             continue
@@ -339,7 +356,7 @@ func _step_shards() -> void:
             kept.append(shard)
     shards = kept
 
-func _step_bullets() -> void:
+func _step_bullets(scaled_dt: float = DT) -> void:
     for bullet in bullets:
         if bullet["dead"]:
             continue
@@ -351,12 +368,12 @@ func _step_bullets() -> void:
                 var wanted: float = (Vector2(target["pos"]) - pos).angle()
                 var current: float = velocity.angle()
                 var change: float = wrapf(wanted - current, -PI, PI)
-                var turn: float = clampf(change, -float(bullet["homing"]) * DT, float(bullet["homing"]) * DT)
+                var turn: float = clampf(change, -float(bullet["homing"]) * scaled_dt, float(bullet["homing"]) * scaled_dt)
                 velocity = Vector2.RIGHT.rotated(current + turn) * velocity.length()
                 bullet["vel"] = velocity
-        pos += velocity * DT
+        pos += velocity * scaled_dt
         bullet["pos"] = pos
-        bullet["life"] = float(bullet["life"]) - DT
+        bullet["life"] = float(bullet["life"]) - scaled_dt
         if float(bullet["life"]) <= 0.0:
             bullet["dead"] = true
             continue
@@ -386,9 +403,9 @@ func _step_bullets() -> void:
     for bullet in enemy_bullets:
         if bullet["dead"]:
             continue
-        var pos: Vector2 = Vector2(bullet["pos"]) + Vector2(bullet["vel"]) * DT
+        var pos: Vector2 = Vector2(bullet["pos"]) + Vector2(bullet["vel"]) * scaled_dt
         bullet["pos"] = pos
-        bullet["life"] = float(bullet["life"]) - DT
+        bullet["life"] = float(bullet["life"]) - scaled_dt
         if float(bullet["life"]) <= 0.0 or pos.x < -40.0 or pos.x > 1320.0 or pos.y < -40.0 or pos.y > 760.0:
             bullet["dead"] = true
             continue
@@ -426,9 +443,9 @@ func _on_bullet_hit(bullet: Dictionary, enemy: Dictionary) -> void:
     else:
         bullet["dead"] = true
 
-func _step_statuses() -> void:
+func _step_statuses(scaled_dt: float = DT) -> void:
     for enemy in enemies.duplicate():
-        var ticks: Array = Rules.advance_dots(enemy["statuses"], DT)
+        var ticks: Array = Rules.advance_dots(enemy["statuses"], scaled_dt)
         for amount in ticks:
             if get_enemy(int(enemy["id"])).is_empty():
                 break
@@ -490,6 +507,8 @@ func _kill_enemy(enemy: Dictionary) -> void:
     if not enemies.has(enemy):
         return
     enemies.erase(enemy)
+    hitstop_t = 0.16 if Catalog.is_boss(kind) else maxf(hitstop_t, 0.028)
+    slow_t = minf(0.6, slow_t + maxf(0.0, float(player["stats"].get("slow", 0.0))))
     if kind == boss_kind:
         boss_defeated = true
     enemy_died.emit(int(enemy["id"]), kind)
