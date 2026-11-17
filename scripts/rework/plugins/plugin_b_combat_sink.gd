@@ -36,7 +36,9 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 				var defender: Dictionary = next["targets"][target_id]
 				var attacker: Dictionary = next.get("actor_stats", {})
 				var attack: Dictionary = command.get("attack", {})
-				var calculated: Dictionary = damage_api.calculate(attacker, defender, attack, false)
+				var status_map: Dictionary = next.get("target_statuses",{})
+				var modified_defender: Dictionary = statuses_api.modified_stats(defender,status_map.get(target_id,{"statuses":[]}))
+				var calculated: Dictionary = damage_api.calculate(attacker, modified_defender, attack, false)
 				if not calculated.get("ok",false):
 					return {"ok":false,"reason":"B_damage_invalid"}
 				var hit: Dictionary = damage_api.apply_damage(defender, calculated, bool(defender.get("invulnerable",false)))
@@ -84,7 +86,8 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 				var incoming: Dictionary = next.get("pending_attack", {})
 				if incoming.is_empty():
 					return {"ok":false,"reason":"missing_pending_attack"}
-				incoming["base_damage"] = float(incoming.get("base_damage",0.0)) * float(command.get("damage_multiplier",1.0))
+				for coefficient in ["base_damage","ad_ratio","ap_ratio"]:
+					incoming[coefficient] = float(incoming.get(coefficient,0.0)) * float(command.get("damage_multiplier",1.0))
 				next["pending_attack"] = incoming
 			"rare_reward_request":
 				# E must persist a separate receipt before it is displayed.

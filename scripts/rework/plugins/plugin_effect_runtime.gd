@@ -176,6 +176,8 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 			continue
 		if derived and kind in ["on_hit", "on_crit", "on_hit_proc"] and not event.get("allowed_proc_triggers", []).has("on_hit"):
 			continue
+		if effect_kind in ["chain_lightning","hit_explosion"] and not source.has("basic_attack") and not (derived and event.get("allowed_proc_triggers",[]).has("on_hit")):
+			continue
 		var cd_ticks: int = int(spec.get("target_cooldown_ticks", spec.get("cooldown_ticks", 0)))
 		var cooldown_key: String = uid + "|" + actor_id
 		if str(entry.get("cooldown_scope", "")) == "per_target":
@@ -197,7 +199,7 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 				next_state["sprint_active"] = false
 			"chain_lightning":
 				command = _attack_command(uid,actor_id,target_id,tick,event,spec,level,"lightning",_value(spec,"base_damage",level)*_value(spec,"level_multipliers",level))
-				command["attack"]["ap_ratio"] = _value(spec,"ap_ratio",level)
+				command["attack"]["ap_ratio"] = _value(spec,"ap_ratio",level) * _value(spec,"level_multipliers",level)
 				command["chain_targets"] = int(_value(spec,"target_count",level))
 				command["search_distance_mult"] = _value(spec,"search_distance_mult",level)
 			"hit_explosion", "dash_explosion":
@@ -273,5 +275,7 @@ func derived_attack(attack: Dictionary, event: Dictionary) -> Dictionary:
 	var ratio: float = float(event.get("target_health_ratio",1.0))
 	if levels.has("nv_r_execute") and ratio < 0.5:
 		var spec: Dictionary = _specs["nv_r_execute"]
-		projected["base_damage"] = float(projected.get("base_damage",0.0)) * (1.0 + _value(spec,"bonus_damage_multiplier",int(levels["nv_r_execute"])))
+		var multiplier: float = 1.0 + _value(spec,"bonus_damage_multiplier",int(levels["nv_r_execute"]))
+		for coefficient in ["base_damage","ad_ratio","ap_ratio"]:
+			projected[coefficient] = float(projected.get(coefficient,0.0)) * multiplier
 	return projected
