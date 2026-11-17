@@ -2,6 +2,7 @@ extends SceneTree
 ## Real Godot scene + B damage math + CPU objective/extraction lifecycle, no user saves.
 ## Run: godot --headless --path . --script res://tests/rework/world/cpu_vertical_slice_smoke.gd
 const Scene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
+const FormalCases = preload("res://tests/rework/world/formal_cpu_combat_cases.gd")
 const Board = preload("res://scripts/rework/world/motherboard_layout.gd")
 const Hub = preload("res://scripts/rework/world/hub_layout.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
@@ -103,6 +104,11 @@ func _run() -> void:
     check(game.begin_preview_mission(43), "next dispatch starts a new independent seeded mission")
     check(game.current_mode == "motherboard", "new dispatch returns to board")
     game.queue_free()
+    # Same registered smoke is executed by A's 13-script rework Linux/Windows CI.
+    # This exercises B production Runtime without D's _apply_hit demo helper.
+    var suite: Variant = FormalCases.new()
+    for problem in suite.execute(root):
+        check(false, "B formal CPU: " + str(problem))
     if failures == 0:
         print("CPU VERTICAL SLICE PASS: hub -> real B combat intro -> CPU walkable maze -> two goals -> boss -> unlock -> ACK -> hub")
     quit(0 if failures == 0 else 1)
