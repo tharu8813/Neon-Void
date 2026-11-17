@@ -238,10 +238,13 @@ static func run(check: Callable, root: Node) -> void:
     fixture["scene"].queue_free()
 
     var cleared: Dictionary = Gateway.snapshot(slot)
-    if bool(cleared.get("ok", false)) and cleared["snapshot"]["vaccine"]["invested_stats"] != increments:
-        printerr("B E ROUNDTRIP DIAG: ", cleared["snapshot"]["vaccine"]["invested_stats"],
-            " expected=", increments)
-    check.call(bool(cleared.get("ok", false))
-        and cleared["snapshot"]["vaccine"]["invested_stats"] == increments,
-        "B combat never modifies E storage or committed investments")
+    var unchanged: bool = bool(cleared.get("ok", false))
+    if unchanged:
+        var saved: Dictionary = cleared["snapshot"]["vaccine"]["invested_stats"]
+        unchanged = saved.size() == increments.size()
+        for key in increments:
+            if not saved.has(key) or float(saved.get(key, -1.0)) != float(increments[key]):
+                unchanged = false
+    check.call(unchanged,
+        "B combat never modifies E storage or committed investments across JSON types")
     _erase(dir)
