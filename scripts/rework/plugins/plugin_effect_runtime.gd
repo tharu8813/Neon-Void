@@ -226,7 +226,10 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 			"skill_followup":
 				command = {"type":"projectiles","plugin_id":uid,"actor_id":actor_id,"target_id":target_id,"count":int(spec["projectile_count"]),"shape":"homing","base_damage":_value(spec,"base_damage",level),"source_tags":["plugin_attack"],"allowed_proc_triggers":[]}
 			"grant_rare":
-				command = {"type":"rare_reward_request","plugin_id":uid,"actor_id":actor_id,"count":int(_value(spec,"grant_count",level)),"requires_E_receipt":true}
+				# E performs source+bonus in the same plugin_picked transaction.
+				# This is only an unverified, read-only source-selection notice.
+				# Do not use the provisional grant_count (especially at Lv2).
+				command = {"type":"rare_reward_notice","plugin_id":uid,"actor_id":actor_id,"requires_E_receipt":true}
 			"kill_power":
 				next_state["kill_power_stacks"] = int(next_state.get("kill_power_stacks",0))+1
 			"disassembly":
