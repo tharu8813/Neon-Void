@@ -37,6 +37,17 @@ static func _envelope(state: Dictionary, revision: int) -> String:
     return JSON.stringify({"format": 1, "revision": revision,
         "payload_sha256": canonical.sha256_text(), "payload_json": canonical}, "", true, true) + "\n"
 
+static func _encoded_state(state: Dictionary, revision: int) -> Dictionary:
+    ## Guard BEFORE the backup or primary is touched. The nested JSON
+    ## envelope can be substantially larger than its logical state payload.
+    if not validate_state(state) or revision < 1 or revision > 1000000000:
+        return {"ok": false, "reason": "invalid_transition"}
+    var encoded: PackedByteArray = _envelope(state, revision).to_utf8_buffer()
+    if encoded.size() > MAX_STATE_BYTES:
+        return {"ok": false, "reason": "state_too_large"}
+    return {"ok": true, "bytes": encoded}
+
+
 static func _read_bytes(path: String, limit: int = MAX_STATE_BYTES) -> Dictionary:
     if not FileAccess.file_exists(path):
         return {"ok": false, "reason": "not_found"}
@@ -109,7 +120,10 @@ static func initialize_staging(stage: String, state: Dictionary) -> Dictionary:
     var file: String = stage.path_join(STATE_NAME)
     if FileAccess.file_exists(file):
         return {"ok": false, "reason": "already_initialized"}
-    if not _atomic_write(file, _envelope(state, 1).to_utf8_buffer()):
+    var prepared: Dictionary = _encoded_state(state, 1)
+    if not prepared.ok:
+        return prepared
+    if not _atomic_write(file, prepared.bytes):
         return {"ok": false, "reason": "save_failed"}
     return read(stage)
 
@@ -141,6 +155,9 @@ static func _transact_locked(slot_path: String, operation: Callable) -> Dictiona
         return {"applied": false, "reason": outcome.get("reason", "duplicate"), "revision": before.revision}
     if not validate_state(outcome.get("state")) or before.revision >= 1000000000:
         return {"applied": false, "reason": "invalid_transition"}
+    var prepared: Dictionary = _encoded_state(outcome.state, int(before.revision) + 1)
+    if not prepared.ok:
+        return {"applied": false, "reason": prepared.reason}
     var file: String = slot_path.path_join(STATE_NAME)
     var old: Dictionary = _read_bytes(file)
     if not old.ok:
@@ -149,7 +166,7 @@ static func _transact_locked(slot_path: String, operation: Callable) -> Dictiona
     # revision check, backup write and replacement.
     if not _atomic_write(file + ".bak", old.bytes):
         return {"applied": false, "reason": "backup_failed"}
-    if not _atomic_write(file, _envelope(outcome.state, before.revision + 1).to_utf8_buffer()):
+    if not _atomic_write(file, prepared.bytes):
         return {"applied": false, "reason": "save_failed"}
     var verified: Dictionary = read(slot_path)
     if not verified.ok or verified.revision != before.revision + 1:
@@ -168,6 +185,14 @@ static func recover_from_backup(slot_path: String, explicit_consent: bool = fals
     return result
 
 static func _recover_locked(slot_path: String) -> Dictionary:
+    ## Recovery is for an unreadable/corrupted primary, NOT a way to
+    ## roll back healthy XP receipts or bypass an unsupported future format.
+    var primary: Dictionary = read(slot_path)
+    if primary.ok:
+        return {"ok": false, "reason": "primary_is_valid"}
+    if not primary.reason in ["not_found", "invalid_json", "non_utf8",
+            "checksum_mismatch", "invalid_envelope", "bad_digest", "invalid_payload"]:
+        return {"ok": false, "reason": "primary_requires_manual_review"}
     var file: String = slot_path.path_join(STATE_NAME)
     var backup: Dictionary = _read_bytes(file + ".bak")
     if not backup.ok:
@@ -188,6 +213,9 @@ static func _recover_locked(slot_path: String) -> Dictionary:
         var quarantine: String = file + ".before-recovery-" + str(Time.get_ticks_usec())
         if not _atomic_write(quarantine, current.bytes):
             return {"ok": false, "reason": "quarantine_failed"}
+        var confirmed: Dictionary = _read_bytes(quarantine)
+        if not confirmed.ok or confirmed.bytes != current.bytes:
+            return {"ok": false, "reason": "quarantine_verify_failed"}
     if not _atomic_write(file, backup.bytes):
         return {"ok": false, "reason": "restore_failed"}
     return {"ok": true, "reason": "restored", "revision": valid.revision}
