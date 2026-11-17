@@ -67,10 +67,18 @@ func _label(caption: String, tint: Color, size_pt: int) -> Label:
     return label
 
 func _position_at_right() -> void:
-    var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-    var width: float = minf(350.0, maxf(240.0, viewport_size.x - 40.0))
+    update_layout()
+
+func update_layout() -> void:
+    if get_viewport() == null:
+        return
+    var vp: Vector2 = get_viewport().get_visible_rect().size
+    var width: float = minf(350.0, maxf(210.0, vp.x - 36.0))
     custom_minimum_size.x = width
-    position = Vector2(maxf(0.0, viewport_size.x - width - 18.0), 18.0)
+    # Keep 1280+ HUD side by side. At narrower widths, move the mission
+    # tracker beneath the status/controls so it never covers the HP bars.
+    var y: float = 18.0 if vp.x >= 1100.0 else maxf(168.0, vp.y - 238.0)
+    position = Vector2(maxf(0.0, vp.x - width - 18.0), y)
 
 func show_saved_snapshot(loaded: Dictionary) -> void:
     if not bool(loaded.get("ok", false)):
