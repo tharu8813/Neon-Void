@@ -46,6 +46,83 @@ func begin_mission(seed_value: int, initial_levels: Dictionary = {}, run_id: Str
 	rerolls_remaining = maxi(0, int(_settings.get("base_rerolls", 3)))
 	return true
 
+func export_mission_state() -> Dictionary:
+	## A/E must atomically persist this packet with the authoritative mission.
+	## This method does NOT write user data.
+	if not _started:
+		return {}
+	return {"schema":1,"run_id":_run_id,"seed":_seed,
+		"rng_state":_rng.state,"offer_sequence":_offer_sequence,
+		"levels":levels.duplicate(true),"missed_screens":missed_screens,
+		"rerolls_remaining":rerolls_remaining,"pending":_pending.duplicate(true),
+		"prepared":_prepared.duplicate(true),"commit_uncertain":_commit_uncertain}
+
+func restore_mission_state(snapshot: Dictionary, E_levels: Dictionary) -> bool:
+	## Fail closed: caller must supply levels loaded from E's verified snapshot.
+	## A must reconcile any pending receipt with E before enabling the UI.
+	if int(snapshot.get("schema",0)) != 1 or not snapshot.get("run_id",null) is String:
+		return false
+	var saved_run: String = str(snapshot["run_id"])
+	if saved_run.is_empty() or saved_run.length()>100:
+		return false
+	var saved_levels: Variant = snapshot.get("levels",null)
+	if not saved_levels is Dictionary or saved_levels != E_levels:
+		return false
+	for uid in E_levels:
+		var entry: Dictionary = get_entry(str(uid))
+		if entry.is_empty() or typeof(E_levels[uid]) != TYPE_INT or int(E_levels[uid])<0 or int(E_levels[uid])>int(entry["max_level"]):
+			return false
+	for name in ["seed","rng_state","offer_sequence","missed_screens","rerolls_remaining"]:
+		if typeof(snapshot.get(name,null)) != TYPE_INT:
+			return false
+	if int(snapshot["offer_sequence"])<0 or int(snapshot["missed_screens"])<0 or int(snapshot["rerolls_remaining"])<0:
+		return false
+	var pending: Variant = snapshot.get("pending",null)
+	var prepared: Variant = snapshot.get("prepared",null)
+	if not pending is Dictionary or not prepared is Dictionary or typeof(snapshot.get("commit_uncertain",null)) != TYPE_BOOL:
+		return false
+	if not pending.is_empty():
+		if int(snapshot["offer_sequence"])<1 or str(pending.get("offer_id",""))!=saved_run+":"+str(snapshot["offer_sequence"]):
+			return false
+		var cards: Variant = pending.get("cards",null)
+		if not cards is Array or cards.size()!=3 or not pending.get("context",null) is Dictionary or typeof(pending.get("high_seen",null))!=TYPE_BOOL:
+			return false
+		for i in range(3):
+			if not cards[i] is Dictionary or int(cards[i].get("slot",-1))!=i:
+				return false
+			var uid: String = str(cards[i].get("plugin_id",""))
+			if uid.is_empty():
+				if not bool(cards[i].get("empty",false)):
+					return false
+				continue
+			var entry: Dictionary = get_entry(uid)
+			if entry.is_empty() or str(cards[i].get("rarity",""))!=str(entry["rarity"]):
+				return false
+			if int(E_levels.get(uid,0))>=int(entry["max_level"]) and prepared.is_empty():
+				return false
+	elif not prepared.is_empty():
+		return false
+	if not prepared.is_empty():
+		if int(prepared.get("slot",-1))<0 or int(prepared.get("slot",-1))>=3 or not prepared.get("choice",null) is Dictionary:
+			return false
+		var choice: Dictionary = prepared["choice"]
+		if str(choice.get("offer_id",""))!=str(pending.get("offer_id","")) or str(choice.get("receipt_id",""))!=str(choice.get("offer_id",""))+":"+str(prepared["slot"]):
+			return false
+		if str(choice.get("plugin_id",""))!=str(pending["cards"][int(prepared["slot"])].get("plugin_id","")):
+			return false
+	if not begin_mission(int(snapshot["seed"]),E_levels,saved_run):
+		return false
+	_rng.state = int(snapshot["rng_state"])
+	_offer_sequence = int(snapshot["offer_sequence"])
+	missed_screens = int(snapshot["missed_screens"])
+	rerolls_remaining = int(snapshot["rerolls_remaining"])
+	_pending = pending.duplicate(true)
+	_prepared = prepared.duplicate(true)
+	# Never treat an interrupted prepared selection as confirmed. E must check
+	# the durable receipt and call reconcile_card explicitly.
+	_commit_uncertain = bool(snapshot["commit_uncertain"]) or not _prepared.is_empty()
+	return true
+
 func get_catalog() -> Array[Dictionary]:
 	return _catalog.duplicate(true)
 
