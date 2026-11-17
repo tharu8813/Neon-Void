@@ -47,13 +47,15 @@ func _run() -> void:
     check(bool(game.region_session.objectives.progress["purge_corruption"]["completed"]),
         "four purge interactions complete")
     check(game.region_session.puzzle_holder.visible, "replica puzzle becomes visible")
-    check(game.combat.enemies.size() == 8, "eight actual combat actors requested")
+    var initial_enemy_count: int = game.region_session.known_hostiles.size()
+    check(initial_enemy_count >= 8, "environment-scaled actual B combat actors requested")
     var bad: int = (game.region_session.real_slot + 1) % 3
     game.player.global_position = game.region_session.pads[bad]["position"] + Vector3.UP * 0.5
     var failed: Dictionary = game.interact()
     check(failed.get("type", "") == "ram_checksum_tested" and not bool(failed.get("authentic", true)),
         "wrong copy rejected; not counted toward verification")
-    check(game.combat.enemies.size() == 9, "wrong checksum spawns an actual B-routed decoy")
+    check(game.combat.enemies.size() == initial_enemy_count + 1,
+        "wrong checksum spawns an actual B-routed decoy")
     check(int(game.region_session.objectives.progress["verify_memory"]["current"]) == 0,
         "bad checksum cannot progress")
     for i in range(2):
