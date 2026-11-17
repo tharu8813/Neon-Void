@@ -19,6 +19,7 @@ const Planner = preload("res://scripts/rework/world/mission_planner.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Geometry = preload("res://scripts/rework/world/hardware_geometry.gd")
 const ObjectiveSession = preload("res://scripts/rework/world/cpu_objective_session.gd")
+const GPUSession = preload("res://scripts/rework/world/gpu_objective_session.gd")
 const PlayerMotor = preload("res://scripts/rework/world/preview_player_motor.gd")
 const CombatRouter = preload("res://scripts/rework/world/world_combat_router.gd")
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
@@ -36,6 +37,8 @@ var active_level: Variant
 var board: Variant
 var hardware: Variant
 var cpu_session: Variant
+var region_session: Variant
+var intro_receipts: Dictionary = {}
 var combat: Variant
 var player: Variant
 var camera: Variant
@@ -91,6 +94,8 @@ func _physics_process(delta: float) -> void:
     camera.call("follow", player.global_position, pointer, delta)
     if current_mode == "cpu" and cpu_session != null:
         cpu_session.tick_player(player.global_position)
+    elif current_mode == "gpu" and region_session != null:
+        region_session.tick_player(player.global_position)
 
 const CameraRigMath = preload("res://scripts/rework/camera/look_ahead_math.gd")
 
@@ -105,16 +110,20 @@ func interact() -> Dictionary:
         "motherboard":
             var result: Dictionary = board.request_gate_near_player(player.global_position)
             if result.has("region_id"):
-                if str(result["region_id"]) == "CPU":
+                var chosen: String = str(result["region_id"])
+                if world_state.is_extraction_open(chosen):
+                    board.return_to_board(chosen)
+                    return {"reason": "already_cleansed", "region_id": chosen}
+                if chosen == "CPU" or chosen == "GPU":
                     if demo_mode:
-                        _enter_cpu(result["region_plan"])
+                        _enter_hardware(result["region_plan"])
                     else:
                         _request_hardware_checkpoint(result)
                 else:
-                    board.return_to_board(str(result["region_id"]))
-                    unavailable_hardware_requested.emit(str(result["region_id"]))
+                    board.return_to_board(chosen)
+                    unavailable_hardware_requested.emit(chosen)
             return result
-        "cpu":
+        "cpu", "gpu":
             return hardware.interact_at(player.global_position)
     return {}
 
@@ -129,6 +138,8 @@ func enter_hub() -> void:
     board = null
     hardware = null
     cpu_session = null
+    region_session = null
+    intro_receipts.clear()
     pending_world_receipts.clear()
     pending_hardware_entry.clear()
     pending_death.clear()
@@ -171,6 +182,7 @@ func confirm_mission_started(run_id: String, seed: int) -> bool:
     if planned.is_empty() or Planner.count_easy(planned) < 1:
         return false
     current_run_id = run_id
+    intro_receipts.clear()
     pending_hardware_entry.clear()
     mission = planned
     world_state = WorldState.new(run_id)
@@ -184,6 +196,7 @@ func _enter_motherboard() -> bool:
     current_mode = "motherboard"
     hardware = null
     cpu_session = null
+    region_session = null
     board = BoardScene.instantiate()
     board.name = "ActiveMotherboard"
     active_level = board
@@ -202,8 +215,13 @@ func _enter_motherboard() -> bool:
         _freeze_with_error("B_intro_encounter_failed")
         return false
     for enemy in BoardLayout.INTRO:
+        var intro_id: String = str(enemy["id"])
+        if intro_receipts.has(intro_id):
+            # Restore only real B-verified intro receipts from this same run.
+            board.confirm_intro_enemy_defeated(intro_id, str(intro_receipts[intro_id]))
+            continue
         if not combat.spawn_hostile({
-            "actor_id": str(enemy["id"]), "position": enemy["position"], "boss": false
+            "actor_id": intro_id, "position": enemy["position"], "boss": false
         }):
             integration_error.emit("intro_enemy_spawn_failed")
             return false
@@ -219,7 +237,7 @@ func _request_hardware_checkpoint(gate_request: Dictionary) -> void:
         return
     var region_id: String = str(gate_request.get("region_id", ""))
     var requested_plan: Variant = gate_request.get("region_plan")
-    if region_id != "CPU" or typeof(requested_plan) != TYPE_DICTIONARY \
+    if not ["CPU", "GPU"].has(region_id) or typeof(requested_plan) != TYPE_DICTIONARY \
             or str(gate_request.get("run_id", "")) != current_run_id:
         _freeze_with_error("invalid_region_or_run_for_checkpoint")
         return
@@ -254,17 +272,26 @@ func acknowledge_hardware_checkpoint(receipt_id: String, ack: Dictionary) -> boo
             or int(ack.get("revision", -1)) < 1:
         _freeze_with_error("hardware_checkpoint_ack_missing_or_invalid")
         return false
+    var id: String = str(fact.get("region_id", ""))
     if str(fact.get("run_id", "")) != current_run_id \
-            or str(fact.get("region_id", "")) != "CPU" \
+            or not ["CPU", "GPU"].has(id) \
             or str(fact.get("generator_id", "")) != Maps.GENERATOR_ID \
-            or str(board.board.active_region) != "CPU" \
-            or mission.get("regions", {}).get("CPU", {}) != fact.get("region_plan", {}):
+            or str(board.board.active_region) != id \
+            or mission.get("regions", {}).get(id, {}) != fact.get("region_plan", {}):
         _freeze_with_error("hardware_checkpoint_plan_diverged")
         return false
     pending_hardware_entry.clear()
     # This is the *only* production caller with the verified E ACK. Any direct
     # entry without it fails closed before invoking Maps.generate.
-    return _enter_cpu(fact["region_plan"], true)
+    return _enter_hardware(fact["region_plan"], true)
+
+func _enter_hardware(region_plan: Dictionary, checkpoint_verified: bool = false) -> bool:
+    match str(region_plan.get("id", "")):
+        "CPU":
+            return _enter_cpu(region_plan, checkpoint_verified)
+        "GPU":
+            return _enter_gpu(region_plan, checkpoint_verified)
+    return false
 
 func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) -> bool:
     if not demo_mode and not E_checkpoint_verified:
@@ -293,6 +320,7 @@ func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
         integration_error.emit("cpu_objective_setup_failed")
         return false
     hardware.interaction_requested.connect(cpu_session.on_world_interaction)
+    hardware.interaction_requested.connect(_on_board_return_interacted)
     cpu_session.enemy_spawn_requested.connect(combat.spawn_hostile)
     cpu_session.extraction_interaction_requested.connect(_on_cpu_exit_interacted)
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
@@ -305,13 +333,58 @@ func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
         return false
     return true
 
+func _enter_gpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) -> bool:
+    if not demo_mode and not E_checkpoint_verified:
+        _freeze_with_error("GPU_map_requires_E_checkpoint_before_generation")
+        return false
+    var planned_map: Dictionary = Maps.generate("GPU",
+        int(region_plan.get("map_seed", 0)), region_plan.get("environment", {}))
+    if planned_map.is_empty():
+        _freeze_with_error("GPU_map_generation_failed")
+        return false
+    var instance: Variant = Geometry.new()
+    if not instance.configure(current_run_id, "GPU", planned_map):
+        instance.queue_free()
+        _freeze_with_error("GPU_map_geometry_failed")
+        return false
+    _remove_active_level()
+    current_mode = "gpu"
+    hardware = instance
+    board = null
+    active_level = hardware
+    add_child(hardware)
+    region_session = GPUSession.new()
+    region_session.name = "GPUObjectiveSession"
+    add_child(region_session)
+    if not region_session.configure(current_run_id, region_plan, world_state, hardware):
+        _freeze_with_error("GPU_objective_setup_failed")
+        return false
+    hardware.interaction_requested.connect(region_session.on_world_interaction)
+    hardware.interaction_requested.connect(_on_board_return_interacted)
+    region_session.enemy_spawn_requested.connect(combat.spawn_hostile)
+    region_session.extraction_interaction_requested.connect(_on_gpu_exit_interacted)
+    player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
+    camera.world_bounds = planned_map["world_bounds"]
+    camera.global_position = Vector3(player.position.x, 14, player.position.z)
+    if not combat.begin_encounter(player, camera, planned_map, current_run_id, {
+        "formal": not demo_mode, "seed": int(region_plan["encounter_seed"]),
+        "encounter_id": "GPU:mission"}):
+        _freeze_with_error("B_GPU_encounter_failed")
+        return false
+    return true
+
 func _on_enemy_defeated(actor_id: String, receipt_id: String) -> void:
     if current_mode == "motherboard" and board != null:
-        board.confirm_intro_enemy_defeated(actor_id, receipt_id)
+        if board.confirm_intro_enemy_defeated(actor_id, receipt_id):
+            intro_receipts[actor_id] = receipt_id
     elif current_mode == "cpu" and cpu_session != null:
         cpu_session.confirm_enemy_defeated(actor_id, receipt_id)
-        if world_state.is_extraction_open("CPU"):
+        if world_state.is_extraction_open("CPU") and pending_world_receipts.is_empty():
             cpu_session.acknowledge_cleansed()
+    elif current_mode == "gpu" and region_session != null:
+        region_session.confirm_enemy_defeated(actor_id, receipt_id)
+        if world_state.is_extraction_open("GPU") and pending_world_receipts.is_empty():
+            region_session.acknowledge_cleansed()
 
 func _on_world_fact(fact: Dictionary) -> void:
     if str(fact.get("type", "")) == "boss_defeated":
@@ -339,6 +412,22 @@ func acknowledge_world_fact(receipt_id: String, ack: Dictionary) -> bool:
     if pending_world_receipts.is_empty() and extraction_gate != null and not extraction_gate.pending.is_empty():
         _on_extraction_prepared(extraction_gate.pending)
     return true
+
+func _on_board_return_interacted(fact: Dictionary) -> void:
+    if str(fact.get("type", "")) != "hardware_board_return_requested":
+        return
+    var id: String = str(fact.get("region_id", ""))
+    if str(fact.get("run_id", "")) != current_run_id or current_mode != id.to_lower():
+        return
+    # Cleansing and every E receipt must be acknowledged before leaving a zone.
+    if not world_state.is_extraction_open(id) or not pending_world_receipts.is_empty():
+        return
+    _enter_motherboard()
+
+func _on_gpu_exit_interacted(_fact: Dictionary) -> void:
+    if current_mode != "gpu" or not world_state.is_extraction_open("GPU"):
+        return
+    extraction_gate.prepare("GPU")
 
 func _on_cpu_exit_interacted(_fact: Dictionary) -> void:
     if current_mode != "cpu" or not world_state.is_extraction_open("CPU"):
@@ -406,6 +495,10 @@ func _remove_active_level() -> void:
         remove_child(cpu_session)
         cpu_session.queue_free()
         cpu_session = null
+    if region_session != null:
+        remove_child(region_session)
+        region_session.queue_free()
+        region_session = null
 
 func _freeze_with_error(reason: String) -> void:
     last_error = reason
