@@ -4,6 +4,7 @@ const HubLayout = preload("res://scripts/rework/world/hub_layout.gd")
 const Motherboard = preload("res://scripts/rework/world/motherboard_layout.gd")
 const HubScene = preload("res://scenes/rework/world/defender_hub.tscn")
 const BoardScene = preload("res://scenes/rework/world/motherboard.tscn")
+const CPUScene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
 var failures: int = 0
 
 func check(ok: bool, why: String) -> void:
@@ -68,6 +69,51 @@ func _run() -> void:
         check(board_scene.confirm_intro_enemy_defeated(enemy["id"], "scene-"+str(enemy["id"])), "scene B integration hook")
     check(board_scene.request_gate_near_player(Motherboard.GATES["HDD"]["position"]).get("region_id", "") == "HDD", "scene gate dispatch")
     board_scene.queue_free()
+    # Executed by A's existing Linux/Windows rework CI list, even before A
+    # explicitly registers cpu_vertical_slice_smoke.gd as a separate job.
+    var live: Variant = CPUScene.instantiate()
+    root.add_child(live)
+    check(live.current_mode == "hub", "CPU preview enters walkable hub")
+    check(live.begin_preview_mission(42), "CPU dispatch creates valid seeded mission")
+    check(not live.board.board.gates_unlocked(), "live board locked before B hits")
+    for enemy in Motherboard.INTRO:
+        var actor: String = str(enemy["id"])
+        for hit in range(3):
+            if live.combat.enemies.has(actor):
+                live.combat._apply_hit(actor, "intro:%s:%d" % [actor, hit])
+        check(not live.combat.enemies.has(actor), "B damage defeats intro actor " + actor)
+    check(live.board.board.gates_unlocked(), "B combat unlocks all hardware")
+    live.player.global_position = Motherboard.GATES["CPU"]["position"] + Vector3.UP * 0.5
+    check(live.interact().get("region_id", "") == "CPU", "live CPU gate entered")
+    check(live.current_mode == "cpu", "physical CPU map loaded")
+    check(live.hardware.get_node_or_null("Geometry/WallCollisions") != null, "CPU wall collisions exist")
+    check(not live.world_state.is_extraction_open("CPU"), "live extraction initially locked")
+    live.player.global_position = live.hardware.objective_world("secure_core") + Vector3.UP * 0.5
+    check(live.interact().get("objective_id", "") == "secure_core", "physical core activation")
+    for i in range(2400):
+        live.cpu_session.tick_player(live.player.global_position)
+    check(live.cpu_session.objectives.progress["secure_core"]["completed"], "verified defense ticks")
+    live.player.global_position = live.hardware.objective_world("stop_intruders") + Vector3.UP * 0.5
+    check(live.interact().get("objective_id", "") == "stop_intruders", "physical intrusion activation")
+    check(live.combat.enemies.size() == 10, "ten spawned CPU actors")
+    for index in range(10):
+        var actor: String = "CPU-VIRUS-%02d" % index
+        for hit in range(3):
+            if live.combat.enemies.has(actor):
+                live.combat._apply_hit(actor, "cpu:%s:%d" % [actor, hit])
+        check(not live.combat.enemies.has(actor), "B damage confirms CPU enemy " + actor)
+    check(live.cpu_session.objectives.all_objectives_completed(), "two CPU objectives verified")
+    check(live.combat.enemies.has("CPU-BOSS"), "boss gated by both goals")
+    check(not live.world_state.is_extraction_open("CPU"), "exit stays locked before boss defeat")
+    for hit in range(25):
+        if live.combat.enemies.has("CPU-BOSS"):
+            live.combat._apply_hit("CPU-BOSS", "boss:%d" % hit)
+    check(live.world_state.is_extraction_open("CPU"), "B boss death clears CPU")
+    check(live.hardware.extraction_open, "physical extraction unlocked")
+    live.player.global_position = live.hardware.extraction_world() + Vector3.UP * 0.5
+    check(live.interact().get("type", "") == "hardware_extraction_requested", "physical exit activated")
+    check(live.current_mode == "hub", "demo ACK returns player to hub")
+    live.queue_free()
     if failures == 0:
         print("REWORK HUB/MAINBOARD PASS (terminals, intro gate lock, arbitrary hardware order)")
     quit(0 if failures == 0 else 1)
