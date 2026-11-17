@@ -51,7 +51,7 @@ func _complete_gpu(world: Variant) -> void:
         for trial in range(8):
             for frame in range(90):
                 world.region_session.tick_player(x if trial % 2 == 0 else z)
-    for i in range(8):
+    for i in range(world.region_session.wave_target_count):
         _kill(world, "GPU-OVERLOAD-%02d" % i)
     _kill(world, "GPU-BOSS")
 
@@ -63,8 +63,8 @@ func _complete_ram(world: Variant) -> void:
         var correct: int = world.region_session.real_slot
         var pad: Vector3 = world.region_session.pads[correct]["position"]
         check(bool(_activate(world, pad).get("authentic", false)), "RAM genuine checksum")
-    for i in range(8):
-        _kill(world, "RAM-MIRROR-%02d" % i)
+    for actor_id in world.region_session.known_hostiles.keys():
+        _kill(world, str(actor_id))
     _kill(world, "RAM-BOSS")
 
 func _complete_storage(world: Variant, id: String) -> void:
@@ -76,7 +76,7 @@ func _complete_storage(world: Variant, id: String) -> void:
         check(_activate(world, seal).get("objective_id", "") == "seal_transfer", "SSD seal")
         for frame in range(1800):
             world.region_session.tick_player(seal + Vector3.UP * 0.5)
-    var count: int = 10 if id == "SSD" else 12
+    var count: int = world.region_session.known_hostiles.size()
     for i in range(count):
         _kill(world, "%s-HOSTILE-%02d" % [id, i])
     _kill(world, id + "-BOSS")
