@@ -120,6 +120,7 @@ func _ready() -> void:
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("shard_collected", _on_shard_collected)
+    sim.connect("visual_event", _on_projectile_visual)
     sim.connect("wave_ready", _on_wave_ready)
     ui.connect("action_requested", _on_menu_action)
     ui.connect("software_card_requested", _on_card_selected)
@@ -200,6 +201,7 @@ func start_new_run() -> bool:
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("shard_collected", _on_shard_collected)
+    sim.connect("visual_event", _on_projectile_visual)
     sim.connect("wave_ready", _on_wave_ready)
     software.reset(_deployed_base())
     if persistence_enabled and not selected_archived_software.is_empty():
@@ -511,6 +513,25 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     if SectorCatalog.SECTORS.has(campaign.active_sector):
         if kind == str(SectorCatalog.SECTORS[campaign.active_sector]["boss"]):
             run_boss_kills += 1
+
+func _on_projectile_visual(kind: String, location: Vector2,
+        destination: Vector2, magnitude: float) -> void:
+    # CombatSim only tells the renderer what happened. This handler never
+    # applies damage/XP, advances a wave or changes the persisted score.
+    if mode != "combat":
+        return
+    match kind:
+        "impact":
+            legacy_audio.call("play_effect", "hit", 0.045)
+            visual_fx.call("add_burst", location, "impact")
+        "critical":
+            legacy_audio.call("play_effect", "hit", 0.045)
+            visual_fx.call("show_critical", destination)
+            visual_fx.call("add_burst", location, "impact")
+        "explosion":
+            visual_fx.call("add_explosion", location, magnitude)
+        "chain":
+            visual_fx.call("add_chain_arc", location, destination)
 
 func _on_shard_collected(value: int, player_location: Vector2) -> void:
     # C controls collision and point value; A only credits the existing
@@ -1110,6 +1131,7 @@ func resume_checkpoint() -> bool:
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
     sim.connect("shard_collected", _on_shard_collected)
+    sim.connect("visual_event", _on_projectile_visual)
     sim.connect("wave_ready", _on_wave_ready)
     run_kills = int(cp.run_kills)
     run_boss_kills = int(cp.run_boss_kills)
