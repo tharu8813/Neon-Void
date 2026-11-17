@@ -476,6 +476,11 @@ func _test_mission_checkpoint(root_dir: String) -> void:
         "saved offer is inspectable but does not authorize unapproved resumption")
     check(after_offer.reward_snapshot.offer.cards[1].plugin_id == "plugin_beta",
         "reload displays the same second card, not a fresh draw")
+    var ui_copy: Dictionary = after_offer.reward_snapshot.duplicate(true)
+    ui_copy.offer.cards[1].plugin_id = "malicious_ui_only"
+    check(Gateway.inspect_slot(slot).reward_snapshot.offer.cards[1].plugin_id ==
+        "plugin_beta", "UI can never mutate the authoritative saved offer snapshot")
+
     var missing: Dictionary = Gateway.reconcile_receipt(slot,
         "checkpoint-vaccine", 1, "run-checkpoint", "run-checkpoint:1:1",
         "run-checkpoint:1")
