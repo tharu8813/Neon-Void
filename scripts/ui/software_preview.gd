@@ -32,6 +32,7 @@ const COMPLEMENTS := {
 static func _display_number(stat: String, number: float) -> String:
 	if stat == "lifesteal":
 		number *= 0.5 # Legacy kill recovery is lifesteal * 0.5.
+		return "%.2f" % number # Small heals must not be rounded to zero.
 	if stat in PERCENT_STATS:
 		return "%.0f%%" % (number * 100.0)
 	if stat in INTEGER_STATS:
