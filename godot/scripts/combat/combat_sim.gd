@@ -5,6 +5,8 @@ signal wave_ready(boss_defeated: bool)
 signal enemy_died(enemy_id: int, kind: String)
 signal player_hit(damage: float, infection: float)
 signal shard_collected(value: int, location: Vector2)
+## Pure presentation signal; no effect on combat state or stored events.
+signal visual_event(kind: String, position: Vector2, destination: Vector2, magnitude: float)
 
 const Rules = preload("res://scripts/combat/combat_rules.gd")
 const Catalog = preload("res://scripts/enemies/enemy_catalog.gd")
@@ -420,6 +422,7 @@ func _on_bullet_hit(bullet: Dictionary, enemy: Dictionary) -> void:
     var crit: bool = rng.randf() < float(bullet["crit"])
     var raw: float = float(bullet["damage"]) * (2.0 if crit else 1.0)
     damage_enemy(int(enemy["id"]), raw, float(bullet["pen"]), false, Vector2(bullet["vel"]) * 0.02)
+    visual_event.emit("critical" if crit else "impact", bullet["pos"], enemy["pos"], raw)
     var stats: Dictionary = player["stats"]
     if float(stats["life_on_hit"]) > 0.0:
         player["hp"] = minf(float(player["max_hp"]), float(player["hp"]) + float(stats["life_on_hit"]))
@@ -430,12 +433,14 @@ func _on_bullet_hit(bullet: Dictionary, enemy: Dictionary) -> void:
         if float(stats["toxin_chance"]) > 0.0 and rng.randf() < float(stats["toxin_chance"]):
             Rules.add_dot(victim["statuses"], "toxin", float(stats["toxin_dps"]), 5.0 * float(stats["effect_duration"]))
     if float(bullet["explode"]) > 0.0:
+        visual_event.emit("explosion", bullet["pos"], bullet["pos"], float(bullet["explode"]))
         for target in enemies.duplicate():
             if Vector2(target["pos"]).distance_to(bullet["pos"]) < float(bullet["explode"]) + float(target["radius"]):
                 damage_enemy(int(target["id"]), float(bullet["damage"]) * 0.55)
     if int(bullet["chain"]) > 0:
         var nearest: Dictionary = nearest_enemy(bullet["pos"], 190.0, int(enemy["id"]))
         if not nearest.is_empty():
+            visual_event.emit("chain", bullet["pos"], nearest["pos"], 0.12)
             damage_enemy(int(nearest["id"]), float(bullet["damage"]) * 0.5 * int(bullet["chain"]))
     if int(bullet["pierce"]) > 0:
         bullet["pierce"] = int(bullet["pierce"]) - 1
