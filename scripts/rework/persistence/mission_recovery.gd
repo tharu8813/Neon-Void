@@ -5,6 +5,7 @@ const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
+const Observation = preload("res://scripts/rework/progression/combat_observation.gd")
 
 static func _blocked(reason: String, revision: int = -1) -> Dictionary:
     return {"ok": false, "revision": revision, "reason": reason,
@@ -25,7 +26,8 @@ static func inspect_slot(slot_path: String) -> Dictionary:
         "mission_snapshot": null, "reward_snapshot": null,
         "terminal_snapshot": null, "checkpoint_present": false,
         "map_offer_checkpoint_ready": false,
-        "combat_runtime_checkpoint_present": false
+        "combat_runtime_checkpoint_present": false,
+        "combat_observation_snapshot": null
     }
     if data.vaccine == null:
         response.state = "vaccine_selection"
@@ -40,6 +42,9 @@ static func inspect_slot(slot_path: String) -> Dictionary:
     response.safe_to_resume = false
     response.requires_user_action = true
     response.mission_snapshot = mission.duplicate(true)
+    response.combat_runtime_checkpoint_present = mission.environment_rolls.has(Observation.KEY)
+    if response.combat_runtime_checkpoint_present:
+        response.combat_observation_snapshot = mission.environment_rolls[Observation.KEY].duplicate(true)
     var checkpoint: Dictionary = Checkpoint.view(mission)
     if not checkpoint.get("ok", false):
         response.reason = "invalid_checkpoint"
