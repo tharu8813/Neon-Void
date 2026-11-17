@@ -68,6 +68,14 @@ func interact_at(player_world: Vector3) -> Dictionary:
         return {}
     var p := Vector2(player_world.x, player_world.z)
     if extraction_open:
+        var start := spawn_world()
+        if p.distance_to(Vector2(start.x, start.z)) <= 0.75:
+            var return_fact := {
+                "schema": 1, "type": "hardware_board_return_requested",
+                "run_id": run_id, "region_id": region_id
+            }
+            interaction_requested.emit(return_fact.duplicate(true))
+            return return_fact
         var ex := extraction_world()
         if p.distance_to(Vector2(ex.x, ex.z)) <= 1.15:
             var fact := {
@@ -78,7 +86,7 @@ func interact_at(player_world: Vector3) -> Dictionary:
             return fact
     for objective in map_plan.get("objectives", []):
         var id: String = str(objective["id"])
-        if bool(goal_activated.get(id, false)):
+        if bool(goal_completed.get(id, false)) or (region_id == "CPU" and bool(goal_activated.get(id, false))):
             continue
         var place: Vector3 = objective["world"]
         if p.distance_to(Vector2(place.x, place.z)) <= 1.1:
@@ -127,9 +135,17 @@ func _build() -> void:
     var wall_mesh := BoxMesh.new()
     wall_mesh.size = Vector3(tile_size, 1.5, tile_size)
     var floor_mat := StandardMaterial3D.new()
-    floor_mat.albedo_color = Color(0.06, 0.20, 0.30) if region_id == "CPU" else Color(0.12, 0.13, 0.26)
+    var themes: Dictionary = {
+        "CPU": [Color(0.06, 0.20, 0.30), Color(0.10, 0.12, 0.22)],
+        "GPU": [Color(0.29, 0.08, 0.10), Color(0.37, 0.13, 0.07)],
+        "RAM": [Color(0.14, 0.10, 0.30), Color(0.18, 0.13, 0.34)],
+        "SSD": [Color(0.06, 0.25, 0.22), Color(0.08, 0.30, 0.28)],
+        "HDD": [Color(0.17, 0.18, 0.20), Color(0.30, 0.27, 0.21)]
+    }
+    var palette: Array = themes.get(region_id, themes["CPU"])
+    floor_mat.albedo_color = palette[0]
     var wall_mat := StandardMaterial3D.new()
-    wall_mat.albedo_color = Color(0.10, 0.12, 0.22)
+    wall_mat.albedo_color = palette[1]
     var floors: Array[Transform3D] = []
     var walls: Array[Transform3D] = []
     var solid := StaticBody3D.new()
@@ -164,6 +180,9 @@ func _build() -> void:
     for objective in map_plan["objectives"]:
         _marker(holder, str(objective["id"]), objective["world"], Color(1.0, 0.8, 0.25))
     _marker(holder, "BOSS", boss_world(), Color(1.0, 0.25, 0.3))
+    # Distinct return path allows clearing the next hardware without ending the
+    # mission; this pad is not interactive until this hardware is cleansed.
+    _marker(holder, "BOARD RETURN AFTER CLEAR", spawn_world(), Color(0.26, 0.65, 1.0))
 
 func _draw_instances(parent: Node3D, name: String, mesh: Mesh, material: Material,
         transforms: Array[Transform3D]) -> void:
