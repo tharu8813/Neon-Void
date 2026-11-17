@@ -60,7 +60,7 @@ func _run() -> void:
     check(bool(snapshot.get("ok", false))
         and int(snapshot["snapshot"]["vaccine"]["mission"]["pending_plugin_offers"]) == 1,
         "thirteen enemy receipts generate one durable level-up offer")
-    var popup: Node = pilot.get("offer_panel") as Node
+    var popup: Control = pilot.get("offer_panel") as Control
     check(popup != null and popup.visible, "C three-card selection shown")
     check(paused, "gameplay paused for reward selection")
     pilot.call("_choose_card", 0)
