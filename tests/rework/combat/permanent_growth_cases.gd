@@ -100,6 +100,14 @@ static func run(check: Callable, root: Node) -> void:
     var penetration: float = float(Damage.calculate(enhanced,
         dummy, {"damage_type":"physical","base_damage":10.0})["calculated_damage"])
     check.call(penetration > normal, "E physical penetration changes B resistance calculation")
+    var restored: Dictionary = Growth.compile(Stats.make(), {})
+    check.call(bool(restored.get("ok", false)) and
+        _near(float(restored["stats"]["attack_damage"]),5.0),
+        "free respec to no investments restores baseline AD")
+    check.call(float(Damage.calculate(Stats.make({"crit_multiplier":1.24}),
+        Stats.make(), {"damage_type":"true","base_damage":10.0,
+        "can_crit":true}, true)["calculated_damage"]) > 12.0,
+        "crit damage multiplier investment is a ratio, not raw damage")
     check.call(Registry.validate_loadout(["nv_skill_arc_pulse"],
         ["nv_skill_arc_pulse", "nv_skill_arc_pulse"]).get("ok") == false,
         "duplicate skill slots rejected")
@@ -125,6 +133,8 @@ static func run(check: Callable, root: Node) -> void:
     var receipt_index: int = 0
     var actions: Array[Dictionary] = [
         {"action":"reallocate_stats", "allocations": increments},
+        {"action":"reallocate_stats", "allocations": {}},
+        {"action":"reallocate_stats", "allocations": increments},
         {"action":"learn_skill","skill_id":"nv_skill_arc_pulse"},
         {"action":"learn_skill","skill_id":"nv_skill_penetrator"},
         {"action":"learn_skill","skill_id":"nv_skill_root_packet"},
@@ -142,6 +152,12 @@ static func run(check: Callable, root: Node) -> void:
         var ack: Dictionary = Gateway.transact_command(slot, command)
         check.call(bool(ack.get("applied", false)),
             "E durable command ACK: " + str(command["action"]))
+        if str(command["action"]) == "reallocate_stats" and (
+                command["allocations"].is_empty()):
+            var respec_readback: Dictionary = Gateway.snapshot(slot)
+            check.call(bool(respec_readback.get("ok", false)) and
+                respec_readback["snapshot"]["vaccine"]["invested_stats"].is_empty(),
+                "E committed free respec clears investment before new allocation")
     var approved: Dictionary = Gateway.snapshot(slot)
     check.call(bool(approved.get("ok", false)), "B consumes E disk readback")
     if not bool(approved.get("ok", false)):
@@ -208,6 +224,8 @@ static func run(check: Callable, root: Node) -> void:
         "E-approved pulse skill generates live B cast event")
     check.call(float(battle.skill_snapshot()["mana"]) < mana_before,
         "real skill consumes mana in B 60Hz controller")
+    check.call(int(battle.skill_snapshot()["slots"][0]["remaining_cooldown_ticks"]) == 82,
+        "10 E ability haste reduces 90-tick draft cooldown to 82 fixed ticks")
     var impact: bool = false
     for note in _advance(battle, 20, -2):
         if str(note.get("kind","")) == "skill_impact":
@@ -225,6 +243,25 @@ static func run(check: Callable, root: Node) -> void:
     var status_post: Dictionary = battle.simulation.snapshot("E")["status_state"]
     check.call(status_post.get("statuses", []).size() > status_pre.get("statuses", []).size(),
         "third registered skill applies real B enemy rooted status on hit")
+    var remaining: int = int(battle.skill_snapshot()["slots"][0][
+        "remaining_cooldown_ticks"])
+    _advance(battle, remaining, -2)
+    var recast_notes: Array = _advance(battle, 1, 0)
+    check.call(recast_notes.any(func(note: Dictionary) -> bool:
+        return str(note.get("kind", "")) == "skill_cast"),
+        "after haste-adjusted cooldown the same real active skill casts again")
+    var Effects = preload("res://scripts/rework/combat/statuses.gd")
+    Effects.apply(battle.simulation.actors["VACCINE"]["status_state"],
+        {"id":"test_silence","flags":["silenced"],"duration_ticks":3})
+    var silenced: Array = _advance(battle, 1, 1)
+    check.call(silenced.any(func(note: Dictionary) -> bool:
+        return str(note.get("reason", "")) == "control_blocked"),
+        "silence blocks another authorized real skill without spending mana")
+    _advance(battle, 3, -2)
+    var after_silence: Array = _advance(battle, 1, 1)
+    check.call(after_silence.any(func(note: Dictionary) -> bool:
+        return str(note.get("kind", "")) == "skill_cast"),
+        "skill becomes available after silence expires")
     battle.reset()
     check.call(battle.authorized_growth_snapshot().is_empty(),
         "region reset clears previous encounter's authorized build and temporary effects")
