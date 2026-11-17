@@ -54,6 +54,20 @@ static func run(check: Callable) -> void:
     check.call(rest.size() == 1 and bus.pending.is_empty() and
         int(bus.metrics["cycle_blocked"]) == 1,
         "deferred multi-step chain resolves with cycle excluded")
+    var global_bus = Events.new()
+    global_bus.set_tick(10)
+    var global_one: Dictionary = global_bus.submit_root({
+        "actor_id": "A1", "target_id": "E", "kind": "damage"})
+    check.call(not global_bus.submit_proc(global_one, "global_effect", {
+        "actor_id": "A1", "target_id": "E",
+        "cooldown_scope": "global"}, 30).is_empty(),
+        "first globally scoped ICD allowed")
+    var global_two: Dictionary = global_bus.submit_root({
+        "actor_id": "A2", "target_id": "E", "kind": "damage"})
+    check.call(global_bus.submit_proc(global_two, "global_effect", {
+        "actor_id": "A2", "target_id": "E",
+        "cooldown_scope": "global"}, 30).is_empty(),
+        "global ICD blocks different actor until cooldown expires")
     var combat = Runtime.new(99, {"encounter_id": "unit"})
     check.call(combat.register_actor("P", "vaccine", Vector3.ZERO,
         {"attack_damage": 5.0, "attack_speed": 2.0},
@@ -129,6 +143,15 @@ static func run(check: Callable) -> void:
     check.call(_close(float(combo.snapshot("E1")["stats"]["health"]), 25.0) and
         _close(float(combo.snapshot("E2")["stats"]["health"]), 24.0),
         "basic hit -> lightning -> explosion multi-stage live damage")
+    var no_chain: Dictionary = lightning.duplicate(true)
+    no_chain["proc_permissions"]["can_trigger_on_hit_effects"] = false
+    var gated: Array[Dictionary] = Plugins.requests_for([no_chain], {
+        "kind": "damage", "trigger_kind": "on_hit", "actor_id": "P",
+        "target_id": "E1", "source_tags": ["basic_attack", "projectile_hit"],
+        "actual_damage": 5.0})
+    check.call(gated.size() == 1 and
+        gated[0]["event"]["allowed_proc_triggers"].is_empty(),
+        "C can_trigger_on_hit_effects=false denies downstream proc rights")
     var count_metadata: Dictionary = {
         "plugin_id": "threshold", "trigger": {"event": "on_hit_proc_count",
             "source_tags": []}, "trigger_after_hits": 4,

@@ -5,6 +5,7 @@ extends RefCounted
 ## Legal A(target 1) -> A(target 2), multi-source effects and new roots are permitted.
 var pending: Array[Dictionary] = []
 var processed_ids: Dictionary = {}
+var pending_head: int = 0
 var seen_collision_targets: Dictionary = {}
 var last_proc_tick: Dictionary = {}
 var next_sequence: int = 0
@@ -45,7 +46,7 @@ func _queue(event: Dictionary) -> Dictionary:
     event["event_id"] = _new_id()
     pending.append(event)
     metrics["accepted"] += 1
-    metrics["max_pending"] = maxi(int(metrics["max_pending"]), pending.size())
+    metrics["max_pending"] = maxi(int(metrics["max_pending"]), pending.size() - pending_head)
     return event
 
 func retire_hit_key(hit_key: String) -> void:
@@ -78,7 +79,9 @@ func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd
         metrics["cycle_blocked"] += 1
         return {}
     var clock: int = int(parent.get("tick", current_tick))
-    var icd_key: String = effect_id + "|" + actor + "|" + str(event.get("icd_scope_key", target))
+    var scope: String = str(event.get("cooldown_scope", "per_target"))
+    var icd_key: String = effect_id + "|global" if scope == "global" else (
+        effect_id + "|" + actor + "|" + str(event.get("icd_scope_key", target)))
     if icd_ticks > 0 and last_proc_tick.has(icd_key):
         if clock - int(last_proc_tick[icd_key]) < icd_ticks:
             metrics["icd_blocked"] += 1
@@ -104,8 +107,9 @@ func drain_batch(max_events: int, handler: Callable = Callable()) -> Array[Dicti
     ## Any overflow remains pending with its ancestry and order preserved.
     ## -1 means exhaust all; no fixed gameplay maximum chain depth.
     var processed: Array[Dictionary] = []
-    while not pending.is_empty() and (max_events < 0 or processed.size() < max_events):
-        var event: Dictionary = pending.pop_front()
+    while pending_head < pending.size() and (max_events < 0 or processed.size() < max_events):
+        var event: Dictionary = pending[pending_head]
+        pending_head += 1
         var event_id: String = str(event.get("event_id", ""))
         if processed_ids.has(event_id):
             continue

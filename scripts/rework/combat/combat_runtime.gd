@@ -200,12 +200,18 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
         "infinite_pierce": bool(Statuses.active_flags(actor["status_state"]).get("infinite_pierce", false)),
         "attack": attack.duplicate(true), "source_tags": tags.duplicate(),
         "allowed_proc_triggers": overrides.get("allowed_proc_triggers",
-            ["on_hit", "on_crit"] if tags.has("basic_attack") or tags.has("skill_damage") else []).duplicate()
+            ["on_hit", "on_crit"] if tags.has("basic_attack") or tags.has("skill_damage") else []).duplicate(),
+        "on_hit_damage_efficiency": float(overrides.get("on_hit_damage_efficiency", 1.0))
     })
     projectiles.append(projectile)
     counters["shots"] += 1
     presentation.append({"kind": "projectile_spawn", "id": id,
         "position": projectile["position"], "velocity": velocity})
+    if tags.has("basic_attack"):
+        bus.submit_root({"kind": "basic_attack", "trigger_kind": "basic_attack",
+            "actor_id": actor_id, "target_id": _closest_opponent(actor_id),
+            "attack_id": id, "source_tags": tags.duplicate(),
+            "allowed_proc_triggers": ["basic_attack"]})
     return id
 
 func _fire_if_ready(actor_id: String, aim: Vector2) -> void:
@@ -213,12 +219,14 @@ func _fire_if_ready(actor_id: String, aim: Vector2) -> void:
     var stats: Dictionary = _effective_stats(actor)
     actor["fire_credit"] = float(actor["fire_credit"]) + maxf(0.0,
         float(stats.get("attack_speed", 0.0))) * DT
-    if not Statuses.action_allowed(actor["status_state"], "attack", status_rng):
+    if bool(Statuses.active_flags(actor["status_state"]).get("stopped", false)):
         actor["fire_credit"] = minf(float(actor["fire_credit"]), 1.0)
         return
     while float(actor["fire_credit"]) >= 1.0:
-        _spawn(actor_id, aim, actor["attack_definition"])
         actor["fire_credit"] = float(actor["fire_credit"]) - 1.0
+        # Malfunction failure is rolled ONCE per shot attempt, not once per tick.
+        if Statuses.action_allowed(actor["status_state"], "attack", status_rng):
+            _spawn(actor_id, aim, actor["attack_definition"])
 
 func _move(actor_id: String, direction: Vector2, velocity_scale: float = 1.0) -> void:
     var actor: Dictionary = actors[actor_id]
@@ -260,6 +268,9 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
             actor["position"] = pos + Vector3(step.x, 0.0, step.y) * float(dash["distance"])
             presentation.append({"kind": "dash", "actor_id": actor_id,
                 "from": pos, "to": actor["position"]})
+            bus.submit_root({"kind": "dash", "trigger_kind": "dash",
+                "actor_id": actor_id, "target_id": _closest_opponent(actor_id),
+                "source_tags": ["dash"], "allowed_proc_triggers": ["dash"]})
     _move(actor_id, direction)
     if bool(actor["player_controlled"]) and input.has("skill_slot"):
         var control: Dictionary = Statuses.active_flags(actor["status_state"])
@@ -306,6 +317,7 @@ func _step_projectiles() -> void:
                 "actor_id": str(p["actor_id"]), "target_id": victim,
                 "attack_id": "projectile", "hit_key": p["hit_key"],
                 "attack": p["attack"], "source_tags": p["source_tags"],
+                "on_hit_damage_efficiency": p["on_hit_damage_efficiency"],
                 "allowed_proc_triggers": p["allowed_proc_triggers"]
             })
             if root.is_empty():
@@ -335,7 +347,12 @@ func _select_command_target(actor_id: String, current_id: String,
     var policy: String = str(command.get("target_policy", "current"))
     if policy == "nearest_other_enemy":
         var pos: Vector3 = actors[current_id]["position"] if actors.has(current_id) else Vector3.INF
-        return _closest_opponent(actor_id, pos, current_id)
+        var chosen: String = _closest_opponent(actor_id, pos, current_id)
+        if chosen.is_empty() or not command.has("max_range") or not actors.has(current_id):
+            return chosen
+        var destination: Vector3 = actors[chosen]["position"]
+        var dxz: Vector2 = Vector2(destination.x - pos.x, destination.z - pos.z)
+        return chosen if dxz.length() <= maxf(0.0, float(command["max_range"])) else ""
     if policy == "self":
         return actor_id
     return str(command.get("target_id", current_id))
@@ -345,7 +362,7 @@ func _resolve_event(event: Dictionary) -> Array:
     var actor_id: String = str(event.get("actor_id", ""))
     var target_id: String = str(event.get("target_id", ""))
     var commands: Array = []
-    if kind == "skill_cast" or kind == "dash":
+    if kind in ["skill_cast", "dash", "periodic", "basic_attack", "kill", "damage_taken"]:
         commands.append_array(_plugin_requests(event))
         return commands
     if kind in ["status", "stat_modifier", "heal", "spawn_projectile"]:
@@ -438,6 +455,15 @@ func _resolve_event(event: Dictionary) -> Array:
         counters["killed"] += 1
         presentation.append({"kind": "death", "actor_id": target_id,
             "killer_id": actor_id, "event_id": event["event_id"]})
+        bus.submit_root({"kind": "kill", "trigger_kind": "kill",
+            "actor_id": actor_id, "target_id": target_id,
+            "source_tags": ["kill"], "allowed_proc_triggers": ["kill"]})
+    bus.submit_root({"kind": "damage_taken", "trigger_kind": "damage_taken",
+        "actor_id": target_id, "target_id": actor_id,
+        "source_tags": ["damage_taken"],
+        "health_fraction": float(defender["stats"]["health"]) /
+            maxf(0.00001, float(defender["stats"]["max_health"])),
+        "allowed_proc_triggers": ["damage_taken"]})
     commands.append_array(_plugin_requests(event))
     return commands
 
@@ -451,6 +477,10 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
         if not bool(actor["alive"]):
             continue
         actor["skills"].tick()
+        if not actor["plugins"].is_empty():
+            bus.submit_root({"kind": "periodic", "trigger_kind": "periodic",
+                "actor_id": str(actor_id), "target_id": str(actor_id),
+                "source_tags": ["periodic"], "allowed_proc_triggers": ["periodic"]})
         var status_result: Dictionary = Statuses.tick(actor["status_state"])
         _heal(str(actor_id), float(status_result["healing_request"]))
         for dot in status_result["damage_requests"]:

@@ -10,7 +10,14 @@ const MATCHED_EVENTS: Dictionary = {
     "on_hit_proc_count": "on_hit",
     "health_threshold": "damage_taken",
     "periodic": "periodic",
-    "mobility_or_reveal": "dash"
+    "mobility_or_reveal": "dash",
+    "dash": "dash",
+    "dash_or_blink": "dash",
+    "kill": "kill",
+    "passive_and_damage_taken": "damage_taken",
+    "on_hit_proc": "on_hit",
+    "on_hit_proc_or_kill": "on_hit",
+    "basic_attack": "basic_attack"
 }
 static func requests_for(owned_plugins: Array, event: Dictionary, counters: Dictionary = {}) -> Array[Dictionary]:
     var result: Array[Dictionary] = []
@@ -25,8 +32,17 @@ static func requests_for(owned_plugins: Array, event: Dictionary, counters: Dict
         var plugin_id: String = str(item.get("plugin_id", ""))
         var trigger: Dictionary = item.get("trigger", {})
         var catalog_kind: String = str(trigger.get("event", ""))
-        if str(MATCHED_EVENTS.get(catalog_kind, "")) != trigger_kind:
+        var expected: String = str(MATCHED_EVENTS.get(catalog_kind, ""))
+        if expected != trigger_kind and not (
+                catalog_kind == "on_hit_proc_or_kill" and trigger_kind == "kill"):
             continue
+        if catalog_kind in ["on_hit_proc", "on_hit_proc_or_kill"] and (
+                trigger_kind == "on_hit" and not tags.has("proc_damage")):
+            continue
+        if catalog_kind == "health_threshold":
+            var threshold: float = float(trigger.get("health_below_fraction", -1.0))
+            if threshold < 0.0 or float(event.get("health_fraction", 1.0)) > threshold:
+                continue
         if trigger_kind == "on_hit" and event_kind != "damage":
             continue
         if trigger_kind == "on_hit" and float(event.get("actual_damage", 0.0)) <= 0.0:
@@ -56,6 +72,9 @@ static func requests_for(owned_plugins: Array, event: Dictionary, counters: Dict
             if counted < needed:
                 continue
         var permissions: Dictionary = item.get("proc_permissions", {})
+        var downstream: Array = []
+        if bool(permissions.get("can_trigger_on_hit_effects", false)):
+            downstream = permissions.get("allowed_proc_triggers", []).duplicate()
         var commands: Array = item.get("effect_commands", [])
         for index in range(commands.size()):
             if not (commands[index] is Dictionary):
@@ -71,11 +90,15 @@ static func requests_for(owned_plugins: Array, event: Dictionary, counters: Dict
                 "attack_id": str(event.get("attack_id", "")),
                 "trigger_kind": trigger_kind,
                 "source_tags": ["plugin", "proc_damage"] if action == "damage" else ["plugin"],
-                "allowed_proc_triggers": permissions.get("allowed_proc_triggers", []).duplicate(),
+                "allowed_proc_triggers": downstream.duplicate(),
+                "on_hit_damage_efficiency": float(
+                    permissions.get("on_hit_damage_efficiency", 1.0)),
                 "command": command.duplicate(true),
-                "proc_damage_efficiency": float(permissions.get("on_hit_damage_efficiency", 1.0))
+                "proc_damage_efficiency": float(
+                    event.get("on_hit_damage_efficiency", 1.0))
             }
             var scope: String = str(item.get("cooldown_scope", "none"))
+            payload["cooldown_scope"] = scope
             if scope == "per_actor" or scope == "global":
                 payload["icd_scope_key"] = actor if scope == "per_actor" else "global"
             var seconds: Variant = item.get("internal_cooldown_seconds", null)

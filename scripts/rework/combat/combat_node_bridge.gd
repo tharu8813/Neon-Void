@@ -94,6 +94,8 @@ func advance_one_tick() -> Array[Dictionary]:
     return notices
 
 func _sync_projectile_visuals() -> void:
+    if not projectile_factory.is_valid() and visual_nodes.is_empty():
+        return
     var active: Dictionary = {}
     for projectile in simulation.projectile_snapshots():
         var id: String = str(projectile["id"])

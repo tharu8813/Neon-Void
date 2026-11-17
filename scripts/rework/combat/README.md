@@ -96,3 +96,11 @@ sim.register_actor("virus", "enemy", Vector3(5,0,0), {}, {})
 var notices = sim.step_fixed({"vaccine": {"move": Vector2.RIGHT,
     "aim_world": Vector3(5,0,0), "fire": true}})
 ```
+
+### P2 event coverage / performance details
+- B now emits `basic_attack` on firing, `dash` on successful movement dash, `periodic` only for actors carrying plugins, `damage_taken` with post-hit `health_fraction`, and `kill` once on a lethal HP transition. Critical hits appear as `critical=true` on `hit` presentation events and processed damage records; C can filter by this field.
+- C trigger naming covers `projectile_hit, damage_dealt, skill_damage, skill_cast, on_hit_proc_count, health_threshold, periodic, mobility_or_reveal, dash, dash_or_blink, kill, passive_and_damage_taken, on_hit_proc, on_hit_proc_or_kill, basic_attack`. `passive` uses numeric passive offsets. `on_acquire` awaits E's exactly-once claim to avoid duplicate acquisition rewards.
+- Every on-hit proc has opt-in rights from C's `can_trigger_on_hit_effects`. Numeric `on_hit_damage_efficiency` of a plugin bullet modifies the *resulting downstream proc damage*, not the original bonus projectile damage. C must supply target radius/range and trigger threshold data explicitly; no invented defaults from Korean summaries.
+- `Events.drain_batch` keeps a queue cursor to avoid quadratic `pop_front` overhead. Its per-tick quota only shifts processing to later frames and never discards overflow. Collision broadphase returns stable actor ID order, then sorts swept hit fractions, independent of rendering order.
+- C action `damage` with `target_policy=nearest_other_enemy` may optionally supply `max_range` in world units. No map wall line-of-sight test is claimed: D/A needs a physics query before enabling area effects through closed terrain.
+- Enemy steering is a simple chase/retreat range policy, not a navmesh solver. A/D provides collision/nav and enemy geometry for production. Continuous projectile math covers dynamic XZ actor circles but not 3D wall/mesh intersection.
