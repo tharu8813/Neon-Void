@@ -58,7 +58,7 @@ func _run() -> void:
     for name in legacy_names:
         var path: String = legacy.path_join(name)
         _write(path, "{\"synthetic\":\"" + name + "\"}\n")
-        original[name] = _bytes(path).sha256_text()
+        original[name] = _bytes(path).hex_encode().sha256_text()
 
     var state: Dictionary = Model.new_slot("synthetic", "vaccine-1",
         {"mission_xp_step": 40})
@@ -130,7 +130,7 @@ func _run() -> void:
 
     # Four or five preceding file names remain byte-identical, regardless of failures.
     for name in legacy_names:
-        check(_bytes(legacy.path_join(name)).sha256_text() == original[name],
+        check(_bytes(legacy.path_join(name)).hex_encode().sha256_text() == original[name],
             "legacy synthetic file unchanged: " + name)
 
     var current: PackedByteArray = _bytes(slot.path_join("state.json"))
