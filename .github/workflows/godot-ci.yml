@@ -119,6 +119,7 @@ jobs:
             tests/rework/integration/pilot_mission_result_smoke.gd
             tests/rework/integration/pilot_status_effects_smoke.gd
             tests/rework/integration/pilot_responsive_ui_smoke.gd
+            tests/rework/integration/a_verified_growth_skill_world_smoke.gd
           )
           count=0
           failures=0
@@ -170,7 +171,8 @@ jobs:
             'tests/rework/integration/pilot_mission_tracker_smoke.gd',
             'tests/rework/integration/pilot_mission_result_smoke.gd',
             'tests/rework/integration/pilot_status_effects_smoke.gd',
-            'tests/rework/integration/pilot_responsive_ui_smoke.gd'
+            'tests/rework/integration/pilot_responsive_ui_smoke.gd',
+            'tests/rework/integration/a_verified_growth_skill_world_smoke.gd'
           )
           $count = 0
           $failures = 0
