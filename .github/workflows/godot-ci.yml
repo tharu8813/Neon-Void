@@ -112,6 +112,9 @@ jobs:
             tests/rework/integration/pilot_recovery_view_smoke.gd
             tests/rework/integration/hardware_checkpoint_contract_smoke.gd
             tests/rework/integration/live_hardware_entry_smoke.gd
+            tests/rework/integration/pilot_tactical_hud_smoke.gd
+            tests/rework/integration/pilot_reward_card_ux_smoke.gd
+            tests/rework/integration/hub_management_ui_smoke.gd
           )
           count=0
           failures=0
@@ -156,7 +159,10 @@ jobs:
             'tests/rework/integration/rare_bonus_pilot_smoke.gd',
             'tests/rework/integration/pilot_recovery_view_smoke.gd',
             'tests/rework/integration/hardware_checkpoint_contract_smoke.gd',
-            'tests/rework/integration/live_hardware_entry_smoke.gd'
+            'tests/rework/integration/live_hardware_entry_smoke.gd',
+            'tests/rework/integration/pilot_tactical_hud_smoke.gd',
+            'tests/rework/integration/pilot_reward_card_ux_smoke.gd',
+            'tests/rework/integration/hub_management_ui_smoke.gd'
           )
           $count = 0
           $failures = 0
