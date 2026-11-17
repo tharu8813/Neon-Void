@@ -65,6 +65,12 @@ func _run() -> void:
 	if not _check(first.levels[chosen["plugin_id"]] == 1, "single inventory entry"):
 		return
 
+	var other_run = Offers.new()
+	if not _check(other_run.begin_mission(9891, {}, "run-other") and offer["offer_id"] != other_run.roll_offer(ctx)["offer_id"], "mission-scoped receipt namespace"):
+		return
+	var scoped_replay = Offers.new()
+	if not _check(scoped_replay.begin_mission(9891, {}, "run-other") and scoped_replay.roll_offer(ctx)["cards"] == replay["cards"], "run_id does not change gameplay RNG"):
+		return
 	var seen_different: bool = false
 	var seen_same: bool = false
 	for i in range(120):

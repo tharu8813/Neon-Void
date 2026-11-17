@@ -8,6 +8,7 @@ var _catalog: Array[Dictionary] = []
 var _settings: Dictionary = {}
 var _started: bool = false
 var _seed: int = 0
+var _run_id: String = ""
 var _offer_sequence: int = 0
 var _pending: Dictionary = {}
 var levels: Dictionary = {}
@@ -22,7 +23,7 @@ func _init(custom_entries: Array[Dictionary] = [], custom_settings: Dictionary =
 	if not _settings.has("rarity_weights") or not _settings.has("modifiers") or not _settings.has("pity"):
 		validation_errors.append("Missing odds settings")
 
-func begin_mission(seed_value: int, initial_levels: Dictionary = {}) -> bool:
+func begin_mission(seed_value: int, initial_levels: Dictionary = {}, run_id: String = "") -> bool:
 	if not validation_errors.is_empty():
 		return false
 	for uid in initial_levels:
@@ -31,6 +32,7 @@ func begin_mission(seed_value: int, initial_levels: Dictionary = {}) -> bool:
 		if entry.is_empty() or typeof(value) != TYPE_INT or value < 0 or value > int(entry["max_level"]):
 			return false
 	_seed = seed_value
+	_run_id = run_id if not run_id.is_empty() else str(seed_value)
 	_rng.seed = seed_value
 	_started = true
 	_offer_sequence = 0
@@ -78,7 +80,7 @@ func roll_offer(context: Dictionary = {}) -> Dictionary:
 		cards.append(card)
 		high_seen = high_seen or _is_high(card)
 	_pending = {
-		"offer_id": str(_seed) + ":" + str(_offer_sequence),
+		"offer_id": _run_id + ":" + str(_offer_sequence),
 		"context": safe_context,
 		"cards": cards,
 		"high_seen": high_seen
