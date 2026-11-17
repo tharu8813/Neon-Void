@@ -641,11 +641,13 @@ func _hud_snapshot() -> Dictionary:
         "hp": actor.get("hp"), "maxhp": actor.get("max_hp"),
         "mana": actor.get("mana"), "maxmana": actor.get("max_mana"),
         "dash_charges": actor.get("charges"), "dash_max": actor.get("dash_max"),
+        "charge_t": actor.get("charge_t"), "dash_cd": actor.get("dash_cd"),
+        "guard_t": state.get("guard", 0.0),
         "pulse_cd": state.get("pulse_cd", 0.0), "guard_cd": state.get("guard_cd", 0.0),
         "boss_hp": boss_hp, "boss_maxhp": boss_maxhp, "boss_name": boss_name,
         "sector": "ANTIVIRUS HUB" if mode == "base" else (campaign.active_sector if not campaign.active_sector.is_empty() else "OS HUB"),
         "wave": campaign.active_wave,
-        "status": mode,
+        "status": mode, "nearby": _world_nearby_prompt(),
         "infection": campaign.infection, "integrity": campaign.integrity,
         "software_levels": software.levels.duplicate(true),
         "stats": software.stats.duplicate(true),
@@ -669,6 +671,24 @@ func _hud_snapshot() -> Dictionary:
         "extraction_options": software.levels.keys(),
         "selected_archived_software": selected_archived_software,
     }
+
+func _world_nearby_prompt() -> String:
+    # Visual/UI hint only. Interaction authority stays in _on_interact and
+    # frozen B/C collision/reach checks, not in this optional text.
+    var point: Vector2 = actor.get("logical_position")
+    if mode == "base":
+        var terminal: String = nearest_base_terminal(point)
+        return str(BASE_TERMINALS[terminal]["label"]) if not terminal.is_empty() else ""
+    if mode != "hub":
+        return ""
+    for sid in GATES:
+        if point.distance_to(GATES[sid]) <= 115.0:
+            return str(SectorCatalog.SECTORS[sid]["name"])
+    if point.distance_to(PURIFY_STATION) <= 103.0:
+        return "PURIFICATION STATION"
+    if point.distance_to(STATUS_STATION) <= 95.0:
+        return "철수 단말기" if campaign.is_os_clean() else "SYSTEM STATUS"
+    return ""
 
 func _update_hud() -> void:
     ui.call("update_game_state", _hud_snapshot())
