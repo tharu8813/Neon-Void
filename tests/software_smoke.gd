@@ -90,7 +90,7 @@ func _run() -> void:
 	if cap_preview.size() != 2 or not cap_preview[0].contains("70% → 75%"):
 		_fail("P1 capped percent forecast")
 		return
-	if heal_preview.is_empty() or not heal_preview[0].contains("0.0 → 0.3"):
+	if heal_preview.is_empty() or not heal_preview[0].contains("0.00 → 0.35"):
 		_fail("P1 effective on-kill healing forecast")
 		return
 	if before != model.stats or not model.levels.is_empty():
