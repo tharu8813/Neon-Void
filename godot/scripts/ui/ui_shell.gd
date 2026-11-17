@@ -6,6 +6,7 @@ signal binding_change_requested(action: String, key: String)
 signal software_card_requested(index: int)
 signal pause_requested
 signal resume_requested
+signal menu_dismissed
 
 const Hud = preload("res://scripts/ui/neon_hud.gd")
 const Menu = preload("res://scripts/ui/neon_menu.gd")
@@ -86,6 +87,7 @@ func _on_menu_action(action: String, payload: Dictionary) -> void:
 
 func _on_menu_closed() -> void:
 	_update_cursor()
+	menu_dismissed.emit()
 
 func _update_cursor() -> void:
 	if _cursor == null:
