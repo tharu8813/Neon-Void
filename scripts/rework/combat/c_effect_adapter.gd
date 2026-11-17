@@ -263,6 +263,7 @@ func _accept_combat_event(event: Dictionary) -> void:
         _enqueue(kind, event)
 
 func _world() -> Dictionary:
+    _expire_shields()
     var targets: Dictionary = {}
     var positions: Dictionary = {}
     var status_map: Dictionary = {}
@@ -291,6 +292,7 @@ func _world() -> Dictionary:
 
 func _validate_commands(commands: Array) -> Dictionary:
     var transform_shapes: Dictionary = {}
+    var requested_projectiles: int = 0
     for command in commands:
         if not (command is Dictionary):
             return {"ok": false, "reason": "invalid_C_command"}
@@ -298,13 +300,21 @@ func _validate_commands(commands: Array) -> Dictionary:
         if kind == "rare_reward_request":
             # Only A/E may issue durable reward receipts.
             return {"ok": false, "reason": "E_receipt_callback_required"}
-        if kind == "projectiles" and int(command.get("count", 0)) > 128:
-            return {"ok": false, "reason": "invalid_projectile_count"}
+        if kind == "projectiles":
+            var count: int = int(command.get("count", 0))
+            if count < 0 or count > 128:
+                return {"ok": false, "reason": "invalid_projectile_count"}
+            requested_projectiles += count
         if kind == "projectile_transform":
             var shape: String = str(command.get("shape", ""))
             if not shape in ["laser", "boomerang"]:
                 return {"ok": false, "reason": "unsupported_projectile_transform"}
             transform_shapes[shape] = true
+            if shape == "boomerang":
+                requested_projectiles += maxi(0, int(command.get("count", 1)) - 1)
+    if combat != null and combat.projectiles.size() + requested_projectiles > maxi(
+            1, int(combat.settings.get("max_active_projectiles", 4096))):
+        return {"ok": false, "reason": "B_projectile_capacity_rejected"}
     if transform_shapes.size() > 1:
         # The GDD leaves simultaneous laser+boomerang ordering unresolved.
         return {"ok": false, "reason": "conflicting_projectile_transforms_need_approval"}
