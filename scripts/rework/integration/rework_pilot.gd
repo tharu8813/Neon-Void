@@ -1,5 +1,5 @@
 extends Node3D
-## A-owned opt-in persistent prototype: D's standalone CPU scene + E save + C cards.
+## A-owned opt-in rework pilot: five D hardware scenes + E-acknowledged B/C gameplay.
 ## Not the default main game, and not a replacement for B's production combat.
 ## Never reads/writes legacy save files. A failed/ambiguous transaction blocks play.
 
@@ -88,10 +88,10 @@ func _create_ui() -> void:
     outer.custom_minimum_size = Vector2(480, 80)
     layer.add_child(outer)
     status_label = Label.new()
-    status_label.text = "Neon Void Rework · 저장형 CPU 파일럿"
+    status_label.text = "Neon Void Rework · 저장형 하드웨어 파일럿"
     outer.add_child(status_label)
     message_label = Label.new()
-    message_label.text = "F: 상호작용 · CPU 외 하드웨어는 개발 중"
+    message_label.text = "F: 상호작용 · 메인보드에서 CPU/GPU/RAM/SSD/HDD 선택"
     outer.add_child(message_label)
     deposit_button = Button.new()
     deposit_button.text = "허브 소지 플러그인 수동 보관"
