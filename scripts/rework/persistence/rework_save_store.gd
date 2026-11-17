@@ -265,6 +265,13 @@ static func _monotonic_transition(previous: Dictionary, upcoming: Dictionary) ->
             or after.level < before.level \
             or after.earned_fragments < before.earned_fragments:
         return false
+    if int(after.copies_remaining) < int(before.copies_remaining):
+        # One death = exactly one consumed clone. The mission must have failed
+        # and been permanently closed in the SAME transaction.
+        if int(after.copies_remaining) != int(before.copies_remaining) - 1 \
+                or before.mission == null or after.mission != null \
+                or after.closed_runs.get(before.mission.run_id) != "dead":
+            return false
     for key in before.receipts:
         if not after.receipts.has(key):
             return false
