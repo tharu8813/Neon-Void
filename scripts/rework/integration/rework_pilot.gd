@@ -16,6 +16,7 @@ const CardStyle = preload("res://scripts/rework/ui/pilot_reward_card_style.gd")
 const HubManagement = preload("res://scripts/rework/ui/hub_management_panel.gd")
 const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd")
 const MissionResult = preload("res://scripts/rework/ui/pilot_mission_result.gd")
+const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -46,7 +47,10 @@ var hub_panel: PanelContainer
 var hub_button: Button
 var mission_tracker: PanelContainer
 var result_panel: PanelContainer
+var status_effects: PanelContainer
+var status_column: VBoxContainer
 var _hud_elapsed: float = 0.0
+var _combat_detail_elapsed: float = 0.0
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -54,6 +58,8 @@ func _ready() -> void:
     world.process_mode = Node.PROCESS_MODE_PAUSABLE
     world.set("demo_mode", false)
     _create_ui()
+    get_viewport().size_changed.connect(_update_ui_geometry)
+    _update_ui_geometry()
     world.connect("mission_start_requested", Callable(self, "_on_mission_requested"))
     world.connect("hardware_checkpoint_requested", Callable(self, "_on_hardware_checkpoint_requested"))
     world.connect("mission_returned", Callable(self, "_on_mission_returned"))
@@ -129,11 +135,14 @@ func _create_ui() -> void:
     add_child(layer)
     var outer := VBoxContainer.new()
     outer.name = "PilotStatus"
+    status_column = outer
     outer.position = Vector2(24, 140)
     outer.custom_minimum_size = Vector2(480, 80)
     layer.add_child(outer)
     tactical_hud = TacticalHUD.new()
     layer.add_child(tactical_hud)
+    status_effects = StatusHUD.new()
+    layer.add_child(status_effects)
     mission_tracker = MissionTracker.new()
     layer.add_child(mission_tracker)
     hub_panel = HubManagement.new()
@@ -827,6 +836,8 @@ func _halt(reason: String) -> void:
         result_panel.visible = false
     if tactical_hud != null:
         tactical_hud.show_blocked()
+    if status_effects != null:
+        status_effects.clear_view()
     if mission_tracker != null:
         mission_tracker.show_blocked()
     if message_label != null:
