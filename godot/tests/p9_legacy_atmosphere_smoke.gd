@@ -28,7 +28,7 @@ func _test() -> void:
         "exact original arena star count")
     verify(atmosphere.hub_dust.multimesh.instance_count == 34,
         "exact original hub dust count")
-    verify(atmosphere.arena_grid.multimesh.instance_count == 28,
+    verify(atmosphere.arena_grid.multimesh.instance_count == 27,
         "source 80px 1280x720 arena grid")
     verify(not atmosphere.arena_grid.visible and atmosphere.hub_dust.visible,
         "default antivirus base has animated dust, not combat grid")
