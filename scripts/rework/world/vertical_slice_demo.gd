@@ -244,7 +244,10 @@ func acknowledge_hardware_checkpoint(receipt_id: String, ack: Dictionary) -> boo
     if demo_mode or current_mode != "motherboard" or board == null \
             or pending_hardware_entry.is_empty():
         return false
-    var fact: Dictionary = pending_hardware_entry
+    # Deep-copy the acknowledged fact before clearing the mutable pending map.
+    # GDScript Dictionary assignment aliases the original; otherwise CPU plan
+    # disappears before `_enter_cpu` can read it.
+    var fact: Dictionary = pending_hardware_entry.duplicate(true)
     if receipt_id != str(fact.get("receipt_id", "")) \
             or str(ack.get("receipt_id", "")) != receipt_id \
             or not bool(ack.get("ok", false)) \
