@@ -170,4 +170,57 @@ static func run(check: Callable) -> void:
     if bool(reloaded.get("ok", false)) and bool(loaded.get("ok", false)):
         check.call(int(reloaded.get("revision", -1)) == int(loaded.get("revision", -2)),
             "duplicate attempt did not advance durable state revision")
+    # Crash/fault injection at the irreversible E commit boundary.
+    var second_xp: Dictionary = identity.duplicate()
+    second_xp.merge({"action":"mission_xp",
+        "receipt_id":"kill-rare-atomic-2", "amount":130}, true)
+    check.call(bool(Gateway.transact_command(slot, second_xp).get("applied", false)),
+        "second real E levelup makes source Lv2 eligible")
+    var second_grant: Dictionary = identity.duplicate()
+    second_grant.merge({"action":"plugin_picked",
+        "receipt_id":"run-rare-atomic:2:0",
+        "offer_id":"run-rare-atomic:2",
+        "plugin_id":Rare.SOURCE_ID,
+        "rarity":"common", "level":2,
+        "offer_source":"levelup"}, true)
+    var rejected_before: Dictionary = Gateway.transact_command(slot, second_grant,
+        -1, "after_backup")
+    check.call(not bool(rejected_before.get("applied", false)),
+        "simulated failure before primary cannot report a granted rare")
+    var pre_state: Dictionary = Gateway.snapshot(slot)
+    check.call(bool(pre_state.get("ok", false)) and
+        not pre_state["snapshot"]["vaccine"]["receipts"].has(
+            "run-rare-atomic:2:0") and
+        not pre_state["snapshot"]["vaccine"]["receipts"].has(
+            "run-rare-atomic:2:0:rare:0"),
+        "before-primary abort leaves both source and rare absent")
+    var uncertain: Dictionary = Gateway.transact_command(slot, second_grant,
+        -1, "after_primary")
+    check.call(not bool(uncertain.get("applied", false)) and
+        str(uncertain.get("reason", "")) == "simulated_ack_lost",
+        "E can commit while its response is deliberately lost")
+    var reconciled: Dictionary = Gateway.reconcile_receipt(slot,
+        "rare-atomic-vaccine", 1, "run-rare-atomic",
+        "run-rare-atomic:2:0", "run-rare-atomic:2")
+    check.call(bool(reconciled.get("receipt_committed", false)) and
+        not bool(reconciled.get("receipt_definitely_absent", false)),
+        "lost E acknowledgement resolves to committed source receipt")
+    var stable: Dictionary = Gateway.snapshot(slot)
+    if bool(stable.get("ok", false)):
+        var vaccine_state: Dictionary = stable["snapshot"]["vaccine"]
+        var grants: Dictionary = vaccine_state["mission"]["environment_rolls"].get(
+            Rare.KEY, {})
+        check.call(grants.size() == 2 and
+            vaccine_state["receipts"].has("run-rare-atomic:2:0:rare:0") and
+            int(vaccine_state["mission"]["obtained_plugins"][Rare.SOURCE_ID]["level"]) == 2,
+            "after-primary crash cannot separate bonus from source or reset levels")
+    else:
+        check.call(false, "E should read intact primary even after lost ACK")
+    var retry_after_loss: Dictionary = Gateway.transact_command(slot, second_grant)
+    check.call(not bool(retry_after_loss.get("applied", false)),
+        "same source cannot grant again after ambiguous success")
+    var final_state: Dictionary = Gateway.snapshot(slot)
+    if bool(stable.get("ok", false)) and bool(final_state.get("ok", false)):
+        check.call(int(stable.get("revision", -1)) == int(final_state.get("revision", -2)),
+            "duplicate after lost ACK did not advance E revision")
     _cleanup(slot)
