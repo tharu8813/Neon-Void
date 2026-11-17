@@ -346,7 +346,8 @@ func _run() -> void:
         "res://tests/rework/world/gpu_playable_smoke.gd",
         "res://tests/rework/world/ram_playable_smoke.gd",
         "res://tests/rework/world/ssd_playable_smoke.gd",
-        "res://tests/rework/world/hdd_playable_smoke.gd"
+        "res://tests/rework/world/hdd_playable_smoke.gd",
+        "res://tests/rework/world/five_hardware_playable_smoke.gd"
     ]:
         var process_output: Array = []
         var command := PackedStringArray([
@@ -360,5 +361,5 @@ func _run() -> void:
         check(status == 0, "cross-platform real Godot headless smoke: " + script_path)
     if failures == 0:
         print("CPU VERTICAL SLICE PASS: hub -> real B combat intro -> CPU walkable maze -> two goals -> boss -> unlock -> ACK -> hub")
-        print("D FOUR HARDWARE PLAYABLE PREVIEW SMOKES PASS")
+        print("D FOUR HARDWARE + FIVE-REGION FULL ROUTE PREVIEW SMOKES PASS")
     quit(0 if failures == 0 else 1)
