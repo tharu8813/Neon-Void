@@ -256,8 +256,8 @@ func _run() -> void:
     if stat_reloaded.get("ok", false):
         check(stat_reloaded.state.vaccine.invested_stats.max_hp == 1,
             "purchased stat survives restart")
-        check(stat_reloaded.state.vaccine.unspent_fragments == 0,
-            "stat purchase correctly consumes 100 fragments")
+        check(stat_reloaded.state.vaccine.unspent_fragments == 100,
+            "stat purchase consumes 100 fragments; vaccine level grants 100 more")
 
     # A crash leaves a lock that must be released only with offline approval
     # and the exact owner token; the previous process PID cannot be the validator.
