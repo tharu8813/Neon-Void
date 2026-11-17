@@ -9,6 +9,7 @@ const World = preload("res://scripts/rework/world/extraction_state.gd")
 const WorldCatalog = preload("res://scripts/rework/world/hardware_catalog.gd")
 const PluginCatalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
+const ShieldCases = preload("res://tests/rework/integration/provisional_shield_contract_cases.gd")
 
 var failures: int = 0
 
@@ -38,6 +39,7 @@ func _delete_synthetic_tree(folder: String) -> void:
     DirAccess.remove_absolute(folder)
 
 func _run() -> void:
+    ShieldCases.run(Callable(self, "check"))
     var suffix: String = str(OS.get_process_id()) + "-" + str(Time.get_ticks_usec())
     var slot_id: String = "a-contract-" + suffix
     var synthetic_parent: String = ProjectSettings.globalize_path("user://rework-a-test-" + suffix)
