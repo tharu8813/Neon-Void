@@ -201,5 +201,9 @@ func _run() -> void:
 	var live_suite = preload("res://tests/rework/plugins/plugin_effect_assertions.gd").new()
 	if not _check(live_suite.execute_tests(), "live effect + save acknowledgement regressions"):
 		return
+	var actual_b = preload("res://tests/rework/plugins/plugin_b_live_cases.gd").new()
+	if not _check(actual_b.run(), "production B runtime plugin tests"):
+		quit(1)
+		return
 	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, maxed, empty, levels, proc path")
 	quit(0)
