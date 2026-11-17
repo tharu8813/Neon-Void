@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "status": "PROPOSAL_V0_1_except_GDD_confirmed_fields",
+  "tick_rate": 60,
+  "notes": "Every stat/damage/movement number absent in GDD is provisional. All effects are runtime commands consumed through B adapter, not illustrations.",
+  "plugins": {
+    "nv_c_random_stats": {
+      "kind": "random_stats",
+      "stat_pool": [
+        "attack_damage",
+        "ability_power",
+        "max_health",
+        "move_speed",
+        "armor",
+        "magic_resist",
+        "attack_speed"
+      ],
+      "count": 3,
+      "amounts": [
+        1,
+        1.5
+      ]
+    },
+    "nv_c_move_speed": {
+      "kind": "passive_stat",
+      "stat": "move_speed",
+      "values": [
+        0.5,
+        1
+      ]
+    },
+    "nv_c_bullet_size": {
+      "kind": "passive_stat",
+      "stat": "projectile_size",
+      "values": [
+        2,
+        4
+      ]
+    },
+    "nv_c_percent_penetration": {
+      "kind": "dual_penetration",
+      "physical": [
+        0.05,
+        0.08
+      ],
+      "magic": [
+        0.05,
+        0.08
+      ]
+    },
+    "nv_c_periodic_shield": {
+      "kind": "periodic_shield",
+      "interval_ticks": 1800,
+      "shield_values": [
+        12,
+        20,
+        30
+      ]
+    },
+    "nv_c_rapid_projectiles": {
+      "kind": "dual_speed",
+      "attack_speed": [
+        0.2,
+        0.4
+      ],
+      "projectile_speed_mult": [
+        0.1,
+        0.2
+      ]
+    },
+    "nv_c_skill_shield": {
+      "kind": "skill_shield",
+      "shield_values": [
+        10,
+        18,
+        28
+      ]
+    },
+    "nv_c_mobility_sprint": {
+      "kind": "mobility_buff",
+      "duration_ticks": 120,
+      "move_speed": [
+        1,
+        2
+      ]
+    },
+    "nv_c_low_hp_emergency": {
+      "kind": "low_hp_emergency",
+      "trigger_health_ratio": 0.3,
+      "cooldown_ticks": 3600,
+      "amount_is_ambiguous": true,
+      "provisional_kind": "shield",
+      "shield_health_fraction": 0.5,
+      "move_speed": [
+        1,
+        2
+      ],
+      "duration_ticks": 120
+    },
+    "nv_c_chain_lightning": {
+      "kind": "chain_lightning",
+      "target_cooldown_ticks": 180,
+      "base_damage": [
+        12,
+        15,
+        15,
+        15,
+        15
+      ],
+      "ap_ratio": 0.2,
+      "level_multipliers": [
+        1,
+        1.25,
+        1.25,
+        1.25,
+        1.25
+      ],
+      "target_count": [
+        1,
+        1,
+        2,
+        2,
+        3
+      ],
+      "search_distance_mult": [
+        1,
+        1,
+        1,
+        1.3,
+        1.3
+      ],
+      "damage_type": "magic"
+    },
+    "nv_c_breakable_sprint": {
+      "kind": "breakable_sprint",
+      "move_speed_bonus_fraction": 1,
+      "reactivation_condition": "unconfirmed_off_by_default_after_break",
+      "level_bonus": [
+        0,
+        0
+      ]
+    },
+    "nv_c_armor_shred": {
+      "kind": "armor_shred",
+      "duration_ticks": 240,
+      "armor_reduction": [
+        1,
+        2,
+        3
+      ],
+      "magic_resist_reduction": [
+        1,
+        2,
+        3
+      ],
+      "stack_mode": "stack",
+      "max_stacks": 1000000
+    },
+    "nv_c_proc_volley": {
+      "kind": "proc_volley",
+      "procs_required": 4,
+      "projectile_count": 4,
+      "on_hit_efficiency": 0.7,
+      "extra_projectile_damage": [
+        3,
+        4,
+        5
+      ]
+    },
+    "nv_c_skill_followup": {
+      "kind": "skill_followup",
+      "projectile_count": 1,
+      "base_damage": [
+        3,
+        4,
+        5
+      ]
+    },
+    "nv_c_random_rare": {
+      "kind": "grant_rare",
+      "grant_count": 1,
+      "level_effect": "additional_rare_unapproved"
+    },
+    "nv_c_dash_explosion": {
+      "kind": "dash_explosion",
+      "base_damage": [
+        8,
+        12,
+        16
+      ],
+      "area_radius": [
+        2,
+        2.5,
+        3
+      ],
+      "damage_type": "magic"
+    },
+    "nv_c_hit_explosion": {
+      "kind": "hit_explosion",
+      "target_cooldown_ticks": 180,
+      "base_damage": [
+        8,
+        12,
+        16
+      ],
+      "area_radius": [
+        2,
+        2.5,
+        3
+      ],
+      "damage_type": "magic"
+    },
+    "nv_r_execute": {
+      "kind": "execute",
+      "target_health_below": 0.5,
+      "bonus_damage_multiplier": [
+        0.15,
+        0.2,
+        0.25
+      ]
+    },
+    "nv_r_kill_power": {
+      "kind": "kill_power",
+      "attack_damage_per_kill": [
+        0.1,
+        0.2
+      ],
+      "mission_only": true
+    },
+    "nv_r_low_hp_knockback": {
+      "kind": "low_hp_knockback",
+      "trigger_health_ratio": 0.3,
+      "force": [
+        2,
+        3,
+        4
+      ],
+      "cooldown_ticks": 300
+    },
+    "nv_r_disassembly": {
+      "kind": "disassembly",
+      "duration_ticks": [
+        240,
+        360,
+        360,
+        360
+      ],
+      "dot_dps_per_stack": [
+        2,
+        2,
+        3,
+        3
+      ],
+      "unlimited_stacks": true,
+      "death_explosion_at_level": 4
+    },
+    "nv_r_dash_shield": {
+      "kind": "dash_shield",
+      "shield_values": [
+        15,
+        25
+      ]
+    },
+    "nv_r_extra_bullet": {
+      "kind": "extra_bullet",
+      "projectile_count": 1,
+      "on_hit_efficiency": 0.8,
+      "damage": [
+        4,
+        5,
+        6
+      ]
+    },
+    "nv_r_homing": {
+      "kind": "homing",
+      "turn_rate": [
+        2,
+        3,
+        4
+      ],
+      "projectile_count": 1,
+      "base_damage": [
+        3,
+        4,
+        5
+      ]
+    },
+    "nv_l_laser": {
+      "kind": "laser",
+      "on_hit_efficiency": [
+        0.7,
+        0.7,
+        0.85
+      ],
+      "beam_width_mult": [
+        1,
+        1.2,
+        1.2
+      ],
+      "penetrating": true
+    },
+    "nv_l_boomerang": {
+      "kind": "boomerang",
+      "projectile_count": [
+        1,
+        2,
+        3
+      ],
+      "base_damage": [
+        12,
+        16,
+        20
+      ],
+      "blocks_attack_until_return": true,
+      "area_radius": 2
+    },
+    "nv_l_fever": {
+      "kind": "fever",
+      "gauge_on_proc": 1,
+      "gauge_on_kill": 2,
+      "gauge_required": [
+        10,
+        10,
+        10
+      ],
+      "duration_ticks": [
+        300,
+        420,
+        540
+      ],
+      "all_stats_fraction": [
+        0.15,
+        0.2,
+        0.25
+      ]
+    }
+  }
+}
