@@ -3,9 +3,10 @@ name: Windows standalone build
 on:
   pull_request:
     paths:
-      - 'neonvoid/**'
-      - 'neon_void.py'
-      - 'pyproject.toml'
+      - 'python/neonvoid/**'
+      - 'python/tests/**'
+      - 'python/neon_void.py'
+      - 'python/pyproject.toml'
       - '.github/workflows/windows-build.yml'
   push:
     branches: [main]
@@ -17,6 +18,9 @@ permissions:
 jobs:
   standalone:
     name: Build and smoke-test Windows EXE
+    defaults:
+      run:
+        working-directory: python
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -48,6 +52,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: NeonVoid-windows-x64
-          path: dist/NeonVoid-windows-x64.zip
+          path: python/dist/NeonVoid-windows-x64.zip
           if-no-files-found: error
           retention-days: 14

@@ -6,7 +6,7 @@ import unittest
 from neonvoid.content.upgrades import UPGRADES, UP_WEIGHT, apply_upgrade
 from neonvoid.entities import Player
 
-PATH = Path(__file__).resolve().parents[1] / "godot/scripts/software/catalog.json"
+PATH = Path(__file__).resolve().parents[2] / "scripts/software/catalog.json"
 
 
 class GodotSoftwareParityTests(unittest.TestCase):

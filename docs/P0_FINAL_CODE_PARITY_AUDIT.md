@@ -1,6 +1,6 @@
 # Final code parity checkpoint for the original Godot port
 
-**Reference:** Python baseline `245663ba15149cc1262304b966062989c24c13f6` and source `neonvoid/view.py`, `game.py`, `world/session.py`, `audio.py`. Stacked Draft PR #83 on #82 → #81 → #80 → #79 → #76. This document distinguishes code written, CI exercised, and **not yet accepted on real Windows**.
+**Reference:** Python baseline `245663ba15149cc1262304b966062989c24c13f6` and source `python/neonvoid/view.py`, `game.py`, `world/session.py`, `audio.py`. Stacked Draft PR #83 on #82 → #81 → #80 → #79 → #76. This document distinguishes code written, CI exercised, and **not yet accepted on real Windows**.
 
 ## Implemented in this checkpoint
 
@@ -13,7 +13,7 @@
 
 ## Automated contract
 
-`godot/tests/p0_final_code_parity_smoke.gd`, `p4_drone_shard_score_smoke.gd`, `p4_temporal_parity_smoke.gd`, `integration_smoke.gd` and `live_save_integration_smoke.gd` exercise:
+`tests/p0_final_code_parity_smoke.gd`, `p4_drone_shard_score_smoke.gd`, `p4_temporal_parity_smoke.gd`, `integration_smoke.gd` and `live_save_integration_smoke.gd` exercise:
 - exact Python EXIT coordinate and strict 112px boundary, sector-only presence, near and far F, scan/near prompt and reduced-effects handling
 - no-op purification preserving charge; genuine purification 32/9 recovery and feedback
 - original M mute, fullscreen/borderless toggles, audio facade state

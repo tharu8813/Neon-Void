@@ -3,7 +3,7 @@ name: Godot E persistence safety checks
 on:
   pull_request:
     paths:
-      - 'godot/**'
+      - '**'
       - '.github/workflows/godot-e-persistence.yml'
   workflow_dispatch:
 
@@ -52,8 +52,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
-          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/persistence_smoke.gd
+          timeout 90 "$NEON_GODOT" --headless --path . --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path . --script res://tests/persistence_smoke.gd
       - name: Import and execute persistence smoke (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -69,5 +69,5 @@ jobs:
               if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
             } finally { $p.Dispose() }
           }
-          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/persistence_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/persistence_smoke.gd'

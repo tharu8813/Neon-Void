@@ -1,200 +1,48 @@
-# NEON VOID
+# Neon Void · Godot 4 top-down 3D edition
 
-**신규 진행 방식 (A1):** 실제 플레이는 캐릭터가 직접 이동하는 SYSTEM HUB에서 시작해. 중앙 허브의 OS DEPLOYMENT 단말기에 접근해 배포한 다음, 운영체제 내부의 CPU CORE 게이트로 걸어 들어가 전투를 시작해. CPU·MEMORY·STORAGE·NETWORK 구역과 영구 데이터베이스, OS 철수까지 인월드로 연결되어 있어.
+This is the playable Godot 4.7.2 **top-down 3D migration** of the existing Python/Tk Neon Void, not a redesign. The Python edition is preserved in [`python/`](python/), including `python/neonvoid/`, `python/neon_void.py`, its independent tests and packaging. Original player save JSONs at the repository root remain at the same location for compatibility. The 3D port preserves the original 1280×720 logical coordinates and 60Hz gameplay, 17 original enemy silhouettes, all four OS sectors × five waves, software, XP, antivirus database, extraction and legacy-save import.
 
-표준 라이브러리(tkinter)만으로 동작하는 **네온 로그라이크 탄막 슈터**.
-외부 패키지 설치 없이 venv에서 바로 실행됩니다.
+**Current status (2026-11-17):** Windows test reported successful startup, WASD/aim/dash, deploy/CPU combat, Q/E, software selection/automatic waves and real Task Manager GPU 3D activity. Audio output was **not tested** due to the user's environment. New original-faithful ambient/FX animation remains subject to real Windows visual QA. Automated CI and headless EXE boot do not establish frame quality or audio acceptance.
 
-![style](https://img.shields.io/badge/python-3.11%2B-3776AB) ![deps](https://img.shields.io/badge/dependencies-0-3ff5a0)
+## Run
 
----
-
-## Windows 단독 실행 파일
-
-GitHub Actions의 **Windows standalone build** 워크플로에서 Python 설치 없이 실행 가능한 `NeonVoid.exe`를 만들고, 실행 테스트 후 ZIP 아티팩트로 저장합니다. 아직 정식 릴리즈나 설치 프로그램을 자동 발행하지는 않습니다.
-
-- 소스 실행: 프로젝트 폴더의 `save.json`, `settings.json`, `profile.json` 사용
-- EXE 실행: `%LOCALAPPDATA%\\NeonVoid`에 저장 (EXE의 임시 압축 해제 폴더에는 저장하지 않음)
-- EXE 실행 중 Python 오류: 같은 폴더의 `errors.log`에 기록
-
-[빌드 및 배포 안내](docs/DISTRIBUTION.md)
-
-## 실행
+- Pinned editor: [Godot 4.7.2 stable](https://godotengine.org/download/archive/4.7.2-stable/), standard GDScript build, no .NET.
+- Open `project.godot` in the editor, or from the repository root:
 
 ```powershell
-# venv 활성화 후
-.\.venv\Scripts\Activate.ps1
-python neon_void.py
+godot --editor --path .
+godot --path .
 ```
 
-또는 더블클릭용:
+- Windows test build: repository **Actions → Godot 4 port checks → Windows x64 export and executable headless boot → Artifacts → NeonVoid3D-windows-export-smoke**. Artifacts expire after seven days. Extract and run `NeonVoid3D.exe`; the export has its `.pck` embedded and does not need Python.
+- The original Python edition is still available: `cd python` then `python neon_void.py`, `python -m neonvoid` or `run.bat`. It continues to use the **original repository-root save location** for source runs; user data is never auto-moved.
 
-```powershell
-.\run.bat
-```
+## Controls and game flow
 
-| 플래그 | 설명 |
+Spawn at the walkable antivirus base, approach **OS DEPLOYMENT (F)**, deploy into the OS hub and select a sector gate via movement + F. Each zone contains five waves and an independent boss. Clearing all four zones enables extraction to permanently keep one software module. The next OS inherits the antivirus DB's persistent growth.
+
+| Input | Action |
 |---|---|
-| `--volume 0.0~1.0` | 전체 볼륨 (기본 0.9) |
-| `--no-sound` | 사운드 끄기 (사운드 문제 시) |
-| `--fps` | FPS·렌더링 평균/p95 지연·Canvas 객체·프로세스 메모리 오버레이 |
-| `--stage void` | 콘텐츠 스테이지 선택 (현재 기본 스테이지만 지원) |
-| `--seed N` | 난수 고정 (리플레이/테스트) |
-| `--selftest N` | N프레임 자동 플레이 후 결과 출력하고 종료 (창 없이 실행) |
-| `--god` | 검증용 무적 (자동 플레이와 함께 사용) |
+| WASD / arrow keys | Move, fixed logical collision |
+| Mouse | Aim and automatic fire, neon game cursor |
+| Space / Shift | Dash in movement direction |
+| F | Nearby terminal / sector gate / arena left EXIT |
+| Q, E | Pulse / shield, with mana and cooldown |
+| 1, 2, 3 / click | Choose one of three offered software cards |
+| Tab, O, Esc | Loadout, settings, pause |
+| M, F11, Alt+Enter | Mute, fullscreen, borderless |
 
----
+## Legacy visual identity
 
-## Operating System CLEAN / 영구 백신 데이터베이스
+Python `view.py` and `game.py` remain the visual design reference. The Godot port preserves the minimal neon-on-dark art direction, pulsing 3D polygon player/viruses, 52 twinkling stars and 80px arena grid, 34 ambient OS dust motes, conduit data packets, moving scanline, 14-silhouette dash-afterimage pool, 380-particle hit/kill/boss burst budget, wave intro/sweep/flash, source hitstop, boss ring/telegraph, critical/chain/explosion effects. All procedural decorations are **read-only**; the deterministic combat simulator owns the original mechanics. Reduced-effects mode hides cosmetic motion but preserves vital warnings.
 
-- 백신 허브의 **ANTIVIRUS DATABASE** 단말기(F)에서 저장된 레벨, 누적 경험치, 영구 소프트웨어를 확인하고 다음 OS에서 사용할 **시작 소프트웨어 1종**을 선택할 수 있어.
-- 같은 허브의 **DIAGNOSTICS** 단말기에서 최근 도전 최대 20회의 결과, 점수, 종료 웨이브, 처치, 콤보와 경과 시간을 볼 수 있어.
-- 네 구역을 자유 순서로 클리어해 **OS STATUS: CLEAN**을 만들면 OS 허브 중앙 **SYSTEM STATUS** 단말기(F)에서 철수 소프트웨어 한 개를 선택해. 소프트웨어 1단계만 영구 보존하고 이번 런의 나머지 업그레이드는 초기화돼.
-- OS CLEAN인데 보존 가능한 모듈이 없다면 **1회 소프트웨어 회수**에서 기존 모듈 한 종을 실제 게임 장비로 획득한 뒤 철수를 선택할 수 있어. 모든 보관 한도가 꽉 차면 XP를 유지한 채 추가 보상 없이 귀환할 수 있어.
-- OS 무결성 0%는 백신 조작 방해/즉사 대신 비상 철수 처리되며, 이미 획득한 XP는 유지되고 영구 소프트웨어 보상은 없어.
-- 게이트에서 구역 위험도와 적 특성을 확인할 수 있어. 첫 도전에서는 CPU CORE에서 조준과 대시를 익힌 뒤 MEMORY SECTOR로 가는 경로를 추천해. 구역을 처음 정화하면 최대 체력의 15%만큼 회복하고, 정화한 구역에서는 체력과 마나가 자동으로 회복되지 않아.
-- 정화 단말기는 사용 전에 회복량을 표시하며, 감염 0%와 무결성 100%일 때는 충전을 소모하지 않아. 철수에 성공하면 허브에 결과가 표시되고 최고 점수에 반영돼.
-- 전투 중 감염 HUD는 무결성 감소와 복귀 시점을 안내해. 암호화 폭발의 경고 원은 실제 피해 범위를 표시하며, 보스 체력바에는 현재 페이즈와 주요 공격 예고가 표시돼.
-- 런 종료/포기 기록 저장 실패 시 재시도하며, 저장되지 않은 상태를 완료로 표시하지 않고 확인 가능한 오류를 보여줘.
-- **철수 보상은 저장 성공 후에만 확정**되며 동일 운영체제 run_id로 두 번째 영구 보상을 받을 수 없어. 재배포 시 데이터베이스 레벨별 기본 체력(+2), 피해량(+0.2), 방어력(+0.15), 마나(+1)가 적용돼.
-- XP: 웨이브 클리어 20, 보스 75, 구역 정화 50, OS CLEAN 200. 실패한 도전에서 이미 확정된 XP는 그대로 보존되며 소프트웨어 보존은 불가.
-- EXE는 `%LOCALAPPDATA%\\NeonVoid\\antivirus_db.json`, 소스는 저장소 루트 `antivirus_db.json`에 영구 기록돼. 기존 세이브와 별도로 버전·원자 저장 및 백업을 사용해.
-- **OS 이어하기 지원:** 운영체제 진행 중 게임 창을 정상 종료하거나 예상치 못하게 닫았다면 다음 실행 때 백신 허브 **OS DEPLOYMENT** 단말기에서 **이전 OS 이어하기 / 이전 OS 포기하고 새 배포**를 선택할 수 있어.
-- `os_checkpoint.json`에는 기존 OS run_id, 지역별 완료 웨이브, 임시 소프트웨어, HP/마나, 감염·무결성, 스킬 재사용 대기시간과 진행 시간이 원자적으로 저장돼. 완료된 웨이브와 XP는 중복 지급하지 않으며, **전투 중이던 미완료 웨이브는 처음부터 재시작**해.
-- 저장은 웨이브 경계·소프트웨어 선택·출입·정화 시 즉시, 진행 중에는 약 5초마다 이뤄져. 비정상 종료 시 마지막 몇 초의 위치·자원 변화는 사라질 수 있어.
-- 체크포인트 파일이 손상됐다면 자동 덮어쓰지 않고 배포 단말기에서 명시적으로 손상 파일을 보관한 뒤 새로운 OS를 시작할 수 있어. 이 경우 이전 OS의 임시 진행은 복구되지 않을 수 있지만 확정 XP와 영구 소프트웨어는 별도 DB에서 보존돼.
+## Safety and QA
 
-[구현 및 검증 상세](docs/WORLD.md) · [영구 데이터 안전 계약](docs/ANTIVIRUS_DATABASE.md)
+The app never auto-imports or overwrites Python saves. Back up `save.json`, `settings.json`, `profile.json`, `antivirus_db.json` and `os_checkpoint.json` and test imports with **copies only**. Use the Godot in-world import flow; existing legacy originals must remain byte-identical.
 
-## 조작
+- `tests/`: 4×5 integrations, controller/combat, visuals, HUD, recovery/atomic persistence and lossless migration.
+- `docs/WINDOWS_FINAL_ACCEPTANCE.md`: GPU/frametime/DPI/audio and long-run human acceptance protocol.
+- `docs/P0_FINAL_CODE_PARITY_AUDIT.md`: original source-to-Godot code parity and known differences.
+- `docs/P9_LEGACY_ATMOSPHERE_PARITY.md`: procedural atmosphere and effects visual acceptance.
 
-- 소스/EXE의 일반 실행: **백신 시스템 허브 → OS DEPLOYMENT(F) → OS 내부 허브 → CPU CORE(F)**. 타이틀 메뉴를 거치지 않아.
-- 전투 구역의 왼쪽 출구로 이동한 후 **F**를 누르면 OS 허브로 복귀하고, 진행 중인 웨이브만 재도전할 수 있어.
-- 설정에서 상호작용 키를 변경할 수 있어. 기존 설정 스키마 v1~v3의 키/볼륨 값을 유지하면서 v4로 이전해.
-- `--selftest`는 회귀 검증을 위해 기존 타이틀 및 자동 전투 경로를 유지해.
-
-
-| 입력 | 동작 |
-|---|---|
-| `WASD` / 방향키 | 이동 |
-| 마우스 | 조준 (**자동 사격**) |
-| `Space` / `Shift` | **이동 입력 방향** 대시 (무적, 충전식). 방향키를 떼면 현재 이동 속도나 마지막 이동 방향 사용 |
-| `Q` | 충격파 스킬: 범위 피해 + 감전 지속 피해 (마나 35, 7초 쿨타임) |
-| `E` | 보호막 스킬: 4초간 방어력 +20 및 체력 재생 (마나 25, 12초 쿨타임) |
-| `1` `2` `3` / 클릭 | 소프트웨어 선택 |
-| `P` / `Esc` | 탐험 또는 전투 중 일시정지 |
-| `Tab` | 일시정지 또는 소프트웨어 선택 화면에서 현재 장비 확인 |
-| `F` (변경 가능) | 시설 사용, 운영체제 배포, CPU 구역 진입/복귀 |
-| `R` | 전투 중 도전 포기 후 백신 허브로 복귀 |
-| `M` | 사운드 켜기 / 끄기 (음소거) |
-| `Enter` | 시작 / 확인 |
-
----
-
-## 커서와 애니메이션
-
-- 기본 Windows 커서를 숨기고 게임 화면에서 **큰 네온 조준선**을 표시합니다. 회전하는 링, 이동 잔상, 적 조준/카드 호버 반응, 사격 반동 및 명중 히트마커를 지원합니다.
-- 배경 별과 스캔라인, 웨이브 알림, HUD, 카드 등장과 호버, 대시 링, 일시정지와 게임 오버, 화면 전환 연출이 움직입니다.
-- 대시 방향은 조준점과 독립적이며 WASD/방향키 입력을 우선합니다. 아무 키도 누르지 않으면 현재 이동 속도, 정지 상태에서는 마지막 이동 방향을 사용합니다.
-- 원래 Canvas 구조를 활용하고 시각 효과 오브젝트를 재사용합니다.
-
-## 실시간 스탯 · 상태 효과 · 스킬
-
-- 상단 왼쪽 **마나바와 LIVE STATS**에서 공격력, 방어력, 방어 관통, 치명타, 연사, 재생량, 적중 효과 확률, 스킬 위력을 확인합니다. 하단에는 Q/E 스킬의 사용 비용과 남은 쿨타임이 표시됩니다.
-- 방어력 피해 공식: `실제 피해 = 원래 피해 × 100 / (100 + max(0, 방어력 - 방어 관통))`. 적과 플레이어 모두 방어력이 피해를 줄이며, 적 방어력은 웨이브에 따라 소폭 상승합니다.
-- 화상(4초)·중독(5초)은 탄환 적중으로 발동합니다. 각 효과는 **최대 3중첩**, 재적중 시 지속시간을 갱신합니다. 감전은 충격파 스킬로 발동하는 3초 지속 피해입니다. 지속 피해는 방어력을 우회하지만 연쇄 적중 효과를 새로 발동시키지 않습니다.
-- 마나는 기본 100, 초당 6 회복입니다. Q 충격파는 155px 범위에 피해와 감전을 적용하고 E 보호막은 방어력과 재생량을 4초간 강화합니다. 마나가 부족하거나 쿨타임이 남아 있으면 발동하지 않습니다.
-- 소프트웨어로 방어력·관통력·상태이상 확률·마나·스킬 위력·지속시간을 강화할 수 있습니다. 스킬 키는 설정에서 변경할 수 있습니다.
-
-## 사운드
-
-외부 오디오 파일 없이 **코드로 합성**하고, `winmm waveOut`으로 직접 믹싱해 재생합니다.
-
-- **15종 효과음**: 발사 · 명중 · 처치 · 폭발 · 대시 · 피격 · 소프트웨어 선택 ·
-  보스 등장 · 사망 · 적 사격 · 보스 방사탄 · 웨이브 시작 · 페이즈 전환 · 저체력 심박 · 콤보
-- **배경음악**: Am–F–C–G 4마디 네온 신스 루프(9.6초)를 실시간으로 겹쳐 재생
-- **동시 재생**: 짧은 효과음이 겹쳐도 서로 묻히지 않는 소프트웨어 믹서 (512프레임 × 3버퍼, 22,050Hz)
-- **자동 폴백**: 믹서를 열 수 없는 환경에서는 `winsound` → 완전 무음 순으로 내려가며, 게임은 항상 정상 동작합니다.
-
----
-
-## 게임 규칙
-
-- 웨이브의 적을 모두 제거하면 **소프트웨어 3장 중 1장**을 선택합니다. 카드에서 설치 전후 능력치를 비교할 수 있고, 다음 웨이브 시작 때 선택한 소프트웨어를 확인할 수 있습니다.
-- 5웨이브마다 보스 **OVERSEER**가 등장합니다 (3페이즈).
-- 처치 콤보가 이어지면 점수 배율이 최대 **x5.0**까지 상승합니다.
-- 적이 떨어뜨린 파편을 주우면 추가 점수, 자력 수집 소프트웨어로 수집 범위가 늘어납니다.
-- 최고 점수/웨이브는 `save.json`에 저장됩니다.
-
-### 적
-
-| 적 | 특징 |
-|---|---|
-| **Drifter** | 직선 추격. 기본형 |
-| **Shooter** | 거리를 유지하며 3점사 |
-| **Splitter** | 사망 시 2마리로 분열 |
-| **Rusher** | 0.55초 예고 후 780px/s 돌진 |
-| **OVERSEER** | 방사탄 · 소환 · 3중 링 (체력에 따라 페이즈 변화) |
-
-### 소프트웨어 30종
-
-연사 · 탄두 피해 · 관통 · 분열 사격 · 유도 · 폭발 탄두 · 치명타 · 흡혈 · 가시 갑옷 ·
-대시 충전 · 대시 폭발 · 시간 왜곡 · 자력 수집 · 위성 드론 · 연쇄 방전 · 후방 포탑 ·
-외골격 · 도탄
-
-방어력 강화 · 방어 관통 · 마나 확장 · 마나 재생 · 화상 · 중독 · 적중 회복 ·
-충격파 강화 · 스킬 가속 · 마나 비용 감소 · 지속 체력 회복 · 효과 지속시간 연장
-
-등급은 일반 / 희귀 / 전설이며, 전설일수록 등장 확률이 낮습니다.
-
----
-
-키 설정: 타이틀 또는 일시정지 화면에서 `O` → `Tab` → 키 선택 후 `Enter`를 누르면 이동/대시/일시정지/스킬의 주 키를 변경할 수 있어요. `Delete`는 기본값 복원입니다. 기존 방향키·Shift 조작은 그대로 유지됩니다. 자세한 내용은 [설정 안내](docs/SETTINGS.md)를 참고하세요.
-
-## 구조
-
-- `neonvoid/world/session.py`: 월드 좌표·카메라·충돌·허브 시설·각 구역별 진행도를 관리. [인월드 월드 및 OS CLEAN 루프](docs/WORLD.md)
-
-
-기존 단일 파일 프로토타입을 유지보수 가능한 Python 패키지로 분리했습니다. 외부 런타임 패키지는 여전히 필요하지 않습니다.
-
-| 위치 | 역할 |
-|---|---|
-| `neon_void.py` | 기존 실행 명령 유지 (호환성 런처) |
-| `neonvoid/cli.py` | 명령행 옵션과 앱 시작 |
-| `neonvoid/game.py` | 게임 진행, 입력, 적 AI, 충돌, 고정 스텝 |
-| `neonvoid/view.py` | tkinter 렌더링, HUD, 화면 전환 |
-| `neonvoid/render_pool.py` | Canvas 오브젝트 풀 |
-| `neonvoid/audio.py` | 음향 생성 및 시스템 오디오 |
-| `neonvoid/entities.py` | 플레이어, 적, 총알 등 상태 |
-| `neonvoid/combat.py` | 방어력/관통 피해 공식, 상태이상 중첩·지속 피해 계산 |
-| `neonvoid/content/` | 적/소프트웨어 데이터 |
-| `neonvoid/storage.py` | 기존 저장 파일과 호환되는 안전한 저장 |
-| `neonvoid/events.py` | 향후 기능 확장을 위한 게임 이벤트 |
-| `neonvoid/profile.py` | 누적 처치·보스·콤보 및 최근 플레이 기록 |
-| `neonvoid/content/stages.py` | 스테이지 정의, 웨이브 일정·적 출현 구성 |
-| `tests/` | 테스트 코드 |
-
-새 실행 방식: `python -m neonvoid` (기존 `python neon_void.py` / `run.bat`도 그대로 사용).
-
-개발자 검증:
-
-```powershell
-python -m compileall -q neon_void.py neonvoid tests
-python -m unittest discover -s tests -v
-python neon_void.py --selftest 180 --no-sound --seed 42 --god
-```
-
-자동 플레이 테스트는 Tk 디스플레이가 필요하며, 실패 시 종료 코드가 0이 아닌 값으로 반환됩니다. 또한 `--version` 플래그를 지원합니다.
-
-- [구조 설명](docs/ARCHITECTURE.md)
-- [단계별 확장 계획](docs/ROADMAP.md)
-
-## 문제 해결
-
-- **소리가 안 나요** → `M`으로 음소거가 풀려 있는지 확인하고, 창 오른쪽 아래에 `MUTED`가 보이면 `M`을 누르세요. 그래도 안 되면 `--volume 1.0`으로 실행하고, 마지막으로 `--no-sound`로 원인을 분리하세요. Windows 이외 환경에서는 자동으로 무음 동작합니다.
-- **소리가 너무 커요/작아요** → `--volume 0.6` 처럼 실행할 때 조절하거나 게임 중 `M`으로 음소거하세요.
-- **창 크기 조절** → 이제 창 테두리를 드래그해 크기를 변경할 수 있어. 게임은 1280×720 논리 좌표를 유지한 채 화면 비율에 맞춰 확대·축소되며, 여백은 검은색으로 표시돼. F11은 전체화면 전환, Alt+Enter는 테두리 없는 창 전환이야. **O → 일반 설정**에서도 화면 모드와 창 크기를 선택할 수 있어. 조준·커서·버튼 클릭 좌표도 창 배율에 맞게 변환돼.
-- **고해상도/DPI** → Windows 100/125/150/200%는 실사용 확인이 추가로 필요해. CI는 창 크기·비율에 따른 Tk 좌표계와 클릭 동작까지 검증하며 실제 모니터/OS별 화면 품질은 [Windows 실기기 QA #24](https://github.com/tharu8813/Neon-Void/issues/24)에 남아 있어.
-- **화면이 작거나 설정이 이상해요** → 설정에서 창 크기를 1280×720으로 돌리고 F11/Alt+Enter로 창 모드로 복귀해. 실행 자체가 안 되면 게임을 완전히 종료한 후 `settings.json`을 백업·이름 변경하면 기본 설정으로 실행할 수 있어. 다른 세이브 파일은 변경하지 마.
-- **한글이 깨져 보여요** → Windows 기본 글꼴 `Malgun Gothic`을 사용합니다. 미설치 환경에서는 글꼴만 대체됩니다.
+The Windows export is **not yet a signed release installer**. Audio, multi-monitor/DPI comparison, 30–60 minute full clear and performance p95/p99 remain acceptance work, not silently passed.

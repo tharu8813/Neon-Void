@@ -3,12 +3,12 @@ name: Godot D software and UI checks
 on:
   pull_request:
     paths:
-      - 'godot/scripts/software/**'
-      - 'godot/scripts/ui/**'
-      - 'godot/scenes/ui/**'
-      - 'godot/tests/software_smoke.gd'
-      - 'godot/tests/ui_smoke.gd'
-      - 'tests/test_godot_software_parity.py'
+      - 'scripts/software/**'
+      - 'scripts/ui/**'
+      - 'scenes/ui/**'
+      - 'tests/software_smoke.gd'
+      - 'tests/ui_smoke.gd'
+      - 'python/tests/test_godot_software_parity.py'
       - '.github/workflows/godot-d-ci.yml'
   workflow_dispatch:
 
@@ -25,6 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest tests.test_godot_software_parity
+        working-directory: python
   godot-smoke:
     name: D headless scenes (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -62,11 +63,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
-          timeout 90 "$NEON_GODOT" --headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd
-          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/software_smoke.gd
-          if [ -f 'godot/tests/ui_smoke.gd' ]; then
-            timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/ui_smoke.gd
+          timeout 90 "$NEON_GODOT" --headless --path . --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path . --check-only --script res://scripts/ui/neon_cursor.gd
+          timeout 90 "$NEON_GODOT" --headless --path . --script res://tests/software_smoke.gd
+          if [ -f 'tests/ui_smoke.gd' ]; then
+            timeout 90 "$NEON_GODOT" --headless --path . --script res://tests/ui_smoke.gd
           fi
       - name: Import and execute parity smoke (Windows, checked exit codes)
         if: runner.os == 'Windows'
@@ -85,9 +86,9 @@ jobs:
               if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
             } finally { $p.Dispose() }
           }
-          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
-          Invoke-CheckedGodot '--headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd'
-          Invoke-CheckedGodot '--headless --path godot --script res://tests/software_smoke.gd'
-          if (Test-Path 'godot/tests/ui_smoke.gd') {
-            Invoke-CheckedGodot '--headless --path godot --script res://tests/ui_smoke.gd'
+          Invoke-CheckedGodot '--headless --path . --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path . --check-only --script res://scripts/ui/neon_cursor.gd'
+          Invoke-CheckedGodot '--headless --path . --script res://tests/software_smoke.gd'
+          if (Test-Path 'tests/ui_smoke.gd') {
+            Invoke-CheckedGodot '--headless --path . --script res://tests/ui_smoke.gd'
           }

@@ -12,7 +12,9 @@ from neonvoid.runtime_paths import data_directory
 
 class RuntimePathTests(unittest.TestCase):
     def test_source_save_location_is_still_repo_root(self):
-        root = Path(__file__).resolve().parent.parent
+        python_root = Path(__file__).resolve().parents[1]
+        root = python_root.parent
+        self.assertTrue((root / "project.godot").is_file())
         self.assertEqual(Path(data_directory(frozen=False)), root)
         self.assertEqual(Path(constants.SAVE_FILE), root / "save.json")
         self.assertEqual(Path(constants.SETTINGS_FILE), root / "settings.json")

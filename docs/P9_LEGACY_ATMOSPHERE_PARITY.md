@@ -2,7 +2,7 @@
 
 ## Why the port looked flatter
 
-Original Tk `neonvoid/view.py` layers moving background stars, 80px neon grid, a slow vertical scanline, visible score/floating numbers, procedural hit/kill bursts, 2D screen flash/sweep, neon cursors, moving hub dust and conduit packets, an outlined/player thrust animation, a two-part boss silhouette and animated banners. The first 3D migration correctly reconstructed hitboxes, top-down composition and polygon silhouettes but left many of these **cosmetic temporal cues** static or absent.
+Original Tk `python/neonvoid/view.py` layers moving background stars, 80px neon grid, a slow vertical scanline, visible score/floating numbers, procedural hit/kill bursts, 2D screen flash/sweep, neon cursors, moving hub dust and conduit packets, an outlined/player thrust animation, a two-part boss silhouette and animated banners. The first 3D migration correctly reconstructed hitboxes, top-down composition and polygon silhouettes but left many of these **cosmetic temporal cues** static or absent.
 
 ## Added implementation
 
@@ -28,4 +28,4 @@ All visual-only animations operate on read-only data and must never change C sim
 - Audio remains **unverified**, since the user cannot test it in their current environment. Do not claim parity.
 - This is a code-level/source-style restoration. Physical Windows screenshot, subjective game feel, p95/p99 timing, multi-DPI and full-run QA remain the signoff authority.
 
-The dedicated `godot/tests/p9_legacy_atmosphere_smoke.gd` is deliberately **headless structural smoke**, not visual acceptance.
+The dedicated `tests/p9_legacy_atmosphere_smoke.gd` is deliberately **headless structural smoke**, not visual acceptance.

@@ -12,4 +12,4 @@ Actual P10 stage acceptance also requires:
 - Compare matched Windows CPU/GPU p95 frame time and frame pacing of real integrated combat + P9 100/500/1000/2000 bullet workloads; P1 placeholder timings cannot be used as final game FPS.
 - Keep Python/Tk available until an explicit P10 release sign-off.
 
-To validate only calculations/scene under Godot: `godot --headless --path godot --editor --import --quit` then `godot --headless --path godot --script res://tests/p10_benchmark_smoke.gd`.
+To validate only calculations/scene under Godot: `godot --headless --path . --editor --import --quit` then `godot --headless --path . --script res://tests/p10_benchmark_smoke.gd`.
