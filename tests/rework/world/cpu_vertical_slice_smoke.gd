@@ -195,7 +195,7 @@ func _run() -> void:
     if bool(saved_again.get("ok", false)):
         check(int(saved_again["snapshot"]["vaccine"]["mission"]["mission_xp"]) ==
             saved_xp, "B death is not replayed into E reward ledger")
-    get_tree().paused = false
+    paused = false
     root.remove_child(pilot)
     pilot.queue_free()
     await process_frame
