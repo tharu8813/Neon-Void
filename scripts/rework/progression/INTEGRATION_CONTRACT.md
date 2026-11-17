@@ -5,7 +5,7 @@ Owner: E / #99. No existing save files or Godot root scenes modified.
 ## Namespaces and isolation
 
 - New saves: `user://rework/v1/rework-slot-<slot_id>/state.json`, **not** the P8 `user://persistence/slot-v1` directory and never a Python folder.
-- Slot IDs and vaccine/run/receipt/plugin IDs are stable, restricted to ASCII letters, digits, `_`, `-`, `.`, max 100 chars.
+- Slot IDs use filesystem-safe ASCII letters/digits/`_`/`-`/`.`. Game IDs additionally allow `:` in receipts/offer IDs (as C uses `run_id:offer_index:slot`), max 100 characters. Do not use `:` in a slot ID.
 - `State.new_slot(slot_id, vaccine_id, balance_config)` creates an in-memory version 1 payload. `Gateway.initialize(...)` refuses existing or corrupt slots. No implicit legacy import.
 - Global settings belong to A and are intentionally excluded from vaccine destruction.
 
@@ -27,7 +27,7 @@ All regular commands except `choose_new_vaccine` carry `action`, `vaccine_id`, `
 | `pending_reward` | `run_id`, `receipt_id`, `xp`, `fragments` | D |
 | `objective_completed` | `run_id`, `receipt_id`, `objective_id` | D |
 | `hardware_cleaned` | `run_id`, `receipt_id`, `hardware_id` in CPU/GPU/RAM/SSD/HDD | D |
-| `plugin_picked` | `run_id`, `receipt_id`, `plugin_id`, `rarity`, `level`, `offer_source` (levelup/hardware/event) | C |
+| `plugin_picked` | `run_id`, `receipt_id`, `offer_id` (C 3-card screen ID), `plugin_id`, `rarity`, `level`, `offer_source` (levelup/hardware/event) | C |
 | `extract` | `run_id`, `receipt_id`, `learn_plugin_ids` (max 2) | D + C + A |
 | `die` | `run_id`, `receipt_id` | D/B through A |
 | `archive_plugin`, `withdraw_plugin` | `plugin_id`, `receipt_id` (hub only) | A UI |
@@ -48,7 +48,7 @@ if result.get("applied", false):
     pass
 ```
 
-Level-up plugin offers are counted in `mission.pending_plugin_offers`. A C selection with `offer_source="levelup"` consumes exactly one. C owns random generation and plugin max-level checks. Temporary plugin offers from hardware/event use a different `offer_source`.
+Level-up plugin offers are counted in `mission.pending_plugin_offers`. A C selection with `offer_source="levelup"` consumes exactly one. E additionally records `mission.claimed_offer_ids`, so two different slot receipts from the **same** C `offer_id` can never grant two plugins. C owns random generation and plugin max-level checks. C `choose_card(slot)` returns `offer_id`, `receipt_id`, `plugin_id`, `rarity`, `level`, `learnable`; A maps those fields to the E `plugin_picked` command and adds `offer_source`. Temporary plugin offers from hardware/event use a different `offer_source`.
 
 ## Domain invariants and GDD draft knobs
 
