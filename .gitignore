@@ -31,3 +31,7 @@ htmlcov/
 /os_checkpoint.json.lock
 /os_checkpoint.json.corrupt*
 /.neon-checkpoint-*.tmp
+
+# New Godot port caches and binary outputs, never player saves
+/godot/.godot/
+/godot/build/

@@ -1,0 +1,93 @@
+name: Godot D software and UI checks
+
+on:
+  pull_request:
+    paths:
+      - 'godot/scripts/software/**'
+      - 'godot/scripts/ui/**'
+      - 'godot/scenes/ui/**'
+      - 'godot/tests/software_smoke.gd'
+      - 'godot/tests/ui_smoke.gd'
+      - 'tests/test_godot_software_parity.py'
+      - '.github/workflows/godot-d-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    name: Python software parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest tests.test_godot_software_parity
+  godot-smoke:
+    name: D headless scenes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot Linux editor
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v4.7.2-stable_linux.x86_64"
+          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Install pinned Godot Windows editor
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = Join-Path $env:RUNNER_TEMP 'godot'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip" -OutFile (Join-Path $env:RUNNER_TEMP 'godot.zip')
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP 'godot.zip') -DestinationPath $target
+          $editor = Get-ChildItem -Path $target -Filter '*win64.exe' -File | Select-Object -First 1
+          if (-not $editor) { throw 'Pinned Godot editor missing' }
+          "NEON_GODOT=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Import and execute parity smoke (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd
+          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/software_smoke.gd
+          if [ -f 'godot/tests/ui_smoke.gd' ]; then
+            timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/ui_smoke.gd
+          fi
+      - name: Import and execute parity smoke (Windows, checked exit codes)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Windows GUI-subsystem Godot can return before PowerShell '&' waits for it.
+          # Always await the real process, enforce timeout, and inspect exit code.
+          function Invoke-CheckedGodot([string]$argsText) {
+            $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $argsText -NoNewWindow -PassThru
+            try {
+              if (-not $p.WaitForExit(90000)) {
+                $p.Kill($true)
+                throw "Godot timed out: $argsText"
+              }
+              if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
+            } finally { $p.Dispose() }
+          }
+          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --check-only --script res://scripts/ui/neon_cursor.gd'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/software_smoke.gd'
+          if (Test-Path 'godot/tests/ui_smoke.gd') {
+            Invoke-CheckedGodot '--headless --path godot --script res://tests/ui_smoke.gd'
+          }

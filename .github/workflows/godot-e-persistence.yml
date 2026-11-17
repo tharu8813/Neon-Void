@@ -1,0 +1,73 @@
+name: Godot E persistence safety checks
+
+on:
+  pull_request:
+    paths:
+      - 'godot/**'
+      - '.github/workflows/godot-e-persistence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_TAG: '4.7.2-stable'
+
+jobs:
+  parity:
+    name: E persistence safety (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot editor (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          curl -fL --retry 3 "https://github.com/godotengine/godot-builds/releases/download/$GODOT_TAG/Godot_v${GODOT_TAG}_linux.x86_64.zip" -o "$RUNNER_TEMP/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64"
+          echo "NEON_GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_TAG}_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Godot editor (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'godot'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $url = "https://github.com/godotengine/godot-builds/releases/download/$env:GODOT_TAG/Godot_v$env:GODOT_TAG`_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile (Join-Path $env:RUNNER_TEMP 'godot.zip')
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP 'godot.zip') -DestinationPath $dir
+          $exe = Get-ChildItem -Path $dir -Filter '*win64.exe' -File | Select-Object -First 1
+          if (-not $exe) { throw 'Missing Godot editor' }
+          "NEON_GODOT=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Import and execute persistence smoke (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 90 "$NEON_GODOT" --headless --path godot --editor --import --quit
+          timeout 90 "$NEON_GODOT" --headless --path godot --script res://tests/persistence_smoke.gd
+      - name: Import and execute persistence smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedGodot([string]$argsText) {
+            $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $argsText -NoNewWindow -PassThru
+            try {
+              if (-not $p.WaitForExit(90000)) {
+                $p.Kill($true)
+                throw "Godot timed out: $argsText"
+              }
+              if ($p.ExitCode -ne 0) { throw "Godot failed (exit $($p.ExitCode)): $argsText" }
+            } finally { $p.Dispose() }
+          }
+          Invoke-CheckedGodot '--headless --path godot --editor --import --quit'
+          Invoke-CheckedGodot '--headless --path godot --script res://tests/persistence_smoke.gd'
