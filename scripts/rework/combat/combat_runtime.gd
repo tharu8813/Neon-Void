@@ -25,6 +25,9 @@ var settings: Dictionary = {
     "grid_cell_size": 8.0,
     "max_recycled_projectiles": 128,
     "event_work_per_tick": 512,
+    "max_pending_events": 8192,
+    "max_active_projectiles": 4096,
+    "profile_window_ticks": 600,
     "default_projectile_speed": 18.0,
     "projectile_radius_scale": 0.025,
     "default_projectile_lifetime_ticks": 120,
@@ -40,6 +43,7 @@ var damage_absorber: Callable = Callable()
 var fire_gate_provider: Callable = Callable()
 var projectile_segment_filter: Callable = Callable()
 var last_processed_events: Array[Dictionary] = []
+var tick_durations_us: Array[int] = []
 
 func _init(seed_value: int = 42, config: Dictionary = {}) -> void:
     begin(seed_value, config)
@@ -52,6 +56,7 @@ func begin(seed_value: int, config: Dictionary = {}) -> void:
     next_projectile_id = 0
     presentation.clear()
     last_processed_events.clear()
+    tick_durations_us.clear()
     # New mission may not inherit previous world's callbacks.
     stat_provider = Callable()
     attack_provider = Callable()
@@ -60,12 +65,14 @@ func begin(seed_value: int, config: Dictionary = {}) -> void:
     projectile_segment_filter = Callable()
     bus.reset()
     settings.merge(config, true)
+    bus.max_pending_events = maxi(1, int(settings.get("max_pending_events", 8192)))
     mission_id = str(settings.get("encounter_id", "simulation"))
     rng.seed = seed_value
     status_rng.seed = seed_value ^ 0x4354524c
     plugin_hit_counts.clear()
     counters = {"shots": 0, "collisions": 0, "damage_events": 0,
-        "killed": 0, "projectiles_reused": 0, "broadphase_candidates": 0}
+        "killed": 0, "projectiles_reused": 0, "broadphase_candidates": 0,
+        "projectiles_blocked": 0, "fire_backpressured": 0}
 
 func register_actor(actor_id: String, team: String, position: Vector3,
         base_stats: Dictionary = {}, options: Dictionary = {}) -> bool:
@@ -197,6 +204,9 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
         overrides: Dictionary = {}) -> String:
     if not actors.has(actor_id) or direction.length_squared() <= 0.000001:
         return ""
+    if projectiles.size() >= maxi(1, int(settings.get("max_active_projectiles", 4096))):
+        counters["projectiles_blocked"] += 1
+        return ""
     var actor: Dictionary = actors[actor_id]
     var stat: Dictionary = _effective_stats(actor)
     var projectile: Dictionary = {}
@@ -245,6 +255,11 @@ func _fire_if_ready(actor_id: String, aim: Vector2) -> void:
         float(stats.get("attack_speed", 0.0)), 0.0,
         maxf(0.0, float(settings.get("attack_speed_cap", 30.0))))
     actor["fire_credit"] = float(actor["fire_credit"]) + attacks_per_second * DT
+    if bus.pending_count() >= bus.max_pending_events or projectiles.size() >= maxi(
+            1, int(settings.get("max_active_projectiles", 4096))):
+        actor["fire_credit"] = minf(1.0, float(actor["fire_credit"]))
+        counters["fire_backpressured"] += 1
+        return
     if bool(Statuses.active_flags(actor["status_state"]).get("stopped", false)):
         actor["fire_credit"] = minf(float(actor["fire_credit"]), 1.0)
         return
@@ -585,6 +600,7 @@ func _resolve_event(event: Dictionary) -> Array:
 
 func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
     ## A calls exactly once per gameplay tick. inputs keyed by stable actor ID.
+    var start_us: int = Time.get_ticks_usec()
     fixed_tick += 1
     bus.set_tick(fixed_tick)
     presentation.clear()
@@ -621,4 +637,29 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
     _step_projectiles()
     var quota: int = maxi(1, int(settings.get("event_work_per_tick", 512)))
     last_processed_events = bus.drain_batch(quota, Callable(self, "_resolve_event"))
+    tick_durations_us.append(maxi(0, Time.get_ticks_usec() - start_us))
+    var window: int = maxi(1, int(settings.get("profile_window_ticks", 600)))
+    if tick_durations_us.size() > window:
+        tick_durations_us.pop_front()
     return presentation.duplicate(true)
+
+func profiling_snapshot() -> Dictionary:
+    ## Instrumentation only: never drives gameplay or RNG decisions.
+    var samples: Array[int] = tick_durations_us.duplicate()
+    samples.sort()
+    var count: int = samples.size()
+    if count == 0:
+        return {"ticks": 0, "mean_us": 0, "p95_us": 0, "p99_us": 0,
+            "max_pending": int(bus.metrics.get("max_pending", 0)),
+            "pending_events": bus.pending_count(),
+            "overflow_rejected": int(bus.metrics.get("overflow_rejected", 0))}
+    var total: int = 0
+    for duration in samples:
+        total += duration
+    return {"ticks": count, "mean_us": float(total) / float(count),
+        "p95_us": samples[mini(count - 1, ceili(float(count) * 0.95) - 1)],
+        "p99_us": samples[mini(count - 1, ceili(float(count) * 0.99) - 1)],
+        "max_pending": int(bus.metrics.get("max_pending", 0)),
+        "pending_events": bus.pending_count(),
+        "overflow_rejected": int(bus.metrics.get("overflow_rejected", 0))}
+
