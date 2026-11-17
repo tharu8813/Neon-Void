@@ -91,6 +91,9 @@ func reroll_card(slot: int) -> Dictionary:
 	if _pending.is_empty() or rerolls_remaining <= 0 or slot < 0 or slot >= 3:
 		return {}
 	var cards: Array = _pending["cards"]
+	# All-eligible-candidates-exhausted cards cannot be rerolled at a cost.
+	if bool(cards[slot].get("empty", false)):
+		return {}
 	var replacement: Dictionary = _draw_card(_pending["context"])
 	replacement["slot"] = slot
 	cards[slot] = replacement

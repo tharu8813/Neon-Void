@@ -7,8 +7,8 @@ This new isolated library does not wire legacy combat, UI, saves or project glob
 - plugin_offer_engine.gd: new(custom_entries, custom_settings); begin_mission(seed, levels); roll_offer(context); reroll_card(slot); choose_card(slot); dismiss_offer(); add_rerolls(amount); rarity_probabilities(context); offer_snapshot(); is_eligible(id); get_entry(id); get_catalog().
 - Context includes cleared_hardware (0..5), difficulty_tier (nonnegative integer), luck_points (nonnegative float), all with provisional scaling in odds.proposal.v1.json.
 - Exactly three independent rarity draws per screen; a single-slot reroll redraws its rarity and ID, with other cards and offer_id unchanged. Reroll can coincidentally return the same card.
-- claim returns offer_id, receipt_id, plugin_id, rarity, level, learnable. Duplicate plugin upgrades level; the maxed plugin is excluded on subsequent rewards. Invalid claims do not spend a receipt.
-- All rewards maxed => empty cards and no claim. Repeated roll_offer while active does not generate another screen. Independent RNG seed is supplied by A/E (do not use VFX RNG).
+- claim returns offer_id, receipt_id, plugin_id, rarity, level, learnable. For cross-mission unique receipts, A/E MUST pass a globally unique run_id as begin_mission's third argument; the default seed-based fallback is for local tests only. Duplicate plugin upgrades level; the maxed plugin is excluded on subsequent rewards. Invalid claims do not spend a receipt.
+- All rewards maxed => empty cards and no claim; such a card cannot spend rerolls. Repeated roll_offer while active does not generate another screen. Independent RNG seed is supplied by A/E (do not use VFX RNG).
 
 ## Unconfirmed pity proposals
 

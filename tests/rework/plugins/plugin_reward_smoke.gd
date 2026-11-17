@@ -145,6 +145,9 @@ func _run() -> void:
 	if not _check(capped["cards"][0]["empty"] and capped["cards"][1]["empty"] and capped["cards"][2]["empty"], "max level excluded and zero candidate cards"):
 		return
 	var before_empty_miss: int = single.missed_screens
+	var before_empty_rerolls: int = single.rerolls_remaining
+	if not _check(single.reroll_card(0).is_empty() and single.rerolls_remaining == before_empty_rerolls, "empty card does not waste reroll"):
+		return
 	if not _check(single.choose_card(0).is_empty() and single.dismiss_offer() and single.missed_screens == before_empty_miss, "empty cannot claim or add pity"):
 		return
 	if not _check(not single.is_eligible(str(common_only[0]["plugin_id"])), "maxed ID not eligible"):
