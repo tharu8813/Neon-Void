@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/rework/world/world_preview.gd" id="1_preview"]
+
+[node name="ProceduralPreview" type="Node3D"]
+script = ExtResource("1_preview")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, 20, -12)
+light_energy = 1.2
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(12, 25, 10)
+rotation_degrees = Vector3(-90, 0, 0)
+projection = 1
+current = true
+size = 24.0
