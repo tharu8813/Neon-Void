@@ -5,6 +5,8 @@ const Motherboard = preload("res://scripts/rework/world/motherboard_layout.gd")
 const HubScene = preload("res://scenes/rework/world/defender_hub.tscn")
 const BoardScene = preload("res://scenes/rework/world/motherboard.tscn")
 const CPUScene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
+const ReworkState = preload("res://scripts/rework/world/extraction_state.gd")
+const ExtractionGate = preload("res://scripts/rework/world/extraction_gate.gd")
 var failures: int = 0
 
 func check(ok: bool, why: String) -> void:
@@ -117,6 +119,39 @@ func _run() -> void:
     check(live.interact().get("type", "") == "hardware_extraction_requested", "physical exit activated")
     check(live.current_mode == "hub", "demo ACK returns player to hub")
     live.queue_free()
+    # E bridge must be attached before production accepts an issued run.
+    var blocked: Variant = CPUScene.instantiate()
+    blocked.demo_mode = false
+    root.add_child(blocked)
+    check(not blocked.confirm_mission_started("unpersisted-run", 22),
+        "production start refuses absent E durable bridge")
+    check(blocked.current_mode == "hub", "failed production start leaves hub intact")
+    blocked.queue_free()
+    # Prepare must NOT consume a clean run until E returns exact durable ACK.
+    var world_state = ReworkState.new("ack-smoke")
+    for objective_id in ["secure_core", "stop_intruders"]:
+        check(world_state.confirm_objective("CPU", objective_id, "world:ack-smoke:" + objective_id),
+            "verified objective for ACK gate")
+    check(world_state.confirm_boss_defeated("CPU", "world:ack-smoke:boss"),
+        "boss death for ACK gate")
+    var gate_model: Variant = ExtractionGate.new(world_state)
+    var prepared: Dictionary = gate_model.prepare("CPU")
+    check(not prepared.is_empty() and prepared.get("cleared_count", 0) == 1,
+        "prepare has exactly one cleared hardware")
+    check(not world_state.extraction_finished and world_state.is_extraction_open("CPU"),
+        "preparing extraction does not mutate world state")
+    check(gate_model.finalize_after_durable_ack({"ok": false, "receipt_id": prepared["receipt_id"]}).is_empty(),
+        "failed E ACK cannot finalize extraction")
+    check(gate_model.finalize_after_durable_ack({"ok": true, "receipt_id": "different"}).is_empty(),
+        "wrong E receipt cannot finalize extraction")
+    check(not world_state.extraction_finished, "failed ACKs keep run open")
+    var committed: Dictionary = gate_model.finalize_after_durable_ack({
+        "ok": true, "receipt_id": prepared["receipt_id"], "revision": 2})
+    check(committed.get("outcome", "") == "success" and world_state.extraction_finished,
+        "exact E ACK finalizes once")
+    check(gate_model.finalize_after_durable_ack({
+        "ok": true, "receipt_id": prepared["receipt_id"]}).is_empty(),
+        "duplicate E ACK cannot re-emit payout")
     if failures == 0:
         print("REWORK HUB/MAINBOARD PASS (terminals, intro gate lock, arbitrary hardware order)")
     quit(0 if failures == 0 else 1)
