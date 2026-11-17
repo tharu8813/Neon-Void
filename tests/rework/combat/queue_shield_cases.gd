@@ -135,6 +135,19 @@ static func run(check: Callable) -> void:
     combat.step_fixed({"P":{"fire":false}})
     check.call(_near(effects.shield_value(),0.0),
         "shield duration expires by fixed tick without healing HP")
+    combat.settings["max_active_projectiles"] = 1
+    var hp_before_rejection: float = float(combat.snapshot("E")["stats"]["health"])
+    var denied: Dictionary = effects._authoritative_sink([
+        {"type":"projectiles", "actor_id":"P", "plugin_id":"nv_c_extra_bullet",
+            "count":2},
+        {"type":"damage", "actor_id":"P", "plugin_id":"nv_c_hit_explosion",
+            "target_id":"E", "attack":{"damage_type":"true", "base_damage":9.0}}
+    ], effects._world())
+    check.call(not bool(denied.get("ok", false))
+        and str(denied.get("reason", "")) == "B_projectile_capacity_rejected"
+        and _near(float(combat.snapshot("E")["stats"]["health"]), hp_before_rejection)
+        and combat.projectiles.is_empty(),
+        "C projectile batch preflight rejects all commands without partial B damage")
     effects.maximum_pending_events = 2
     effects._enqueue("skill_cast", {"actor_id":"P", "target_id":"E"})
     effects._enqueue("skill_cast", {"actor_id":"P", "target_id":"E"})
