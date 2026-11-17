@@ -20,23 +20,23 @@ func _run() -> void:
     game.set("persistence_enabled", false)
     root.add_child(game)
     var actor: Node3D = game.get_node("LegacyPlayer")
-    var fx: Node3D = game.get_node("CombatFX")
-    var ui: CanvasLayer = game.get_node("UIShell")
-    var gate: Node3D = game.get_node("LegacySectorExit")
+    var fx: Variant = game.get_node("CombatFX")
+    var ui: Variant = game.get_node("UIShell")
+    var gate: Variant = game.get_node("LegacySectorExit")
     expect(not gate.visible, "source Python EXIT hidden inside antivirus base")
     game.call("_on_system_pressed", "m")
-    expect(bool(game.saved_state["settings.json"]["muted"]) and bool(game.legacy_audio.muted),
+    expect(bool(game.get("saved_state")["settings.json"]["muted"]) and bool(game.get("legacy_audio").muted),
         "M toggles settings and actual audio facade mute")
     game.call("_on_system_pressed", "m")
-    expect(not bool(game.saved_state["settings.json"]["muted"]), "M unmutes")
+    expect(not bool(game.get("saved_state")["settings.json"]["muted"]), "M unmutes")
     game.call("_on_system_pressed", "f11")
-    expect(str(game.saved_state["settings.json"]["display_mode"]) == "fullscreen",
+    expect(str(game.get("saved_state")["settings.json"]["display_mode"]) == "fullscreen",
         "F11 enters original fullscreen")
     game.call("_on_system_pressed", "f11")
-    expect(str(game.saved_state["settings.json"]["display_mode"]) == "windowed",
+    expect(str(game.get("saved_state")["settings.json"]["display_mode"]) == "windowed",
         "F11 toggles back")
     game.call("_on_system_pressed", "borderless")
-    expect(str(game.saved_state["settings.json"]["display_mode"]) == "borderless",
+    expect(str(game.get("saved_state")["settings.json"]["display_mode"]) == "borderless",
         "Alt+Enter uses original borderless toggle")
 
     expect(LegacyExit.EXIT_POSITION == Vector2(100.0, 360.0),
@@ -50,7 +50,7 @@ func _run() -> void:
 
     expect(bool(game.call("start_new_run")), "start OS in synthetic save-only fixture")
     expect(bool(game.call("enter_sector", "CPU")), "enter first sector")
-    expect(gate.visible and str(game.mode) == "combat",
+    expect(gate.visible and str(game.get("mode")) == "combat",
         "3D EXIT is present during actual C combat")
     gate.call("sync_gate", Vector2(100, 360), "CPU CORE", false, "f", false, 1.0 / 60.0)
     expect(bool(gate.near_exit) and gate.prompt.visible and gate.scan.visible,
@@ -61,30 +61,30 @@ func _run() -> void:
 
     actor.call("set_logical_position", Vector2(700, 360))
     game.call("_on_interact")
-    expect(str(game.mode) == "combat", "distant F cannot abandon active wave")
+    expect(str(game.get("mode")) == "combat", "distant F cannot abandon active wave")
     actor.call("set_logical_position", Vector2(100, 360))
     game.call("_on_interact")
-    expect(str(game.mode) == "hub" and not gate.visible,
+    expect(str(game.get("mode")) == "hub" and not gate.visible,
         "near F retreats safely to OS hub, hides 3D EXIT")
     expect(fx.visible and fx.friendly_trails.multimesh.visible_instance_count == 0,
         "OS hub can show purification pulse but not combat bullets")
 
-    var campaign: RefCounted = game.campaign
+    var campaign: Variant = game.get("campaign")
     game.set("purify_uses", 3)
     campaign.infection = 0.0
     campaign.integrity = 100.0
-    expect(not game.call("purify") and int(game.purify_uses) == 3,
+    expect(not game.call("purify") and int(game.get("purify_uses")) == 3,
         "zero-benefit purification preserves all charges")
     campaign.infection = 50.0
     campaign.integrity = 90.0
     expect(bool(game.call("purify")), "beneficial purification executes")
-    expect(int(game.purify_uses) == 2 and is_equal_approx(float(campaign.infection), 18.0)
+    expect(int(game.get("purify_uses")) == 2 and is_equal_approx(float(campaign.infection), 18.0)
         and is_equal_approx(float(campaign.integrity), 99.0),
         "original 32-point infection heal, 9-point integrity repair")
     expect(fx.bursts.size() == 1, "successful purification emits hub feedback ring")
 
     expect(bool(game.call("enter_sector", "MEMORY")), "second sector accepts C combat")
-    var sim: RefCounted = game.sim
+    var sim: Variant = game.get("sim")
     var id: int = sim.spawn_enemy("rootkit", Vector2(700.0, 340.0))
     game.call("_update_visuals")
     var before: float = float(sim.get_enemy(id)["hp"])
@@ -118,7 +118,7 @@ func _run() -> void:
     snapshot["boss_maxhp"] = 100.0
     snapshot["boss_warning"] = "공격 발동 임박"
     ui.call("update_game_state", snapshot)
-    var hud: Control = ui._hud
+    var hud: Variant = ui._hud
     expect(hud._combo_text.visible and hud._combo_text.text.contains("3 COMBO"),
         "source combo overlay is cosmetic and never multiplies C score")
     expect(hud._danger_sides[0].visible, "HP <35% red edge warning")
