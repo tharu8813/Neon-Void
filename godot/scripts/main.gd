@@ -118,6 +118,7 @@ func _ready() -> void:
     actor.connect("interact_requested", _on_interact)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
+    sim.connect("shard_collected", _on_shard_collected)
     sim.connect("wave_ready", _on_wave_ready)
     ui.connect("action_requested", _on_menu_action)
     ui.connect("software_card_requested", _on_card_selected)
@@ -197,6 +198,7 @@ func start_new_run() -> bool:
     sim = Combat.new(42)
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
+    sim.connect("shard_collected", _on_shard_collected)
     sim.connect("wave_ready", _on_wave_ready)
     software.reset(_deployed_base())
     if persistence_enabled and not selected_archived_software.is_empty():
@@ -468,10 +470,13 @@ func _on_player_hit(_damage: float, infection_delta: float) -> void:
 
 func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     run_kills += 1
-    score += 10
     var boss_kill: bool = EnemyCatalog.is_boss(kind)
     combo_count = combo_count + 1 if combo_window > 0.0 else 1
     combo_window = 2.6
+    # Python game.py::kill_enemy uses the actual enemy type score times
+    # min(combo,40)*0.1, not a flat ten points per kill.
+    var base_score: int = int(EnemyCatalog.STATS[kind][5]) if EnemyCatalog.STATS.has(kind) else 10
+    score += int(float(base_score) * (1.0 + float(mini(combo_count, 40)) * 0.1))
     if combo_count % 10 == 0:
         legacy_audio.call("play_effect", "combo", 0.15)
     legacy_audio.call("play_effect", "boom" if boss_kill else "kill", 0.06)
@@ -483,6 +488,16 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     if SectorCatalog.SECTORS.has(campaign.active_sector):
         if kind == str(SectorCatalog.SECTORS[campaign.active_sector]["boss"]):
             run_boss_kills += 1
+
+func _on_shard_collected(value: int, player_location: Vector2) -> void:
+    # C controls collision and point value; A only credits the existing
+    # score/receipt field, never writes a new save document.
+    if value <= 0:
+        return
+    score += value
+    legacy_audio.call("play_effect", "hit", 0.12)
+    visual_fx.call("add_burst", player_location, "shard")
+    visual_fx.call("show_pickup", player_location, value)
 
 func _apply_stats() -> void:
     actor.set("speed_px", float(software.stats["speed"]))
@@ -958,7 +973,9 @@ func _update_visuals() -> void:
         if mode == "combat":
             var reduced: bool = bool(saved_state.get("settings.json", {}).get("reduced_effects", false))
             visual_fx.call("sync_battle", sim.bullets, sim.enemy_bullets,
-                sim.telegraphs, sim.enemies, reduced)
+                sim.telegraphs, sim.enemies, reduced, sim.shards)
+            visual_fx.call("sync_drones", sim.player.get("pos", Vector2(640, 360)),
+                int(sim.player.get("stats", {}).get("drone", 0)), float(sim.drone_angle))
         elif mode == "hub":
             visual_fx.call("sync_battle", [], [], [], [],
                 bool(saved_state.get("settings.json", {}).get("reduced_effects", false)))
@@ -1047,6 +1064,7 @@ func resume_checkpoint() -> bool:
     sim = Combat.new(int(campaign.seed_value))
     sim.connect("player_hit", _on_player_hit)
     sim.connect("enemy_died", _on_enemy_died)
+    sim.connect("shard_collected", _on_shard_collected)
     sim.connect("wave_ready", _on_wave_ready)
     run_kills = int(cp.run_kills)
     run_boss_kills = int(cp.run_boss_kills)
