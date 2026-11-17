@@ -98,22 +98,67 @@ func _ready() -> void:
 func _process(delta: float) -> void:
     if tactical_hud == null or world == null:
         return
+    if frozen:
+        if status_effects != null:
+            status_effects.clear_view()
+        return
     _hud_elapsed += delta
     if _hud_elapsed < 0.15:
         return
     _hud_elapsed = 0.0
     var combat: Variant = world.get("combat")
+    var actor: Dictionary = {}
     if combat != null and str(combat.get("mode")) == "formal":
-        var actor: Dictionary = combat.actor_snapshot("VACCINE")
-        tactical_hud.render_combat_snapshot(actor)
-        if hub_panel != null and hub_panel.visible:
+        actor = combat.actor_snapshot("VACCINE")
+    tactical_hud.render_combat_snapshot(actor)
+    if status_effects != null:
+        status_effects.render_actor(actor)
+    # Do not rebuild dozens of Control rows at 60 Hz or reset scroll/focus.
+    if hub_panel != null and hub_panel.visible and hub_panel.tabs.current_tab == 4:
+        _combat_detail_elapsed += 0.15
+        if _combat_detail_elapsed >= 0.5:
+            _combat_detail_elapsed = 0.0
             hub_panel.show_live_combat(actor)
     else:
-        tactical_hud.render_combat_snapshot({})
-        if hub_panel != null and hub_panel.visible:
-            hub_panel.show_live_combat({})
+        _combat_detail_elapsed = 0.5
     if mission_tracker != null:
         mission_tracker.render_world(world)
+
+func _update_ui_geometry() -> void:
+    if get_viewport() == null or tactical_hud == null:
+        return
+    var vp: Vector2 = get_viewport().get_visible_rect().size
+    tactical_hud.update_layout()
+    if status_effects != null:
+        status_effects.update_layout()
+    if mission_tracker != null:
+        mission_tracker.update_layout()
+    if hub_panel != null:
+        hub_panel._layout_to_viewport()
+    if result_panel != null:
+        result_panel.update_layout()
+    if status_column != null:
+        status_column.custom_minimum_size.x = minf(480.0, maxf(240.0, vp.x - 36.0))
+    # Responsive overlays for windowed, 4:3, 16:9 and ultrawide layouts.
+    if offer_panel != null:
+        var offer_width: float = minf(720.0, maxf(300.0, vp.x - 24.0))
+        var offer_height: float = minf(420.0, maxf(200.0, vp.y - 24.0))
+        offer_panel.custom_minimum_size = Vector2(offer_width, offer_height)
+        offer_panel.position = ((vp - offer_panel.custom_minimum_size) * 0.5).max(Vector2.ZERO)
+        for card in card_buttons:
+            card.custom_minimum_size.x = maxf(210.0, offer_width - 175.0)
+    if learn_panel != null:
+        var learn_size := Vector2(minf(600.0, maxf(280.0, vp.x - 24.0)),
+            minf(280.0, maxf(180.0, vp.y - 24.0)))
+        learn_panel.custom_minimum_size = learn_size
+        learn_panel.position = ((vp - learn_size) * 0.5).max(Vector2.ZERO)
+    if recovery_panel != null:
+        var recover_width: float = minf(570.0, maxf(300.0, vp.x - 24.0))
+        var recover_size := Vector2(recover_width, minf(300.0, maxf(200.0, vp.y - 24.0)))
+        recovery_panel.custom_minimum_size = recover_size
+        recovery_panel.position = ((vp - recover_size) * 0.5).max(Vector2.ZERO)
+        if recovery_label != null:
+            recovery_label.custom_minimum_size.x = maxf(250.0, recover_width - 40.0)
 
 func _unhandled_input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
