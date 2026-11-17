@@ -23,6 +23,14 @@ static func natural(value: Variant, limit: int = MAX_EXACT_INT) -> bool:
         return false
     return numeric >= 0.0 and numeric <= float(limit) and floor(numeric) == numeric
 
+static func _exact_keys(value: Dictionary, keys: Array) -> bool:
+    if value.size() != keys.size():
+        return false
+    for key in keys:
+        if not value.has(key):
+            return false
+    return true
+
 static func _valid_ids(values: Variant, max_size: int = 100000) -> bool:
     if typeof(values) != TYPE_ARRAY or values.size() > max_size:
         return false
@@ -98,7 +106,12 @@ static func _valid_mission(mission: Variant) -> bool:
     return true
 
 static func _valid_vaccine(vaccine: Variant, config: Dictionary) -> bool:
-    if typeof(vaccine) != TYPE_DICTIONARY or vaccine.size() != 16:
+    if typeof(vaccine) != TYPE_DICTIONARY:
+        return false
+    if not _exact_keys(vaccine, ["vaccine_id", "alive", "copies_remaining", "level",
+            "xp", "total_xp", "earned_fragments", "unspent_fragments",
+            "invested_stats", "known_skills", "equipped_skills",
+            "archive", "carried", "mission", "receipts", "closed_runs"]):
         return false
     if not valid_id(vaccine.get("vaccine_id")) or vaccine.get("alive") != true             or not natural(vaccine.get("copies_remaining"), 3)             or not natural(vaccine.get("level"), 1000000) or vaccine.level < 1             or not natural(vaccine.get("xp")) or not natural(vaccine.get("total_xp"))             or not natural(vaccine.get("earned_fragments"))             or not natural(vaccine.get("unspent_fragments")):
         return false
