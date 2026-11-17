@@ -54,6 +54,12 @@ func _run() -> void:
             "E has an active run before D opens motherboard")
     check(str(world.get("current_mode")) == "motherboard",
         "D entered motherboard only after E commit")
+    var combat_router: Variant = world.get("combat")
+    check(str(combat_router.get("mode")) == "formal",
+        "persisted pilot invokes formal B production combat")
+    var live_facade: Variant = combat_router.get("live")
+    check(live_facade != null and live_facade.get("bridge") != null,
+        "A facade owns the B production CPU adapter")
     for index in range(13):
         pilot.call("_on_enemy_defeated", "smoke-enemy-" + str(index),
             "smoke-kill-" + str(index))
@@ -64,6 +70,22 @@ func _run() -> void:
     var popup: Control = pilot.get("offer_panel") as Control
     check(popup != null and popup.visible, "C three-card selection shown")
     check(paused, "gameplay paused for reward selection")
+    snapshot = Gateway.snapshot(slot_path)
+    var checkpoint: Dictionary = snapshot["snapshot"]["vaccine"]["mission"]["environment_rolls"].get(
+        "e_checkpoint_v1", {})
+    check(checkpoint.has("active_offer") and checkpoint["active_offer"] != null
+        and not str(checkpoint.get("rng_state_text", "")).is_empty(),
+        "E checkpoints exact C cards and lossless RNG before display")
+    var initial_card: Dictionary = checkpoint["active_offer"]["cards"][0].duplicate(true)
+    pilot.call("_reroll_card", 1)
+    snapshot = Gateway.snapshot(slot_path)
+    checkpoint = snapshot["snapshot"]["vaccine"]["mission"]["environment_rolls"].get(
+        "e_checkpoint_v1", {})
+    check(not bool(pilot.get("frozen"))
+        and int(checkpoint.get("rerolls_left", -1)) == 2,
+        "single-card reroll is durably saved before UI update")
+    check(checkpoint["active_offer"]["cards"][0] == initial_card,
+        "reroll kept the other selected slot unchanged")
     pilot.call("_choose_card", 0)
     check(not bool(pilot.get("frozen")), "C prepare/E durable/C confirm completed")
     check(not paused, "gameplay resumes only after durable plugin commit")
@@ -75,6 +97,16 @@ func _run() -> void:
             "plugin claim consumed precisely one pending offer")
         check(mission["obtained_plugins"].size() == 1,
             "plugin saved in E before returning to gameplay")
+        checkpoint = mission["environment_rolls"].get("e_checkpoint_v1", {})
+        check(checkpoint.get("active_offer") == null
+            and int(checkpoint.get("rerolls_left", -1)) == 2,
+            "E settles card checkpoint and keeps reroll expenditure")
+        if not mission["obtained_plugins"].is_empty():
+            var gained_id: String = str(mission["obtained_plugins"].keys()[0])
+            var authorized: Dictionary = live_facade.get("bridge").effects.active_levels()
+            check(int(authorized.get(gained_id, 0)) ==
+                int(mission["obtained_plugins"][gained_id]["level"]),
+                "B/C combat received plugin level only after E claim receipt")
     check(not bool(pilot.get("frozen")), "no safety halt")
     # Simulate D's confirmed objective facts after the independently tested B
     # live combat path. Here the goal is A's durable extraction/learning UI.
@@ -122,5 +154,5 @@ func _run() -> void:
     await process_frame
     _clean(slot_path)
     if failures == 0:
-        print("REWORK A PILOT PASS: durable hub/missions, C/E reward, D CPU facts, manual learning/extract/archive")
+        print("REWORK A PILOT PASS: B production CPU, E-checkpointed C cards/rerolls, durable learning/extract/archive")
     quit(1 if failures > 0 else 0)
