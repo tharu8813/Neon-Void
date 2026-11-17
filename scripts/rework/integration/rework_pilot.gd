@@ -17,6 +17,7 @@ const HubManagement = preload("res://scripts/rework/ui/hub_management_panel.gd")
 const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd")
 const MissionResult = preload("res://scripts/rework/ui/pilot_mission_result.gd")
 const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
+const SkillBar = preload("res://scripts/rework/ui/pilot_skill_bar.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -48,6 +49,7 @@ var hub_button: Button
 var mission_tracker: PanelContainer
 var result_panel: PanelContainer
 var status_effects: PanelContainer
+var skill_bar: PanelContainer
 var status_column: VBoxContainer
 var _hud_elapsed: float = 0.0
 var _combat_detail_elapsed: float = 0.0
@@ -101,6 +103,8 @@ func _process(delta: float) -> void:
     if frozen:
         if status_effects != null:
             status_effects.clear_view()
+        if skill_bar != null:
+            skill_bar.clear_view()
         return
     _hud_elapsed += delta
     if _hud_elapsed < 0.15:
@@ -113,6 +117,8 @@ func _process(delta: float) -> void:
     tactical_hud.render_combat_snapshot(actor)
     if status_effects != null:
         status_effects.render_actor(actor)
+    if skill_bar != null:
+        skill_bar.render_actor(actor)
     # Do not rebuild dozens of Control rows at 60 Hz or reset scroll/focus.
     if hub_panel != null and hub_panel.visible and hub_panel.tabs.current_tab == 4:
         _combat_detail_elapsed += 0.15
@@ -131,6 +137,8 @@ func _update_ui_geometry() -> void:
     tactical_hud.update_layout()
     if status_effects != null:
         status_effects.update_layout()
+    if skill_bar != null:
+        skill_bar.update_layout()
     if mission_tracker != null:
         mission_tracker.update_layout()
     if hub_panel != null:
@@ -188,6 +196,8 @@ func _create_ui() -> void:
     layer.add_child(tactical_hud)
     status_effects = StatusHUD.new()
     layer.add_child(status_effects)
+    skill_bar = SkillBar.new()
+    layer.add_child(skill_bar)
     mission_tracker = MissionTracker.new()
     layer.add_child(mission_tracker)
     hub_panel = HubManagement.new()
@@ -919,6 +929,8 @@ func _halt(reason: String) -> void:
         tactical_hud.show_blocked()
     if status_effects != null:
         status_effects.clear_view()
+    if skill_bar != null:
+        skill_bar.clear_view()
     if mission_tracker != null:
         mission_tracker.show_blocked()
     if message_label != null:
