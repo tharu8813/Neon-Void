@@ -82,6 +82,63 @@ jobs:
           Invoke-CheckedGodot '--headless --path . --script res://tests/port_smoke.gd'
           Invoke-CheckedGodot '--headless --path . --quit-after 3'
 
+      - name: Rework isolated regression scripts (Linux, if present)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # PRs intentionally own separate rework namespaces. Execute every present smoke,
+          # and require its actual nonzero failure code to fail this job.
+          scripts=(
+            tests/rework/combat/combat_foundation_smoke.gd
+            tests/rework/skills/skill_foundation_smoke.gd
+            tests/rework/plugins/plugin_reward_smoke.gd
+            tests/rework/world/world_foundation_smoke.gd
+            tests/rework/camera/look_ahead_smoke.gd
+            tests/rework/world/hub_motherboard_smoke.gd
+            tests/rework/world/hardware_rules_smoke.gd
+            tests/rework/progression/progression_smoke.gd
+            tests/rework/persistence/persistence_smoke.gd
+          )
+          count=0
+          for script in "${scripts[@]}"; do
+            if [ -f "$script" ]; then
+              echo "::group::Rework smoke: $script"
+              "$NEON_GODOT" --headless --path . --script "res://$script"
+              echo "::endgroup::"
+              count=$((count + 1))
+            fi
+          done
+          echo "Executed $count rework smoke scripts on Linux" >> "$GITHUB_STEP_SUMMARY"
+      - name: Rework isolated regression scripts (Windows, if present)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Godot is a Windows GUI-subsystem process: await and check ExitCode explicitly.
+          $scripts = @(
+            'tests/rework/combat/combat_foundation_smoke.gd',
+            'tests/rework/skills/skill_foundation_smoke.gd',
+            'tests/rework/plugins/plugin_reward_smoke.gd',
+            'tests/rework/world/world_foundation_smoke.gd',
+            'tests/rework/camera/look_ahead_smoke.gd',
+            'tests/rework/world/hub_motherboard_smoke.gd',
+            'tests/rework/world/hardware_rules_smoke.gd',
+            'tests/rework/progression/progression_smoke.gd',
+            'tests/rework/persistence/persistence_smoke.gd'
+          )
+          $count = 0
+          foreach ($script in $scripts) {
+            if (Test-Path -LiteralPath $script) {
+              Write-Host "Rework smoke: $script"
+              $args = '--headless --path . --script res://' + $script
+              $p = Start-Process -FilePath $env:NEON_GODOT -ArgumentList $args -NoNewWindow -Wait -PassThru
+              if ($p.ExitCode -ne 0) { throw "Rework Godot smoke failed (exit $($p.ExitCode)): $script" }
+              $count++
+            }
+          }
+          "Executed $count rework smoke scripts on Windows" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
   windows-export:
     # Automated Windows export is required for Godot PRs.
     # Passing headless checks does not prove on-screen GPU rendering or DPI.
