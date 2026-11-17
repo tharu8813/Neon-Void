@@ -1,20 +1,21 @@
 extends RefCounted
 ## Shared restrained cyberpunk palette; no external font or texture dependencies.
-const BACKDROP := Color("#071122")
-const SURFACE := Color("#102238")
-const SURFACE_ALT := Color("#142f45")
-const CYAN := Color("#42dfe8")
-const GOLD := Color("#f0c97b")
-const RED := Color("#ff647a")
-const TEXT := Color("#e1edf5")
-const MUTED := Color("#91adbd")
+# The frozen Python neonvoid/constants.py + view.py modal palette.
+const BACKDROP := Color("#04060e")
+const SURFACE := Color("#071320")
+const SURFACE_ALT := Color("#10313d")
+const CYAN := Color("#6ff2ff")
+const GOLD := Color("#ffd166")
+const RED := Color("#ff4d6d")
+const TEXT := Color("#d5ebff")
+const MUTED := Color("#5b7898")
 
 static func panel_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = SURFACE
-	s.border_color = Color("#24516b")
-	s.set_border_width_all(1)
-	s.set_corner_radius_all(8)
+	s.border_color = Color("#2a5166")
+	s.set_border_width_all(2)
+	s.set_corner_radius_all(0)
 	s.content_margin_left = 20.0
 	s.content_margin_right = 20.0
 	s.content_margin_top = 16.0
@@ -24,7 +25,7 @@ static func panel_style() -> StyleBoxFlat:
 static func button(text_value: String, accent: Color = CYAN) -> Button:
 	var b := Button.new()
 	b.text = text_value
-	b.custom_minimum_size = Vector2(130, 39)
+	b.custom_minimum_size = Vector2(130, 44)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.add_theme_font_size_override("font_size", 16)
 	b.add_theme_color_override("font_color", TEXT)
@@ -33,7 +34,7 @@ static func button(text_value: String, accent: Color = CYAN) -> Button:
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		var box := panel_style()
 		box.bg_color = SURFACE_ALT if state == "hover" or state == "pressed" else SURFACE
-		box.border_color = accent if state == "focus" or state == "hover" else Color("#24516b")
+		box.border_color = accent if state == "focus" or state == "hover" else Color("#31536b")
 		box.content_margin_top = 10
 		box.content_margin_bottom = 10
 		b.add_theme_stylebox_override(state, box)
