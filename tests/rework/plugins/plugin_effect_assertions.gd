@@ -5,6 +5,7 @@ const Sink = preload("res://scripts/rework/plugins/plugin_b_combat_sink.gd")
 const Catalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const View = preload("res://scripts/rework/plugins/plugin_offer_view.gd")
+const Coordinator = preload("res://scripts/rework/plugins/plugin_reward_coordinator.gd")
 
 var failures: Array[String] = []
 var _completed: bool = false
@@ -34,6 +35,23 @@ func event(kind: String, number: int = 1, target: String = "virus-1") -> Diction
 		"allowed_proc_triggers":["on_hit"],"proc_path":[],
 		"actor_health_ratio":0.2,"target_health_ratio":0.2,"actual_damage":10.0,
 		"plugin_id":"nv_c_random_rare"}
+
+
+func _delete_synthetic(folder: String) -> void:
+	var directory: DirAccess = DirAccess.open(folder)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var child: String = directory.get_next()
+	while not child.is_empty():
+		var full: String = folder.path_join(child)
+		if directory.current_is_dir():
+			_delete_synthetic(full)
+		else:
+			DirAccess.remove_absolute(full)
+		child = directory.get_next()
+	directory.list_dir_end()
+	DirAccess.remove_absolute(folder)
 
 func _run() -> void:
 	var full: Array[Dictionary] = Catalog.entries()
@@ -177,6 +195,42 @@ func _run() -> void:
 		print("B not installed on C-only stacked branch; real B damage/status path awaits A combined runner.")
 
 	_completed = true
+
+	# Real E durable reward transaction; never use the user's save directory.
+	if ResourceLoader.exists("res://scripts/rework/persistence/progression_gateway.gd"):
+		var store_api: Script = load("res://scripts/rework/persistence/rework_save_store.gd")
+		var model_api: Script = load("res://scripts/rework/progression/state_model.gd")
+		var gateway_api: Script = load("res://scripts/rework/persistence/progression_gateway.gd")
+		var suffix: String = "c-" + str(Time.get_ticks_usec()) + "-" + str(OS.get_process_id())
+		var folder: String = ProjectSettings.globalize_path("user://rework-c-test-" + suffix)
+		var slot_path: String = folder.path_join("rework-slot-" + suffix)
+		var created: Dictionary = store_api.initialize(slot_path,model_api.new_slot(suffix,"vaccine-c"))
+		check(bool(created.get("ok",false)),"E synthetic store initialized")
+		if bool(created.get("ok",false)):
+			var started: Dictionary = gateway_api.transact_command(slot_path,{
+				"action":"start_mission","vaccine_id":"vaccine-c","generation":1,
+				"run_id":"run-c-receipt","seed":1789})
+			check(bool(started.get("applied",false)),"E mission starts")
+			var xp: Dictionary = gateway_api.transact_command(slot_path,{
+				"action":"mission_xp","vaccine_id":"vaccine-c","generation":1,
+				"run_id":"run-c-receipt","receipt_id":"run-c-xp1","amount":100})
+			check(bool(xp.get("applied",false)),"E level reward queued")
+			var c_offers = Offers.new()
+			check(c_offers.begin_mission(1789,{},"run-c-receipt"),"C E-handshake mission prepared")
+			c_offers.roll_offer()
+			var committed: Dictionary = Coordinator.commit_choice(c_offers,0,slot_path,"vaccine-c",1,"run-c-receipt")
+			check(bool(committed.get("ok",false)),"E committed before C showed acquired")
+			var persisted: Dictionary = gateway_api.snapshot(slot_path)
+			if bool(persisted.get("ok",false)) and bool(committed.get("ok",false)):
+				var claimed_id: String = str(committed["plugin"]["plugin_id"])
+				var mission: Dictionary = persisted["snapshot"]["vaccine"]["mission"]
+				check(mission["obtained_plugins"].has(claimed_id) and int(mission["pending_plugin_offers"])==0,
+					"C and E share one persisted selection / pending reward consumed")
+				check(int(c_offers.levels.get(claimed_id,0))==1,"C inventory updated after durable commit")
+			else:
+				check(false,"persisted E snapshot missing")
+		_delete_synthetic(folder)
+
 	if failures.is_empty():
 		print("C LIVE EFFECTS PASS: 27 executable kinds, real B if available, proc/ICD, E prepare-ack/rollback")
 
