@@ -31,3 +31,20 @@ B owns events.gd submit_root, submit_proc and drain. C must pass B's exact signa
 ## Per-plugin chained hit permissions (data-only proposals)
 
 Catalog proc_permissions now has explicit allowed_proc_triggers and can_trigger_on_hit_effects per plugin. GDD permits legal chain lightning -> explosion -> disassembly; C proposes opt-ins for chain lightning, hit explosion, 4-shot proc volley, rare extra bullet and laser. All others default deny; **the specific opt-in list is an unapproved proposal for A/B review**. Exact GDD on-hit effectiveness values are machine-readable: four-shot extra bullets 70%, rare extra bullet 80%, laser 70%. B executes and enforces these semantics only after explicit mapping; no automatic damage is introduced by this PR.
+
+
+## Live-effect phase 2 (stacked PR after #102)
+
+- data/rework/plugins/effects.proposal.v1.json defines an executable operation recipe for every 27 original plugin IDs; numbers absent from GDD are clearly marked proposals.
+- plugin_effect_runtime.gd: configure(levels, seed), derived_stats(base,tick), process(event,world,sink), set_plugin_level() after E ack. It de-duplicates event IDs, tracks target ICDs and applies state only if the full authoritative sink batch succeeds. B retains its event queue and damage rules.
+- plugin_b_combat_sink.gd: B damage.gd.calculate/apply_damage and statuses.gd.apply/tick/modified_stats only when B is installed by A. Uses cloned world dictionaries and publishes atomically. World input keys: actor_stats, targets[id]={health,armor,magic_resist}, target_statuses[id], target_positions[id]=Vector2/Vector3, optional lightning_base_reach. Output includes generated_events, projectiles, projectile_transforms, buffs, knockbacks, actor_shield and pending_progression_requests.
+- Event inputs: event_id, kind, actor_id, target_id, tick (60Hz), source_tags, proc_path, allowed_proc_triggers; kinds on_hit, on_crit, on_hit_proc, before_damage, damage_dealt, damage_taken, skill_cast, skill_damage, dash, blink, leap, teleport, reveal, basic_attack, kill, health_threshold, plugin_acquired, tick. All source IDs require B/A mapping before use in live scene.
+- plugin_offer_view.gd exposes read-only UI metadata (name, rarity style, current/next level, levels and effect, rerolls). A owns Control scene wiring.
+- SAFETY CHANGE: choose_card(slot) now PREPARES a receipt only. confirm_card(receipt_id,{applied:true,receipt_id}) must follow confirmed E persistence. False/unknown ack freezes the screen, does not grant a plugin, and requires E-verified reconciliation. A #107's current integration bridge calls E after C prepare but must call C confirm_card afterward. plugin_reward_coordinator.gd provides optional direct E Gateway helper.
+- GDD fixed numbers retained: periodic shield 30s, low HP 60s ICD, dash speed 2s, lightning/explosion per-target 3s, four on-hit procs trigger four shots at 70% on-hit efficiency, extra rare bullet 80%, laser 70%, execute below enemy HP 50% with 15% bonus, disassembly unlimited stacking. All other draft numbers remain configurable.
+
+### Tests and dependencies
+
+Existing A-owned Godot CI invokes tests/rework/plugins/plugin_reward_smoke.gd on Windows and Linux. That script now also runs plugin_effect_assertions.gd. Standalone runner: tests/rework/plugins/plugin_live_effects_smoke.gd. C-only branch tests exercise effects using an injected fake sink and E prepare/ack failure handling. When mounted on A aggregate with B, same suite additionally uses B's real damage/status implementation. Never equate C-only CI with deployed 3D combat.
+
+A remains responsible for scene/world/projectile spawning, physics, source event registration, buff/shield consumption, camera and animations. B must review event kind/proc permissions, range and status ordering. E owns real saves, learned plugins, rare auto-award receipts, run resume and ack-loss recovery. C's rare_reward_request is not yet a durable E reward. Several attack combinations (laser plus boomerang) and actual mythic effects require design approval. Do not merge until A confirms these dependencies and manual Windows QA.
