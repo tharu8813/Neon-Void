@@ -86,8 +86,11 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
             return Rules.reallocate_stats(state, vaccine_id, generation,
                 receipt_id, command.allocations)
         "learn_skill":
+            if typeof(command.get("equip_on_discovery", [])) != TYPE_ARRAY:
+                return {"ok": false, "reason": "invalid_discovery_loadout"}
             return Rules.learn_skill(state, vaccine_id, generation,
-                receipt_id, str(command.get("skill_id", "")))
+                receipt_id, str(command.get("skill_id", "")),
+                command.get("equip_on_discovery", []))
         "equip_skills":
             if typeof(command.get("equipped")) != TYPE_ARRAY:
                 return {"ok": false, "reason": "invalid_skills"}
