@@ -10,6 +10,7 @@ signal boss_spawned(actor_id: String)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
+const Environment = preload("res://scripts/rework/world/environment_rules.gd")
 var run_id: String = ""
 var region_id: String = ""
 var world_state: Variant
@@ -187,7 +188,11 @@ func _spawn_defenders() -> void:
                 continue
             if field[y * int(plan["width"]) + x] >= 5:
                 cells.append(cell)
-    var count: int = 10 if region_id == "SSD" else 12
+    var descriptor: Dictionary = Environment.describe(
+        region_plan, [], int(region_plan["encounter_seed"]))
+    var base_count: int = 10 if region_id == "SSD" else 12
+    var count: int = ceili(float(base_count) *
+        float(descriptor.get("enemy_spawn_multiplier", 1.0)))
     if cells.size() < count:
         push_error("Storage map lacks distinct B spawn cells: " + region_id)
         return
