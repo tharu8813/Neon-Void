@@ -1,8 +1,8 @@
 extends RefCounted
 ## Deterministic FIFO proc bus. No SceneTree, physics or VFX dependency.
 ## Each root event starts a fresh ancestry; derived procs carry proc_path.
-## A cycle is the SAME effect on the SAME target within one ancestry.
-## Legal A(target 1) -> A(target 2) and independent roots remain permitted.
+## A cycle is the SAME effect, source actor and target within one ancestry.
+## Legal A(target 1) -> A(target 2), multi-source effects and new roots are permitted.
 var pending: Array[Dictionary] = []
 var processed_ids: Dictionary = {}
 var seen_collision_targets: Dictionary = {}
@@ -64,7 +64,8 @@ func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd
             metrics["permission_blocked"] += 1
             return {}
     var target: String = str(event.get("target_id", parent.get("target_id", "")))
-    var signature: String = effect_id + "|" + target
+    var actor: String = str(event.get("actor_id", parent.get("actor_id", "")))
+    var signature: String = effect_id + "|" + actor + "|" + target
     var ancestry: Array = parent.get("proc_path", [])
     if ancestry.has(signature):
         metrics["cycle_blocked"] += 1
@@ -76,6 +77,8 @@ func submit_proc(parent: Dictionary, effect_id: String, payload: Dictionary, icd
             metrics["icd_blocked"] += 1
             return {}
     event["tick"] = clock
+    event["actor_id"] = actor
+    event["target_id"] = target
     event["parent_event_id"] = str(parent.get("event_id", ""))
     event["effect_id"] = effect_id
     event["source_tags"] = event.get("source_tags", ["plugin"])

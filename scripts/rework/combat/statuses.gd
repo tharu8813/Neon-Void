@@ -86,3 +86,30 @@ static func tick(state: Dictionary) -> Dictionary:
             next_statuses.append(entry)
     state["statuses"] = next_statuses
     return {"damage_requests": damage_requests, "healing_request": healing}
+
+static func modified_stats(base: Dictionary, state: Dictionary) -> Dictionary:
+    ## Derive ephemeral stats; do not mutate the source/loadout baseline.
+    var merged: Dictionary = base.duplicate(true)
+    var offsets: Dictionary = stat_offsets(state)
+    for key in offsets:
+        merged[key] = float(merged.get(key, 0.0)) + float(offsets[key])
+    return merged
+
+static func action_allowed(state: Dictionary, action: String, gameplay_rng: RandomNumberGenerator) -> bool:
+    ## Logical flags are authored by status definitions, not by presentation.
+    ## Action kinds: attack, skill, movement_skill, move, dash, interact.
+    var flags: Dictionary = active_flags(state)
+    if bool(flags.get("stopped", false)):
+        return false
+    if (action == "skill" or action == "movement_skill") and bool(flags.get("silenced", false)):
+        return false
+    if (action == "move" or action == "dash" or action == "movement_skill") and bool(flags.get("rooted", false)):
+        return false
+    if action == "attack":
+        # Multiple malfunction sources: max chance is a BALANCE_DRAFT policy.
+        var fail_chance: float = 0.0
+        for entry in state.get("statuses", []):
+            fail_chance = maxf(fail_chance, Stats.valid_rate(float(entry.get("attack_failure_chance", 0.0))))
+        if fail_chance > 0.0 and gameplay_rng.randf() < fail_chance:
+            return false
+    return true

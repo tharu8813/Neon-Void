@@ -90,6 +90,23 @@ func _run() -> void:
     check(near(sum_damage, 240.0) and dot_state["statuses"].is_empty(), "60Hz DoT and expiry")
     var one_tick: Dictionary = {"tenacity": 1.0}
     check(not bool(Statuses.apply(one_tick, cc)["ok"]), "full CC immunity")
+    var gate_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+    gate_rng.seed = 2026
+    var stopped_state: Dictionary = {}
+    Statuses.apply(stopped_state, {"id": "stop", "flags": ["stopped"], "duration_ticks": 30})
+    check(not Statuses.action_allowed(stopped_state, "attack", gate_rng), "stop disables attack")
+    check(not Statuses.action_allowed(stopped_state, "interact", gate_rng), "stop disables interaction")
+    var rooted_state: Dictionary = {}
+    Statuses.apply(rooted_state, {"id": "root", "flags": ["rooted"], "duration_ticks": 30})
+    check(not Statuses.action_allowed(rooted_state, "dash", gate_rng), "root disables dash")
+    check(Statuses.action_allowed(rooted_state, "attack", gate_rng), "root does not disable attack")
+    var silenced_state: Dictionary = {}
+    Statuses.apply(silenced_state, {"id": "silence", "flags": ["silenced"], "duration_ticks": 30})
+    check(not Statuses.action_allowed(silenced_state, "skill", gate_rng), "silence disables skills")
+    var broken_state: Dictionary = {}
+    Statuses.apply(broken_state, {"id": "malfunction", "duration_ticks": 30, "attack_failure_chance": 1.0})
+    check(not Statuses.action_allowed(broken_state, "attack", gate_rng), "100% malfunction always blocks attack")
+    check(near(float(Statuses.modified_stats({"armor": 20.0}, dot_state)["armor"]), 20.0), "expired modifier removed")
     var bus = Events.new()
     bus.set_tick(5)
     var root: Dictionary = bus.submit_root({"kind": "root", "actor_id": "P", "target_id": "A", "hit_key": "projectile-1"})
@@ -104,6 +121,11 @@ func _run() -> void:
     check(not b.is_empty(), "first proc accepted")
     check(bus.submit_proc(a, "lightning", {"target_id": "B"}, 30).is_empty(), "per-target ICD")
     check(not bus.submit_proc(a, "lightning", {"target_id": "C"}, 30).is_empty(), "same proc at another target allowed")
+    var origin: Dictionary = bus.submit_root({"kind": "manual", "actor_id": "actor-1", "target_id": "B"})
+    var first_source: Dictionary = bus.submit_proc(origin, "reflect", {"target_id": "B", "actor_id": "actor-1"})
+    check(not first_source.is_empty(), "first effect source accepted")
+    check(bus.submit_proc(first_source, "reflect", {"target_id": "B", "actor_id": "actor-1"}).is_empty(), "same source-target effect cycle blocked")
+    check(not bus.submit_proc(first_source, "reflect", {"target_id": "B", "actor_id": "actor-2"}).is_empty(), "different actor legitimate proc allowed")
     var forbidden: Dictionary = bus.submit_root({"kind": "manual", "allowed_proc_triggers": ["on_kill"]})
     check(bus.submit_proc(forbidden, "on_hit_plugin", {"trigger_kind": "on_hit", "target_id": "B"}).is_empty(), "proc trigger permission")
     if failures == 0:
