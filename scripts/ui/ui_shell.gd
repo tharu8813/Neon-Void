@@ -78,8 +78,9 @@ func open_menu(screen: String, payload: Dictionary = {}) -> void:
 func close_menu() -> void:
 	_menu.close_screen()
 
-func show_reward_cards(ids: Array[String], levels: Dictionary) -> void:
-	_offer.set_offers(ids, levels)
+func show_reward_cards(ids: Array[String], levels: Dictionary,
+		stats: Dictionary = {}, maxhp: float = 100.0, maxmana: float = 100.0) -> void:
+	_offer.set_offers(ids, levels, stats, maxhp, maxmana)
 	_update_cursor()
 
 func complete_reward_selection() -> void:

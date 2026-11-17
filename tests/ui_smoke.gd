@@ -103,6 +103,8 @@ func _check() -> void:
 		"hp": 10.0, "maxhp": 100.0, "mana": 5.0,
 		"maxmana": 100.0, "boss_hp": 20.0, "boss_maxhp": 100.0,
 		"boss_name": "OVERSEER", "infection": 55.0, "integrity": 40.0,
+		"attack_warning_count": 2, "attack_warning_urgent": true,
+		"target_locked": true, "guard_t": 1.0,
 		"software_levels": {"rapid": 2}, "status": "combat",
 		"wave": 5, "score": 340, "pulse_cd": 0.0, "guard_cd": 2.5,
 		"stats": {"dmg": 18, "crit": 0.25, "armor": 10, "armor_pen": 3,
@@ -115,6 +117,30 @@ func _check() -> void:
 		return
 	if not hud._combat_hud.visible or hud._world_hud.visible:
 		_fail("combat-only HUD visibility")
+		return
+	# P1: dense stats are opt-in and telegraphs remain readable with reduced effects.
+	if not hud._stats_compact.visible or hud._combat_hud.get_node("LiveStatsPanel").visible:
+		_fail("P1 compact HUD is default and old dense panel stays hidden")
+		return
+	if not hud._stat_glance.text.contains("F1") or not hud._stat_text.text.contains("30.0"):
+		_fail("P1 compact hint and real guard +20 defense")
+		return
+	hud.toggle_stat_details()
+	if not hud._combat_hud.get_node("LiveStatsPanel").visible or hud._stats_compact.visible:
+		_fail("P1 F1 expands full live stats")
+		return
+	hud.toggle_stat_details()
+	if not hud._stats_compact.visible or hud._combat_hud.get_node("StatsLeft").visible:
+		_fail("P1 F1 returns to compact stats")
+		return
+	if not hud._threat_alert.visible or not hud._threat_alert.text.contains("즉시 회피"):
+		_fail("P1 non-animated urgent telegraph text visible in reduced effects")
+		return
+	if not cursor.enemy_targeted:
+		_fail("P1 cursor receives actual hovered-target flag")
+		return
+	if not is_equal_approx(hud._pulse_bar.value, 1.0) or not (hud._guard_bar.value > 0.0 and hud._guard_bar.value < 1.0):
+		_fail("P1 cooldown bars fill toward ready, without jumping at completion")
 		return
 	if not hud._wave_text.text.contains("WAVE 5") or not hud._score_text.text.contains("340"):
 		_fail("score/wave locations must be backed by data")

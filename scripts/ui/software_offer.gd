@@ -2,11 +2,15 @@ extends Control
 ## Isolated P6 three-card reward UI; the combat owner grants the selected reward.
 signal card_selected(index: int)
 const Catalog = preload("res://scripts/software/software_catalog.gd")
+const Preview = preload("res://scripts/ui/software_preview.gd")
 const CYAN := Color("#37e8e0")
 const GOLD := Color("#f0cf82")
 var _cards: Array[Button] = []
 var _offers: Array[String] = []
 var _levels: Dictionary = {}
+var _stats: Dictionary = {}
+var _maxhp: float = 100.0
+var _maxmana: float = 100.0
 var _selected: int = 0
 
 func _ready() -> void:
@@ -14,9 +18,13 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	visible = false
 
-func set_offers(ids: Array[String], levels: Dictionary) -> void:
+func set_offers(ids: Array[String], levels: Dictionary,
+		stats: Dictionary = {}, maxhp: float = 100.0, maxmana: float = 100.0) -> void:
 	_offers = ids.duplicate()
-	_levels = levels.duplicate()
+	_levels = levels.duplicate(true)
+	_stats = stats.duplicate(true)
+	_maxhp = maxhp
+	_maxmana = maxmana
 	_selected = 0
 	_render_cards()
 	visible = true
@@ -37,9 +45,9 @@ func _render_cards() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 	var column := VBoxContainer.new()
-	column.custom_minimum_size = Vector2(940, 290)
+	column.custom_minimum_size = Vector2(940, 332)
 	column.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	column.position = Vector2(-470, -145)
+	column.position = Vector2(-470, -166)
 	column.add_theme_constant_override("separation", 20)
 	add_child(column)
 	var headline := Label.new()
@@ -59,12 +67,24 @@ func _render_cards() -> void:
 		if data.is_empty():
 			continue
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(300, 190)
+		button.custom_minimum_size = Vector2(300, 235)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.text = "%d   %s\n\n%s\n\nLv. %d / %d" % [i + 1, data["name"], (str(data["description"]) if uid == "bonus" else Catalog.description_for_display(uid)), int(_levels.get(uid, 0)), int(data["max_stack"])]
-		button.tooltip_text = str((str(data["description"]) if uid == "bonus" else Catalog.description_for_display(uid)))
+		var current_level: int = int(_levels.get(uid, 0))
+		var next_level: int = current_level + 1 if uid != "bonus" else 0
+		var tier_label: String = "BONUS" if uid == "bonus" else "TIER %d" % (int(data["tier"]) + 1)
+		var desc: String = str(data["description"]) if uid == "bonus" else Catalog.description_for_display(uid)
+		var changes: Array[String] = Preview.effect_lines(uid, _stats, _maxhp, _maxmana)
+		var forecast: String = "\n".join(changes)
+		var partner: String = Preview.owned_complement(uid, _levels)
+		var level_label: String = "" if uid == "bonus" else "Lv.%d → %d / %d" % [
+			current_level, next_level, int(data["max_stack"])]
+		button.text = "[%d]  %s\n%s  %s\n\n%s\n\n%s" % [
+			i + 1, data["name"], tier_label, level_label, desc, forecast]
+		if not partner.is_empty():
+			button.text += "\n" + partner
+		button.tooltip_text = "%s\n%s" % [desc, forecast]
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.add_theme_font_size_override("font_size", 17)
+		button.add_theme_font_size_override("font_size", 15)
 		button.add_theme_color_override("font_color", GOLD if int(data["tier"]) == 2 else CYAN)
 		button.pressed.connect(_on_pick.bind(i))
 		grid.add_child(button)

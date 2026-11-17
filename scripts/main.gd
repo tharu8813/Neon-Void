@@ -495,7 +495,8 @@ func _present_wave_reward() -> void:
         _pending_boss_receipts = false
     mode = "reward"
     _pause_gameplay()
-    ui.call("show_reward_cards", _pending_offers, software.levels)
+    ui.call("show_reward_cards", _pending_offers, software.levels,
+        software.stats, software.maxhp, software.maxmana)
     legacy_audio.call("play_effect", "up")
     _update_hud()
 
@@ -551,6 +552,7 @@ func _on_player_hit(_damage: float, infection_delta: float) -> void:
     visual_fx.call("add_burst", actor.get("logical_position"), "hurt")
     legacy_sparks.call("emit_sparks", actor.get("logical_position"), "impact")
     ui.call("flash_impact", Color("#ff4d6d"), 0.17)
+    _update_hud() # Health/infection warning must not wait for the 10 Hz refresh.
     if float(actor.get("hp")) / maxf(1.0, float(actor.get("max_hp"))) < 0.35:
         legacy_audio.call("play_effect", "lowhp", 2.0)
 
@@ -579,6 +581,7 @@ func _on_enemy_died(_enemy_id: int, kind: String) -> void:
     if SectorCatalog.SECTORS.has(campaign.active_sector):
         if kind == str(SectorCatalog.SECTORS[campaign.active_sector]["boss"]):
             run_boss_kills += 1
+    _update_hud() # Combo, score and boss status respond to the kill immediately.
 
 func _on_projectile_visual(kind: String, location: Vector2,
         destination: Vector2, magnitude: float) -> void:
@@ -663,6 +666,7 @@ func _on_skill_requested(skill: String) -> void:
             visual_fx.call("add_burst", actor.get("logical_position"), "pulse")
             legacy_sparks.call("emit_sparks", actor.get("logical_position"), "pulse")
             ui.call("flash_impact", Color("#6ff2ff"), 0.13)
+        _update_hud() # Cast/MP/cooldown feedback on the same input tick.
 
 func nearest_base_terminal(point: Vector2) -> String:
     # Match Python WorldSession.nearest: nearest reachable node, not the first
@@ -886,6 +890,26 @@ func _hud_snapshot() -> Dictionary:
             boss_name = str(enemy["kind"])
             boss_id = int(enemy["id"])
             break
+    # Cursor tint is a read-only proximity cue, never an aim assist or lock-on.
+    var target_hovered: bool = false
+    if mode == "combat" and bool(controls.get("pointer_valid")):
+        var pointer_logical: Vector2 = controls.get("pointer_logical")
+        for enemy in sim.enemies:
+            if float(enemy.get("hp", 0.0)) <= 0.0:
+                continue
+            var hit_radius: float = maxf(4.0, float(enemy.get("radius", 12.0))) + 7.0
+            if pointer_logical.distance_squared_to(enemy["pos"]) <= hit_radius * hit_radius:
+                target_hovered = true
+                break
+    var pending_attacks: int = 0
+    var imminent_attacks: bool = false
+    if mode == "combat":
+        for pending in sim.telegraphs:
+            var source: Dictionary = sim.get_enemy(int(pending.get("source_id", -1)))
+            if source.is_empty() or bool(source.get("boss", false)):
+                continue # Boss is already covered by the dedicated boss warning.
+            pending_attacks += 1
+            imminent_attacks = imminent_attacks or float(pending.get("remaining", 1.0)) <= 0.25
     var boss_warning: String = ""
     if boss_id >= 0:
         for warning in sim.telegraphs:
@@ -909,6 +933,9 @@ func _hud_snapshot() -> Dictionary:
         "pulse_cd": state.get("pulse_cd", 0.0), "guard_cd": state.get("guard_cd", 0.0),
         "boss_hp": boss_hp, "boss_maxhp": boss_maxhp, "boss_name": boss_name,
         "boss_warning": boss_warning,
+        "target_locked": target_hovered,
+        "attack_warning_count": pending_attacks,
+        "attack_warning_urgent": imminent_attacks,
         "combo": combo_count, "combo_window": combo_window,
         "sector": "ANTIVIRUS HUB" if mode == "base" else (campaign.active_sector if not campaign.active_sector.is_empty() else "OS HUB"),
         "wave": campaign.active_wave,
@@ -1291,7 +1318,8 @@ func resume_checkpoint() -> bool:
                 _pending_boss_receipts = false
             mode = "reward"
             _pause_gameplay()
-            ui.call("show_reward_cards", cards, software.levels)
+            ui.call("show_reward_cards", cards, software.levels,
+                software.stats, software.maxhp, software.maxmana)
         else:
             mode = "between"
             _resume_gameplay()
