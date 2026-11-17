@@ -141,6 +141,77 @@ func _run() -> void:
     check(_bytes(slot.path_join("state.json")) != current,
         "recovery uses prior verified backup, not newer damaged primary")
 
+    # Hard storage invariants hold even if a future caller bypasses the gateway.
+    var lower_copies: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.copies_remaining = 2
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, lower_copies).applied, "synthetic copy use stored")
+    var recharge: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.copies_remaining = 3
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, recharge).reason == "invalid_transition",
+        "save boundary blocks clone restoration even by direct writer")
+    check(Gateway.transact_command(slot, event).applied,
+        "recovered backup can recommit lost receipt exactly once")
+    var drop_receipt: Callable = func(next: Dictionary) -> Dictionary:
+        next.vaccine.receipts.clear()
+        return {"ok": true, "state": next}
+    check(Store.transact(slot, drop_receipt).reason == "invalid_transition",
+        "save boundary disallows removal of committed receipt ledger")
+    check(not Gateway.transact_command(slot, event).applied, "receipt remains exactly once")
+
+    var backup_name: String = slot.path_join("state.json.bak")
+    var parked_backup: String = slot.path_join("state.json.bak.synthetic-held")
+    var prior_revision: int = int(Store.read(slot).revision)
+    if DirAccess.rename_absolute(backup_name, parked_backup) == OK:
+        check(DirAccess.make_dir_absolute(backup_name) == OK,
+            "unwritable backup destination fault injected")
+        var fresh_event: Dictionary = event.duplicate(true)
+        fresh_event.receipt_id = "reward-should-not-commit"
+        var blocked: Dictionary = Gateway.transact_command(slot, fresh_event)
+        check(not blocked.applied and blocked.reason == "backup_failed",
+            "backup write failure blocks primary commit")
+        check(Store.read(slot).revision == prior_revision,
+            "unwritable backup preserves primary revision")
+        DirAccess.remove_absolute(backup_name)
+        check(DirAccess.rename_absolute(parked_backup, backup_name) == OK,
+            "restore prior synthetic backup")
+    else:
+        check(false, "backup file should exist for failure injection")
+
+    var future_state: Dictionary = Store.read(slot).state.duplicate(true)
+    future_state.schema_version = 2
+    var future_payload: String = JSON.stringify(future_state, "", true, true)
+    var future_env := {
+        "format": 1, "revision": 999,
+        "payload_sha256": future_payload.sha256_text(),
+        "payload_json": future_payload
+    }
+    _write(slot.path_join("state.json"), JSON.stringify(future_env))
+    check(Store.read(slot).reason == "future_schema",
+        "well-formed checksummed future schema rejected")
+    check(Store.restore_backup(slot, true).reason == "future_version_must_not_rollback",
+        "future schema cannot be downgraded")
+    future_env.payload_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    _write(slot.path_join("state.json"), JSON.stringify(future_env))
+    check(Store.read(slot).reason == "checksum_mismatch", "tampered payload denied")
+    check(not Gateway.transact_command(slot, event).applied,
+        "tampered checksum cannot accept writes")
+
+    var second_slot: String = root_dir.path_join("rework-slot-bad-backup")
+    check(Store.initialize(second_slot, Model.new_slot("bad-backup", "test-vaccine")).ok,
+        "second isolated synthetic slot")
+    var another: Dictionary = command.duplicate(true)
+    another.vaccine_id = "test-vaccine"
+    check(Gateway.transact_command(second_slot, another).applied,
+        "second slot write creates safe backup")
+    _write(second_slot.path_join("state.json.bak"), "{invalid backup")
+    _write(second_slot.path_join("state.json"), "{invalid primary")
+    check(not Store.restore_backup(second_slot, true).ok,
+        "corrupt backup never silently restored")
+    check(not Store.initialize(second_slot, Model.new_slot("bad-backup", "again")).ok,
+        "corrupt existing slot cannot be overwritten")
+
     _write(slot.path_join("state.json"), "{\"format\":99}")
     check(Store.read(slot).reason == "future_format", "future save format denied")
     check(Store.restore_backup(slot, true).reason == "future_version_must_not_rollback",
