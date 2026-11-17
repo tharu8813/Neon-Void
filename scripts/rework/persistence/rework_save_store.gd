@@ -245,7 +245,7 @@ static func _transact_locked(slot_path: String, transition: Callable,
     if typeof(changed) != TYPE_DICTIONARY or not changed.get("ok", false):
         return {"applied": false, "reason": changed.get("reason", "transition_rejected")             if typeof(changed) == TYPE_DICTIONARY else "transition_rejected"}
     var next_state: Variant = changed.get("state")
-    if not Model.validate(next_state) or next_state.slot_id != loaded.state.slot_id             or int(next_state.generation) < int(loaded.state.generation):
+    if not Model.validate(next_state) or next_state.slot_id != loaded.state.slot_id             or not _monotonic_transition(loaded.state, next_state):
         return {"applied": false, "reason": "invalid_transition"}
     var encoded: Dictionary = _encode(next_state, loaded.revision + 1)
     if not encoded.ok:
