@@ -121,7 +121,7 @@ static func run(check: Callable) -> void:
         and _near(effects.shield_value(),0.0),
         "shield depletion forwards only remainder to authoritative B HP")
     check.call(effects.configure_shield_policy({"absorption":"true_damage_bypasses",
-        "duration_ticks":2}), "A may select true-damage bypass policy")
+        "duration_ticks":3}), "A may select true-damage bypass policy")
     check.call(_shield(effects,"nv_r_dash_shield",7.0),
         "dash-shield command reaches same B barrier ledger")
     _hit(combat,6.0)
