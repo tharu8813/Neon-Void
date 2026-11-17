@@ -54,8 +54,8 @@ func _run() -> void:
     var seed: Dictionary = State.new_slot(id, "vaccine-hub-ui")
     seed["vaccine"]["earned_fragments"] = 500
     seed["vaccine"]["unspent_fragments"] = 500
-    seed["vaccine"]["known_skills"] = ["skill_alpha", "skill_beta"]
-    seed["vaccine"]["equipped_skills"] = ["skill_alpha"]
+    seed["vaccine"]["known_skills"] = ["nv_skill_arc_pulse", "nv_skill_penetrator"]
+    seed["vaccine"]["equipped_skills"] = ["nv_skill_arc_pulse"]
     seed["vaccine"]["archive"] = {
         "nv_c_move_speed": {"rarity": "common", "level": 2}
     }
@@ -128,12 +128,12 @@ func _run() -> void:
     panel.call("_select_skill", 2, 0)
     panel.call("_select_skill", 1, 1)
     panel.call("_select_skill", 0, 2)
-    check(panel.get("selected_skills") == ["skill_beta", "skill_alpha", ""],
+    check(panel.get("selected_skills") == ["nv_skill_penetrator", "nv_skill_arc_pulse", ""],
         "slot selector maintains correct B/E skill IDs")
     panel.call("_request_skills")
     var equipped: Dictionary = _state(path)
     v = equipped["snapshot"]["vaccine"]
-    check(v["equipped_skills"] == ["skill_beta", "skill_alpha"],
+    check(v["equipped_skills"] == ["nv_skill_penetrator", "nv_skill_arc_pulse"],
         "three-slot E save mismatch: " + str(v["equipped_skills"]) + " / local=" +
             str(panel.get("selected_skills")) + " / message=" +
             str(pilot.get("message_label").text) + " / frozen=" + str(pilot.get("frozen")))
@@ -161,7 +161,7 @@ func _run() -> void:
     check(panel.visible and not bool(panel.get("can_edit")),
         "in-mission management panel is read-only")
     var prior: int = int(mission["revision"])
-    pilot.call("_on_hub_equip_skills", ["skill_alpha"], prior)
+    pilot.call("_on_hub_equip_skills", ["nv_skill_arc_pulse"], prior)
     pilot.call("_on_hub_plugin_move", "withdraw_plugin", "nv_c_move_speed", prior)
     pilot.call("_on_hub_allocate", {"max_hp": 1}, prior)
     check(int(_state(path).get("revision", -1)) == prior,
