@@ -31,6 +31,13 @@ static func reconcile_receipt(slot_path: String, vaccine_id: String,
     return Recovery.reconcile_receipt(slot_path, vaccine_id,
         generation, run_id, receipt_id, offer_id)
 
+static func reconcile_rare_grant(slot_path: String, vaccine_id: String,
+        generation: int, run_id: String, source_receipt: String,
+        offer_id: String = "") -> Dictionary:
+    ## E-authoritative source + rare receipt confirmation, read-only.
+    return Recovery.reconcile_rare_grant(slot_path, vaccine_id, generation,
+        run_id, source_receipt, offer_id)
+
 static func transact_command(slot_path: String, command: Dictionary,
         expected_revision: int = -1, fault_at: String = "") -> Dictionary:
     if not Model.valid_id(command.get("action")):
