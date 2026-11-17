@@ -10,6 +10,7 @@ const WorldCatalog = preload("res://scripts/rework/world/hardware_catalog.gd")
 const PluginCatalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const ShieldCases = preload("res://tests/rework/integration/provisional_shield_contract_cases.gd")
+const RareBonusCases = preload("res://tests/rework/integration/rare_bonus_cases.gd")
 
 var failures: int = 0
 
@@ -40,6 +41,9 @@ func _delete_synthetic_tree(folder: String) -> void:
 
 func _run() -> void:
     ShieldCases.run(Callable(self, "check"))
+    RareBonusCases.run(Callable(self, "check"))
+    if failures == 0:
+        print("REWORK A RARE BONUS PASS: one E atomic source+rare receipt, deterministic eligible pool, replay denied")
     if failures == 0:
         print("REWORK A SHIELDS PROPOSAL PASS: periodic/skill/dash real B shielding, HP-only after depletion")
     var suffix: String = str(OS.get_process_id()) + "-" + str(Time.get_ticks_usec())
