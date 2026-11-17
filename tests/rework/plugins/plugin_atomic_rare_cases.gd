@@ -116,6 +116,19 @@ func run() -> bool:
 	var entries: Array[Dictionary] = Catalog.entries()
 	_check(entries.size() == 27 and Catalog.validate(entries).is_empty(),
 		"canonical 27 entries")
+	var probe_event: Dictionary = {
+		"periodic_shield":"tick","skill_shield":"skill_cast",
+		"mobility_buff":"dash","low_hp_emergency":"damage_taken",
+		"low_hp_knockback":"damage_taken","chain_lightning":"on_hit",
+		"hit_explosion":"on_hit","breakable_sprint":"damage_taken",
+		"armor_shred":"damage_dealt","execute":"before_damage",
+		"proc_volley":"on_hit_proc","disassembly":"on_hit_proc",
+		"skill_followup":"skill_damage","dash_explosion":"dash",
+		"grant_rare":"plugin_acquired","kill_power":"kill",
+		"dash_shield":"dash","extra_bullet":"basic_attack",
+		"homing":"basic_attack","laser":"basic_attack",
+		"boomerang":"basic_attack","fever":"kill"
+	}
 	var level_checks: int = 0
 	var rare_id: String = ""
 	for entry in entries:
@@ -126,6 +139,52 @@ func run() -> bool:
 		initial[uid] = 1
 		_check(effect.configure(initial,123),uid+" start level")
 		_check(not effect.effect_definition(uid).is_empty(),uid+" effect definition")
+		var spec: Dictionary = effect.effect_definition(uid)
+		for key in spec:
+			var values: Variant = spec[key]
+			if not values is Array or values.is_empty():
+				continue
+			var numeric: bool = true
+			for value in values:
+				if typeof(value) not in [TYPE_INT,TYPE_FLOAT]:
+					numeric = false
+					break
+			if numeric:
+				_check(values.size()==max_level,
+					uid+" numeric level vector "+str(key)+" covers all levels")
+		var kind: String = str(spec.get("kind",""))
+		for level_index in range(1,max_level+1):
+			var instance = Runtime.new()
+			var levels_for_test: Dictionary = {}
+			levels_for_test[uid] = level_index
+			_check(instance.configure(levels_for_test,400+level_index),
+				uid+" can instantiate Lv."+str(level_index))
+			var stats: Dictionary = instance.derived_stats({
+				"max_health":100.0,"attack_damage":5.0,"ability_power":10.0,
+				"move_speed":5.0,"attack_speed":2.0,"projectile_speed_mult":1.0
+			},1800)
+			_check(not stats.is_empty(),uid+" Lv."+str(level_index)+" derives stats")
+			if probe_event.has(kind):
+				var tick: int = 1800 if kind=="periodic_shield" else 60+level_index
+				var probe: Dictionary = {
+					"event_id":uid+":level:"+str(level_index),
+					"kind":str(probe_event[kind]),"tick":tick,
+					"actor_id":"vaccine","target_id":"enemy",
+					"plugin_id":uid,"source_tags":["basic_attack"],
+					"allowed_proc_triggers":["on_hit"],
+					"proc_path":[],"actor_health_ratio":0.2,
+					"target_health_ratio":0.2,"actual_damage":10.0
+				}
+				var outcome: Dictionary = instance.process(probe,{
+					"actor_stats":stats
+				},Callable(self,"_accept_commands"))
+				_check(bool(outcome.get("ok",false)),
+					uid+" Lv."+str(level_index)+" effect dispatch accepted")
+			else:
+				_check(kind in ["random_stats","passive_stat",
+					"dual_penetration","dual_speed"],
+					uid+" Lv."+str(level_index)+" has a supported trigger")
+
 		if str(entry["rarity"]) == "rare" and rare_id.is_empty():
 			rare_id = uid
 		for lvl in range(2,max_level+1):
