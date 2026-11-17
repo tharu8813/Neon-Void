@@ -11,8 +11,10 @@ signal menu_dismissed
 const Hud = preload("res://scripts/ui/neon_hud.gd")
 const Menu = preload("res://scripts/ui/neon_menu.gd")
 const Cursor = preload("res://scripts/ui/neon_cursor.gd")
+const ScreenFX = preload("res://scripts/ui/legacy_screen_fx.gd")
 const OfferScene = preload("res://scenes/ui/software_offer.tscn")
 var _hud: Control
+var _screen_fx: Control
 var _menu: Control
 var _cursor: Control
 var _offer: Control
@@ -23,6 +25,8 @@ func _ready() -> void:
 	layer = 20
 	_hud = Hud.new()
 	add_child(_hud)
+	_screen_fx = ScreenFX.new()
+	add_child(_screen_fx)
 	_menu = Menu.new()
 	add_child(_menu)
 	_offer = OfferScene.instantiate() as Control
@@ -44,8 +48,24 @@ func update_game_state(snapshot: Dictionary) -> void:
 	_hud.update_state(_state)
 	_menu.update_state(_state)
 	_cursor.set_reduced_motion(bool(_state.get("settings", {}).get("reduced_effects", false)))
+	_screen_fx.set_reduced_effects(bool(_state.get("settings", {}).get("reduced_effects", false)))
 	_cursor.set_targeted(bool(_state.get("target_locked", false)))
 	_update_cursor()
+
+func announce_wave(sector_name: String, wave: int, is_boss: bool = false) -> void:
+	_screen_fx.announce_wave(sector_name, wave, is_boss)
+
+func announce_sector_clean(sector_name: String) -> void:
+	_screen_fx.announce_clear(sector_name)
+
+func flash_impact(tint: Color = Color("#9fe8ff"), duration: float = 0.18) -> void:
+	_screen_fx.trigger_flash(tint, duration)
+
+func sweep_transition(tint: Color = Color("#9fe8ff")) -> void:
+	_screen_fx.trigger_sweep(tint)
+
+func clear_screen_fx() -> void:
+	_screen_fx.clear_scene()
 
 func set_gameplay_active(enabled: bool) -> void:
 	_gameplay_active = enabled
