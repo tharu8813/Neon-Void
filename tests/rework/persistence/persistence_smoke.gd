@@ -219,6 +219,37 @@ func _run() -> void:
     check(not Gateway.transact_command(slot, event).applied,
         "unsupported format never accepts writes")
 
+    var irreversible: String = root_dir.path_join("rework-slot-irreversible")
+    check(Store.initialize(irreversible, Model.new_slot("irreversible", "vaccine-1")).ok,
+        "initialize fenced clone test slot")
+    check(Gateway.transact_command(irreversible, command).applied,
+        "fenced test has active mission")
+    var death_cmd := {
+        "action": "die", "vaccine_id": "vaccine-1", "generation": 1,
+        "run_id": "run-a", "receipt_id": "death-finality"
+    }
+    check(Gateway.transact_command(irreversible, death_cmd).applied,
+        "first death and lifetime fence commit")
+    check(Store.read(irreversible).state.vaccine.copies_remaining == 2,
+        "first spent clone persisted")
+    _write(irreversible.path_join("state.json"), "{damaged after clone used")
+    check(Store.restore_backup(irreversible, true).reason ==
+        "backup_would_restore_consumed_clone",
+        "backup cannot resurrect a consumed clone after primary corruption")
+
+    var interrupted: String = root_dir.path_join("rework-slot-interrupted")
+    check(Store.initialize(interrupted, Model.new_slot("interrupted", "vaccine-1")).ok,
+        "initialize interrupted clone test slot")
+    check(Gateway.transact_command(interrupted, command).applied,
+        "interrupted slot has active mission")
+    check(not Gateway.transact_command(interrupted, death_cmd, -1, "before_primary").applied,
+        "simulate interruption after clone fence, before primary")
+    check(Store.read(interrupted).reason == "lifetime_fence_violation",
+        "interrupted irreversible transition fails closed, never refunds clone")
+    check(Store.restore_backup(interrupted, true).reason ==
+        "backup_would_restore_consumed_clone",
+        "unsafe predeath snapshot cannot be recovered behind lifetime fence")
+
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
     if failures == 0:
