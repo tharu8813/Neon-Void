@@ -260,9 +260,118 @@ func _refresh() -> void:
     hub_button.disabled = frozen
     new_vaccine_button.visible = false
 
+## A owns UI-to-E writes: only a fresh, verified hub revision can authorize them.
+## Receipt IDs include expected revision; unknown ACK freezes instead of retrying.
+func _toggle_management() -> void:
+    if frozen or hub_panel == null or offer_panel.visible or learn_panel.visible:
+        return
+    if hub_panel.visible:
+        _close_management()
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("management_snapshot_unavailable")
+        return
+    if bool(loaded.get("snapshot", {}).get("selection_required", false)):
+        return
+    hub_panel.show_saved(loaded, str(world.get("current_mode")) == "hub")
+    hub_panel.visible = true
+    get_tree().paused = true
+
+func _close_management() -> void:
+    if hub_panel != null:
+        hub_panel.visible = false
+    if not frozen and not offer_panel.visible and not learn_panel.visible:
+        get_tree().paused = false
+
+func _commit_hub_action(action: String, payload: Dictionary, expected: int) -> void:
+    if frozen or hub_panel == null or not hub_panel.visible \
+            or str(world.get("current_mode")) != "hub" or bridge != null:
+        return
+    if not ["reallocate_stats", "archive_plugin", "withdraw_plugin", "equip_skills"].has(action):
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("hub_snapshot_unavailable")
+        return
+    var state: Dictionary = loaded.get("snapshot", {})
+    var current: Variant = state.get("vaccine")
+    if bool(state.get("selection_required", false)) or typeof(current) != TYPE_DICTIONARY:
+        _halt("hub_action_requires_active_vaccine")
+        return
+    var vaccine: Dictionary = current
+    if vaccine.get("mission") != null:
+        _halt("hub_action_requires_no_active_mission")
+        return
+    if int(loaded.get("revision", -1)) != expected:
+        hub_panel.show_saved(loaded, true)
+        var label: Label = hub_panel.get("hint") as Label
+        if label != null:
+            label.text = "저장 변경을 발견했어. 현재 데이터를 다시 확인해 줘."
+        return
+    var receipt: String = "hub:%s:%d" % [action, expected]
+    if payload.has("plugin_id"):
+        receipt += ":" + str(payload["plugin_id"])
+    var command: Dictionary = {
+        "action": action, "vaccine_id": str(vaccine.get("vaccine_id", "")),
+        "generation": int(state.get("generation", 0)),
+        "receipt_id": receipt
+    }
+    for key in payload:
+        if command.has(key):
+            _halt("hub_reserved_command_field")
+            return
+        command[key] = payload[key]
+    var ack: Dictionary = Gateway.transact_command(slot_path, command, expected)
+    if not bool(ack.get("applied", false)):
+        _halt("hub_E_ack_uncertain:" + str(ack.get("reason", "unknown")))
+        return
+    var confirmed: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(confirmed.get("ok", false)) \
+            or int(confirmed.get("revision", 0)) <= expected:
+        _halt("hub_E_readback_failed")
+        return
+    hub_panel.show_saved(confirmed, true)
+    message_label.text = "변경 사항을 E 저장소에 안전하게 기록했어"
+    _refresh()
+
+func _on_hub_allocate(allocations: Dictionary, expected: int) -> void:
+    if frozen or hub_panel == null or not hub_panel.visible:
+        return
+    var current: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(current.get("ok", false)):
+        _halt("stat_snapshot_unavailable")
+        return
+    var vaccine: Dictionary = current.get("snapshot", {}).get("vaccine", {})
+    if vaccine.is_empty():
+        return
+    var balance: Dictionary = current.get("snapshot", {}).get("balance", {})
+    var cost: int = Balance.stat_cost_fragments(allocations, balance)
+    if cost < 0 or cost > int(vaccine.get("earned_fragments", 0)):
+        return
+    _commit_hub_action("reallocate_stats",
+        {"allocations": allocations.duplicate(true)}, expected)
+
+func _on_hub_plugin_move(action: String, plugin_id: String, expected: int) -> void:
+    if ["archive_plugin", "withdraw_plugin"].has(action) and not plugin_id.is_empty():
+        _commit_hub_action(action, {"plugin_id": plugin_id}, expected)
+
+func _on_hub_equip_skills(equipped: Array, expected: int) -> void:
+    if equipped.size() > 3:
+        return
+    var seen: Dictionary = {}
+    for id in equipped:
+        if not (id is String) or str(id).is_empty() or seen.has(id):
+            return
+        seen[id] = true
+    _commit_hub_action("equip_skills",
+        {"equipped": equipped.duplicate(true)}, expected)
+
 func _on_mission_requested(request: Dictionary) -> void:
     if frozen or bridge != null:
         return
+    if hub_panel != null and hub_panel.visible:
+        _close_management()
     var loaded: Dictionary = Gateway.snapshot(slot_path)
     if not bool(loaded.get("ok", false)):
         _halt("mission_snapshot_unavailable")
