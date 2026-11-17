@@ -517,7 +517,9 @@ func _halt(reason: String) -> void:
         offer_panel.visible = false
     if learn_panel != null:
         learn_panel.visible = false
-    get_tree().paused = false
+    # A failed/ambiguous E commit freezes ALL gameplay ticks, not merely
+    # movement. Keep the A CanvasLayer responsive for recovery instructions.
+    get_tree().paused = true
     if world != null and world.get("player") != null:
         var player: Node = world.get("player") as Node
         player.set("movement_enabled", false)
