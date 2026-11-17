@@ -21,7 +21,7 @@ func _ready() -> void:
 		"dash_charges": 2, "dash_max": 3, "pulse_cd": 1.2, "guard_cd": 0.0,
 		"sector": "MEMORY SECTOR", "wave": 4, "infection": 37.0,
 		"integrity": 82.0, "boss_hp": 440.0, "boss_maxhp": 800.0,
-		"boss_name": "REPLICATOR", "status": "웨이브 전투 중",
+		"boss_name": "REPLICATOR", "status": "combat",
 		"stats": {"dmg": 22, "armor": 12, "armor_pen": 4, "rate": 7.2, "mana_regen": 8, "skill_power": 1.25},
 		"software_levels": {"rapid": 2, "power": 3, "armor": 1},
 		"show_fps": true, "fps": 60.0,
