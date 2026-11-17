@@ -105,7 +105,9 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 				var current: float = maxf(0.0,float(next.get("actor_shield",0.0)))
 				next["actor_shield"] = current + maxf(0.0,float(command.get("amount",0.0)))
 			"buff":
-				buffs.append(command.duplicate(true))
+				var buff: Dictionary = command.duplicate(true)
+				buff["expires_tick"] = int(buff.get("start_tick",0)) + int(buff.get("duration_ticks",0))
+				buffs.append(buff)
 			"knockback":
 				knockbacks.append(command.duplicate(true))
 			"projectiles":
@@ -118,6 +120,9 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 					projectiles.append(projectile)
 			"projectile_transform":
 				transforms.append(command.duplicate(true))
+				if str(command.get("shape",""))=="boomerang":
+					next["boomerang_outstanding"] = int(next.get("boomerang_outstanding",0)) + int(command.get("count",1))
+					next["basic_attack_blocked"] = true
 			"modify_attack":
 				var incoming: Dictionary = next.get("pending_attack", {})
 				if incoming.is_empty():
@@ -170,3 +175,26 @@ static func tick_dots(world: Dictionary) -> Dictionary:
 	world.clear()
 	world.merge(next,true)
 	return {"ok":true,"damage_done":total_damage}
+
+
+static func actor_stats_at_tick(world: Dictionary, tick: int) -> Dictionary:
+	## A passes PluginRuntime.derived_stats result as actor_stats and asks for
+	## active short-duration buffs here. Fever remains owned by derived_stats.
+	var values: Dictionary = world.get("actor_stats",{}).duplicate(true)
+	for buff in world.get("buffs",[]):
+		if tick < int(buff.get("start_tick",0)) or tick >= int(buff.get("expires_tick",0)):
+			continue
+		if str(buff.get("stat","")) == "move_speed":
+			values["move_speed"] = float(values.get("move_speed",0.0)) + float(buff.get("value",0.0))
+	return values
+
+static func acknowledge_boomerang_return(world: Dictionary, returned_count: int = 1) -> Dictionary:
+	## A projectile owner calls this only upon a verified physical return.
+	if returned_count <= 0:
+		return {"ok":false,"reason":"invalid_return_count"}
+	var outstanding: int = int(world.get("boomerang_outstanding",0))
+	if outstanding < returned_count:
+		return {"ok":false,"reason":"return_without_projectile"}
+	world["boomerang_outstanding"] = outstanding - returned_count
+	world["basic_attack_blocked"] = int(world["boomerang_outstanding"]) > 0
+	return {"ok":true,"attacks_unlocked":not bool(world["basic_attack_blocked"])}

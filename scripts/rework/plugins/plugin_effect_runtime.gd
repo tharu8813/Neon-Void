@@ -194,7 +194,7 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 				command = {"type":"buff","actor_id":actor_id,"stat":"move_speed","value":_value(spec,"move_speed",level),"duration_ticks":int(spec["duration_ticks"]),"plugin_id":uid}
 			"low_hp_emergency":
 				command = {"type":"shield","actor_id":actor_id,"amount":float(world.get("actor_stats", {}).get("max_health",100.0))*float(spec["shield_health_fraction"]),"plugin_id":uid,"balance_policy":"provisional_shield_not_confirmed_heal"}
-				commands.append({"type":"buff","actor_id":actor_id,"stat":"move_speed","value":_value(spec,"move_speed",level),"duration_ticks":int(spec["duration_ticks"]),"plugin_id":uid})
+				commands.append({"type":"buff","actor_id":actor_id,"stat":"move_speed","value":_value(spec,"move_speed",level),"duration_ticks":int(spec["duration_ticks"]),"start_tick":tick,"plugin_id":uid})
 			"low_hp_knockback":
 				command = {"type":"knockback","actor_id":actor_id,"force":_value(spec,"force",level),"plugin_id":uid}
 			"breakable_sprint":
@@ -247,6 +247,8 @@ func process(event: Dictionary, world: Dictionary, sink: Callable = Callable()) 
 					next_state["fever_until"] = tick + int(_value(spec,"duration_ticks",level))
 					command = {"type":"buff","plugin_id":uid,"actor_id":actor_id,"stat":"all_stats_fraction","value":_value(spec,"all_stats_fraction",level),"duration_ticks":int(_value(spec,"duration_ticks",level))}
 		if not command.is_empty():
+			if str(command.get("type",""))=="buff":
+				command["start_tick"] = tick
 			commands.append(command)
 		if cd_ticks > 0 and (not command.is_empty() or effect_kind == "breakable_sprint"):
 			next_cooldowns[cooldown_key] = tick
