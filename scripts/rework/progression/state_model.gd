@@ -91,7 +91,7 @@ static func new_mission(run_id: String, seed: int, config: Dictionary = {}) -> D
     }
 
 static func _valid_mission(mission: Variant) -> bool:
-    if typeof(mission) != TYPE_DICTIONARY or mission.size() != 15             or not valid_id(mission.get("run_id")) or not natural(mission.get("seed")):
+    if typeof(mission) != TYPE_DICTIONARY or mission.size() != 16             or not valid_id(mission.get("run_id")) or not natural(mission.get("seed")):
         return false
     for key in ["mission_level", "mission_xp", "pending_plugin_offers",
                 "uncommitted_vaccine_xp", "uncommitted_point_fragments",
