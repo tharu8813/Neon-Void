@@ -70,6 +70,9 @@ func _run() -> void:
         pilot.set("initial_vaccine_id", "a-smoke-vaccine")
         root.add_child(pilot)
         await process_frame
+        var help: Label = pilot.get("message_label") as Label
+        _check(help != null and help.text.contains("CPU/GPU/RAM/SSD/HDD"),
+            region + ": pilot UI lists all five available hardware choices")
         var world: Node3D = pilot.get_node_or_null("World") as Node3D
         if world == null or bool(pilot.get("frozen")):
             _check(false, region + ": pilot initialized with real E slot")
