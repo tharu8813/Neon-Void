@@ -17,6 +17,8 @@ var vulnerable_material: StandardMaterial3D
 var dot_material: StandardMaterial3D
 var previous_hp: float = -1.0
 var hit_frames: int = 0
+var visual_age: float = 0.0
+var warning_default_material: StandardMaterial3D
 
 func configure(kind: String, logical_radius: float) -> void:
     assert(Shapes.COLORS.has(kind), "Never substitute a generic unknown enemy")
@@ -67,14 +69,20 @@ func configure(kind: String, logical_radius: float) -> void:
     warning_ring = MeshInstance3D.new()
     warning_ring.name = "StatusRing"
     warning_ring.mesh = Shapes.ring_mesh((logical_radius + (10.0 if kind == "rusher" else 7.0)) * Shapes.PX_TO_WORLD, 0.03)
-    warning_ring.material_override = Shapes.lit_material(Color("#ff8a3d") if kind == "rusher" else Color("#ffd166"))
+    warning_default_material = Shapes.lit_material(Color("#ff8a3d") if kind == "rusher" else Color("#ffd166"))
+    warning_ring.material_override = warning_default_material
     warning_ring.position.y = 0.004
     warning_ring.visible = false
     add_child(warning_ring)
 
 func sync_state(data: Dictionary, reduced_motion: bool = false) -> void:
     # C enemy state is read-only. Visual animation must never modify data.
-    var elapsed: float = float(data.get("elapsed", 0.0))
+    # C increments elapsed only for specialized viruses/bosses. Track a
+    # separate cosmetic clock for legacy shooter/splitter, never touching C.
+    visual_age += 1.0 / 60.0
+    var elapsed: float = float(data.get("elapsed", visual_age))
+    if enemy_kind in ["shooter", "splitter"]:
+        elapsed = visual_age
     var angle: float = float(data.get("angle", 0.0))
     var hp: float = float(data.get("hp", 0.0))
     if previous_hp >= 0.0 and hp < previous_hp:
@@ -114,5 +122,4 @@ func sync_state(data: Dictionary, reduced_motion: bool = false) -> void:
         hull.material_override = normal_material
     warning_ring.visible = (enemy_kind == "rusher" and int(data.get("state", 0)) == 1) \
         or float(data.get("guard", 0.0)) > 0.0 or vulnerable
-    if vulnerable:
-        warning_ring.material_override = vulnerable_material
+    warning_ring.material_override = vulnerable_material if vulnerable else warning_default_material
