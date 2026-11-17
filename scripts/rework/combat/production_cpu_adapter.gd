@@ -28,6 +28,7 @@ var pending_input: Dictionary = {}
 var last_health: float = -1.0
 var last_mana: float = -1.0
 var last_plugin_fault: String = ""
+var last_combat_overflow: int = 0
 var _reported_deaths: Dictionary = {}
 var _projectile_kinds: Dictionary = {}
 var _old_projectiles: Dictionary = {}
@@ -152,6 +153,7 @@ func reset() -> void:
     last_health = -1.0
     last_mana = -1.0
     last_plugin_fault = ""
+    last_combat_overflow = 0
     game_over = false
     effects = CAdapter.new()
     simulation.begin(0, {"encounter_id": "cleared"})
@@ -301,6 +303,16 @@ func advance_production_tick() -> Array[Dictionary]:
         _old_projectiles[str(p["id"])] = p.duplicate(true)
     var tick_run_id: String = run_id
     var base_notes: Array[Dictionary] = super.advance_one_tick()
+    var overflow: int = int(simulation.bus.metrics.get("overflow_rejected", 0))
+    if overflow > last_combat_overflow:
+        last_combat_overflow = overflow
+        # Hard cap is an integrity fault, never an apparently successful run.
+        running = false
+        last_plugin_fault = "B_event_queue_overflow"
+        combat_notice.emit({"kind": "combat_overload", "reason": last_plugin_fault,
+            "rejected_events": overflow, "tick": simulation.fixed_tick})
+        plugin_failure.emit(last_plugin_fault)
+        return base_notes
     # D/A death ACK may synchronously return to hub during signal emission.
     if not running or player == null or run_id != tick_run_id:
         return base_notes
@@ -482,6 +494,14 @@ func _on_combat_notice(_event: Dictionary) -> void:
 
 func _on_combat_actor_died(actor_id: String, _killer_id: String) -> void:
     if _reported_deaths.has(actor_id):
+        return
+    # No E kill receipts after the authoritative B event queue has overflowed.
+    if actor_id != PLAYER_ID and int(simulation.bus.metrics.get(
+            "overflow_rejected", 0)) > 0:
+        running = false
+        if last_plugin_fault != "B_event_queue_overflow":
+            last_plugin_fault = "B_event_queue_overflow"
+            plugin_failure.emit(last_plugin_fault)
         return
     _reported_deaths[actor_id] = true
     if actor_id == PLAYER_ID:
