@@ -55,7 +55,9 @@ func update_layout() -> void:
     if get_viewport() == null:
         return
     var vp: Vector2 = get_viewport().get_visible_rect().size
-    custom_minimum_size.x = minf(450.0, maxf(200.0, vp.x - 36.0))
+    # At narrow widths, reserve room for the tracker on the right.
+    var available: float = vp.x - (420.0 if vp.x < 1100.0 else 36.0)
+    custom_minimum_size.x = minf(450.0, maxf(180.0, available))
     position = Vector2(18.0, maxf(0.0, vp.y - 172.0))
 
 static func _clean_entries(actor: Dictionary) -> Array[Dictionary]:
