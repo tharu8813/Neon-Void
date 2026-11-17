@@ -46,7 +46,14 @@ static func _valid_packet(packet: Variant, tick: int, battle: bool) -> bool:
     return serialized.to_utf8_buffer().size() <= MAX_PACKET_BYTES
 
 static func _digest(b: Dictionary, d: Dictionary) -> String:
-    return JSON.stringify({"b": b, "d": d}, "", true, true).sha256_text()
+    # Hash a JSON round-tripped canonical representation. Godot may write
+    # in-memory Vector-like numeric variants differently from JSON-decoded
+    # numbers; the digest MUST survive verified disk read on both OSes.
+    var encoded: String = JSON.stringify({"b": b, "d": d}, "", true, true)
+    var canonical: Variant = JSON.parse_string(encoded)
+    if not canonical is Dictionary:
+        return ""
+    return JSON.stringify(canonical, "", true, true).sha256_text()
 
 static func valid(mission: Dictionary) -> bool:
     var rolls: Variant = mission.get("environment_rolls", {})
