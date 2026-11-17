@@ -28,9 +28,36 @@ func _run() -> void:
     verify(game.get_node_or_null("InputController") != null, "B input in main")
     verify(game.get_node_or_null("ProjectileBatch") != null, "P9 GPU instancing in main")
     verify(game.get_node_or_null("UIShell") != null, "D HUD and menus in main")
-    verify(str(game.get("mode")) == "title", "menu appears first")
+    verify(str(game.get("mode")) == "base", "Python default launch enters walkable antivirus base")
+    verify(not bool(game.get("paused")), "base begins unpaused")
+    verify(not game.get_node("UIShell")._menu.visible, "no mandatory title menu at boot")
+    verify(game.call("nearest_base_terminal", Vector2(1200, 780)) == "", "F ignores distant terminals")
+    var actor: Node3D = game.get_node("LegacyPlayer")
+    var base_nodes: Dictionary = {
+        "deploy": [Vector2(1580, 780), "deployment"],
+        "database": [Vector2(820, 610), "database"],
+        "diagnostics": [Vector2(820, 1000), "profile"],
+        "settings": [Vector2(1540, 1030), "settings"],
+    }
+    for id in base_nodes:
+        var data: Array = base_nodes[id]
+        actor.call("set_logical_position", data[0])
+        verify(game.call("nearest_base_terminal", data[0]) == id, "same Python terminal coordinates: " + id)
+        game.call("_on_interact")
+        verify(str(game.get_node("UIShell")._menu.current) == str(data[1]), "F opens " + id)
+        verify(bool(game.get("paused")), "terminal interaction pauses only the menu")
+        game.get_node("UIShell")._menu.close_screen()
+        verify(not bool(game.get("paused")), "closing terminal resumes walking: " + id)
+    verify(game.get_node("GateVisuals/AntivirusBaseTerminals").visible, "base markers visible before OS deployment")
+    verify(not game.get_node("GateVisuals/OSStations").visible, "OS gates hidden in antivirus base")
+    actor.call("set_logical_position", Vector2(1580, 780))
+    game.call("_on_interact")
+    verify(str(game.get_node("UIShell")._menu.current) == "deployment", "deploy only through in-world terminal")
     verify(bool(game.call("start_new_run")), "new OS launch")
-    verify(str(game.get("mode")) == "hub", "starts inside world hub")
+    verify(str(game.get("mode")) == "hub", "starts inside OS world hub")
+    verify(game.get_node("GateVisuals/OSStations").visible, "OS gates appear after deployment")
+    verify(not game.get_node("GateVisuals/AntivirusBaseTerminals").visible, "base terminals hidden inside OS")
+
     var sectors: Array[String] = ["NETWORK", "CPU", "STORAGE", "MEMORY"]
     for sector_id in sectors:
         verify(bool(game.call("enter_sector", sector_id)), "enter " + sector_id)
