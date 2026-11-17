@@ -198,5 +198,8 @@ func _run() -> void:
 	var laser: Dictionary = Catalog.find_by_id("nv_l_laser", entries)
 	if not _check(Policy.derived_attack_may_proc(laser) and is_equal_approx(float(laser["proc_permissions"]["on_hit_damage_efficiency"]), 0.70), "laser 70% on-hit efficiency data"):
 		return
+	var live_suite = preload("res://tests/rework/plugins/plugin_effect_assertions.gd").new()
+	if not _check(live_suite.execute_tests(), "live effect + save acknowledgement regressions"):
+		return
 	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, maxed, empty, levels, proc path")
 	quit(0)
