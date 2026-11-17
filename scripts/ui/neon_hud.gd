@@ -27,6 +27,11 @@ var _mana_text: Label
 var _stat_text: Label
 var _stat_right: Label
 var _stat_effect: Label
+var _stats_expanded: bool = false
+var _stats_compact: Panel
+var _stat_glance: Label
+var _stats_full_nodes: Array[Control] = []
+var _threat_alert: Label
 var _location_text: Label
 var _world_detail: Label
 var _world_hint: Label
@@ -217,6 +222,14 @@ func _build_combat() -> void:
         Color("#16233a"), Color.TRANSPARENT)
     _stat_effect = _label(_combat_hud, "StatsEffects", Rect2(34, 233, 329, 23),
         "", 11, GOLD)
+    for name in ["LiveStatsPanel", "LiveStatsHeading", "StatsLeft", "StatsRight", "StatsRule", "StatsEffects"]:
+        _stats_full_nodes.append(_combat_hud.get_node(name))
+    _stats_compact = _panel(_combat_hud, "CompactStatsPanel", Rect2(19, 90, 303, 54),
+        PANEL_COLOR, Color("#21394e"))
+    _stat_glance = _label(_combat_hud, "CompactStatsText", Rect2(30, 95, 282, 45),
+        "", 12, TEXT_COLOR)
+    _stat_glance.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    _apply_stats_visibility()
 
     _panel(_combat_hud, "SkillPanel", Rect2(-275, -86, 550, 62),
         Color("#07121e"), Color("#28455b"), 0.5, 1.0)
@@ -229,6 +242,10 @@ func _build_combat() -> void:
         PLAYER_COLOR, 0.5, 1.0)
     _guard_bar = _bar(_combat_hud, "GuardCooldown", Rect2(40, -42, 184, 4),
         HP_COLOR, 0.5, 1.0)
+    _threat_alert = _label(_combat_hud, "IncomingAttack", Rect2(-265, -125, 530, 27),
+        "", 13, GOLD, 0.5, 1.0)
+    _threat_alert.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _threat_alert.visible = false
 
     _panel(_combat_hud, "InfectionPanel", Rect2(-420, 107, 396, 83),
         INFECTION_PANEL, Color("#384457"), 1.0, 0.0)
@@ -289,6 +306,25 @@ func _build_world() -> void:
     _world_prompt = _label(_world_hud, "NearbyPrompt", Rect2(-255, -91, 510, 38),
         "", 14, Color("#c6f8ff"), 0.5, 1.0)
     _world_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+func _apply_stats_visibility() -> void:
+    for element in _stats_full_nodes:
+        element.visible = _stats_expanded
+    if _stats_compact != null:
+        _stats_compact.visible = not _stats_expanded
+    if _stat_glance != null:
+        _stat_glance.visible = not _stats_expanded
+
+func toggle_stat_details() -> void:
+    _stats_expanded = not _stats_expanded
+    _apply_stats_visibility()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+    if not _combat_hud.visible or not event is InputEventKey:
+        return
+    if event.pressed and not event.echo and event.keycode == KEY_F1:
+        toggle_stat_details()
+        get_viewport().set_input_as_handled()
 
 func update_state(payload: Dictionary) -> void:
     if payload == _data:
@@ -386,6 +422,10 @@ func _draw_state() -> void:
     _stat_effect.text = ("%s  ·  지속 %.0f%%" % [
         "방어막 %.1fs" % guard_t if guard_t > 0.0 else "상시 효과 활성",
         float(stats.get("effect_duration", 1.0)) * 100.0])
+    _stat_glance.text = ("피해 %.1f  ·  연사 %.1f/s  ·  방어 %.1f\n" +
+        "F1 능력치 자세히  ·  TAB 소프트웨어") % [
+        float(stats.get("dmg", 10.0)), float(stats.get("rate", 5.4)),
+        float(stats.get("armor", 4.0)) + (20.0 if guard_t > 0.0 else 0.0)]
 
     var settings: Dictionary = _data.get("settings", {})
     var binds: Dictionary = settings.get("bindings", {})
@@ -406,10 +446,13 @@ func _draw_state() -> void:
             ("준비" if guard_ready else "마나 부족"))]
     _pulse_text.add_theme_color_override("font_color", PLAYER_COLOR if pulse_ready else DIM_COLOR)
     _guard_text.add_theme_color_override("font_color", HP_COLOR if guard_ready else DIM_COLOR)
-    _pulse_bar.max_value = Software.skill_cooldown(7.0, float(stats.get("skill_cooldown", 1.0)))
-    _pulse_bar.value = pulse_remaining if pulse_remaining > 0.0 else _pulse_bar.max_value
-    _guard_bar.max_value = Software.skill_cooldown(12.0, float(stats.get("skill_cooldown", 1.0)))
-    _guard_bar.value = guard_remaining if guard_remaining > 0.0 else _guard_bar.max_value
+    # Fill means READY progression (empty right after cast, full at zero cooldown).
+    _pulse_bar.max_value = 1.0
+    _pulse_bar.value = 1.0 - clampf(pulse_remaining /
+        Software.skill_cooldown(7.0, float(stats.get("skill_cooldown", 1.0))), 0.0, 1.0)
+    _guard_bar.max_value = 1.0
+    _guard_bar.value = 1.0 - clampf(guard_remaining /
+        Software.skill_cooldown(12.0, float(stats.get("skill_cooldown", 1.0))), 0.0, 1.0)
     var module_levels: Dictionary = _data.get("software_levels", {})
     _software_text.text = "설치된 소프트웨어 %d종  [TAB]  ·  대시 %d/%d" % [
         module_levels.size(), charges, dash_max]
@@ -441,6 +484,12 @@ func _draw_state() -> void:
 
     var boss_hp: float = float(_data.get("boss_hp", 0.0))
     var boss_max: float = float(_data.get("boss_maxhp", 0.0))
+    var attacks: int = int(_data.get("attack_warning_count", 0))
+    var urgent: bool = bool(_data.get("attack_warning_urgent", false))
+    _threat_alert.visible = attacks > 0
+    _threat_alert.text = ("즉시 회피! · 적 공격 %d건" if urgent else
+        "적 공격 예고 · %d건") % attacks if attacks > 0 else ""
+    _threat_alert.add_theme_color_override("font_color", HP_LOW if urgent else GOLD)
     _boss_panel.visible = boss_max > 0.0 and boss_hp > 0.0
     if _boss_panel.visible:
         _boss_bar.max_value = maxf(1.0, boss_max)
