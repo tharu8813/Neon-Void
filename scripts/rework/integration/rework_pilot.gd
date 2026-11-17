@@ -15,6 +15,7 @@ const TacticalHUD = preload("res://scripts/rework/ui/pilot_tactical_hud.gd")
 const CardStyle = preload("res://scripts/rework/ui/pilot_reward_card_style.gd")
 const HubManagement = preload("res://scripts/rework/ui/hub_management_panel.gd")
 const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd")
+const MissionResult = preload("res://scripts/rework/ui/pilot_mission_result.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -44,6 +45,7 @@ var tactical_hud: PanelContainer
 var hub_panel: PanelContainer
 var hub_button: Button
 var mission_tracker: PanelContainer
+var result_panel: PanelContainer
 var _hud_elapsed: float = 0.0
 
 func _ready() -> void:
@@ -113,6 +115,9 @@ func _unhandled_input(event: InputEvent) -> void:
     if event.keycode == KEY_TAB:
         _toggle_management()
         get_viewport().set_input_as_handled()
+    elif event.keycode == KEY_ESCAPE and result_panel != null and result_panel.visible:
+        result_panel.call("_dismiss")
+        get_viewport().set_input_as_handled()
     elif event.keycode == KEY_ESCAPE and hub_panel != null and hub_panel.visible:
         _close_management()
         get_viewport().set_input_as_handled()
@@ -133,6 +138,9 @@ func _create_ui() -> void:
     layer.add_child(mission_tracker)
     hub_panel = HubManagement.new()
     layer.add_child(hub_panel)
+    result_panel = MissionResult.new()
+    layer.add_child(result_panel)
+    result_panel.dismissed.connect(_on_result_dismissed)
     hub_panel.close_requested.connect(_close_management)
     hub_panel.allocate_requested.connect(_on_hub_allocate)
     hub_panel.plugin_move_requested.connect(_on_hub_plugin_move)
@@ -277,7 +285,7 @@ func _refresh() -> void:
 ## A owns UI-to-E writes: only a fresh, verified hub revision can authorize them.
 ## Receipt IDs include expected revision; unknown ACK freezes instead of retrying.
 func _toggle_management() -> void:
-    if frozen or hub_panel == null or offer_panel.visible or learn_panel.visible:
+    if frozen or hub_panel == null or offer_panel.visible or learn_panel.visible             or (result_panel != null and result_panel.visible):
         return
     if hub_panel.visible:
         _close_management()
@@ -382,7 +390,7 @@ func _on_hub_equip_skills(equipped: Array, expected: int) -> void:
         {"equipped": equipped.duplicate(true)}, expected)
 
 func _on_mission_requested(request: Dictionary) -> void:
-    if frozen or bridge != null:
+    if frozen or bridge != null or (result_panel != null and result_panel.visible):
         return
     if hub_panel != null and hub_panel.visible:
         _close_management()
@@ -639,7 +647,7 @@ func _reroll_card(index: int) -> void:
         return
     _render_cards()
 
-func _on_mission_returned(_fact: Dictionary) -> void:
+func _on_mission_returned(fact: Dictionary) -> void:
     bridge = null
     offers = null
     current_run_id = ""
@@ -647,9 +655,19 @@ func _on_mission_returned(_fact: Dictionary) -> void:
     learn_panel.visible = false
     learn_checks.clear()
     pending_extraction.clear()
-    get_tree().paused = false
-    message_label.text = "의뢰 결과 저장됨 · 허브 복귀"
+    if hub_panel != null:
+        hub_panel.visible = false
+    message_label.text = "의뢰 결과 영구 저장됨 · 허브 복귀"
     _refresh()
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)) or result_panel == null             or not bool(result_panel.show_verified(fact, loaded)):
+        _halt("terminal_outcome_receipt_unverified")
+        return
+    get_tree().paused = true
+
+func _on_result_dismissed() -> void:
+    if not frozen and not offer_panel.visible and not learn_panel.visible             and (hub_panel == null or not hub_panel.visible):
+        get_tree().paused = false
 
 func _deposit_carried() -> void:
     if frozen:
@@ -677,7 +695,7 @@ func _deposit_carried() -> void:
     _refresh()
 
 func _choose_new_vaccine() -> void:
-    if frozen:
+    if frozen or (result_panel != null and result_panel.visible):
         return
     var loaded: Dictionary = Gateway.snapshot(slot_path)
     if not bool(loaded.get("ok", false)):
@@ -772,7 +790,7 @@ func _finish_extraction() -> void:
         _halt("extraction_world_ack_failed")
         return
     learn_panel.visible = false
-    get_tree().paused = false
+    get_tree().paused = result_panel != null and result_panel.visible
 
 func _on_death_requested(fact: Dictionary) -> void:
     if frozen or bridge == null:
@@ -805,6 +823,8 @@ func _halt(reason: String) -> void:
     frozen = true
     if hub_panel != null:
         hub_panel.visible = false
+    if result_panel != null:
+        result_panel.visible = false
     if tactical_hud != null:
         tactical_hud.show_blocked()
     if mission_tracker != null:
