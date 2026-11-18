@@ -6,6 +6,7 @@ extends PanelContainer
 var vaccine_label: Label
 var mission_label: Label
 var save_label: Label
+var plugin_label: Label
 var health_label: Label
 var shield_label: Label
 var mana_label: Label
@@ -19,7 +20,7 @@ func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     position = Vector2(18, 12)
-    custom_minimum_size = Vector2(632, 112)
+    custom_minimum_size = Vector2(632, 132)
     var panel_style := StyleBoxFlat.new()
     panel_style.bg_color = Color(0.025, 0.055, 0.09, 0.91)
     panel_style.border_color = Color(0.15, 0.86, 0.95, 0.8)
@@ -59,6 +60,8 @@ func _ready() -> void:
     mana_meter = mp["meter"]
     save_label = _make_text("저장 확인 전 · 전투 자원 대기", Color(0.68, 0.76, 0.85))
     body.add_child(save_label)
+    plugin_label = _make_text("전투 플러그인 · E/B 대조 대기", Color(0.65, 0.85, 0.90))
+    body.add_child(plugin_label)
     render_combat_snapshot({})
     update_layout()
 
@@ -166,6 +169,19 @@ func _set_resource(label: Label, meter: ProgressBar, caption: String,
     meter.max_value = maxf(1.0, capacity)
     meter.value = clampf(amount, 0.0, meter.max_value)
     label.text = "%s %d/%d" % [caption, ceili(maxf(0.0, amount)), ceili(capacity)]
+
+## Read-only projection: "deployed" means B installed it, NOT that it proc'd.
+func render_plugin_view(view: Dictionary) -> void:
+    if plugin_label == null:
+        return
+    if view.is_empty():
+        plugin_label.text = "전투 플러그인 · B 전투 대기 (보관/소지는 허브 DB 확인)"
+    elif not bool(view.get("ok", false)):
+        plugin_label.text = "플러그인 확인 필요 · E/B 불일치"
+    else:
+        plugin_label.text = "전투 등록 %d종 · 동기화 대기 %d종 · 카탈로그 %d종" % [
+            int(view.get("equipped", 0)), int(view.get("awaiting_sync", 0)),
+            int(view.get("total_catalog", 0))]
 
 func show_blocked() -> void:
     blocked = true
