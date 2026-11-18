@@ -22,9 +22,9 @@ static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dict
     var inspected: Dictionary = Gateway.inspect_slot(slot_path)
     if not bool(inspected.get("ok", false)):
         report["text"] = "저장 파일 검증 실패: " + str(inspected.get("reason", "unknown")) \
-            + "\\nE 진단: " + str(diagnostic.get("reason", "unknown")) \
-            + "\\n오프라인 점검: " + str(diagnostic.get("offline_recovery_hint", "inspect_manually")) \
-            + "\\n원본을 변경하지 않았어. 수동 점검이 필요해."
+            + "\nE 진단: " + str(diagnostic.get("reason", "unknown")) \
+            + "\n오프라인 점검: " + str(diagnostic.get("offline_recovery_hint", "inspect_manually")) \
+            + "\n원본을 변경하지 않았어. 수동 점검이 필요해."
         return report
 
     report["readable"] = true
