@@ -44,7 +44,7 @@ static func run(check: Callable) -> void:
         return (str(note.get("kind", "")) == "hit"
             and bool(note.get("environment_source", false))
             and str(note.get("region_id", "")) == "CPU"
-            and str(note.get("external_event_id", "")) == "pulse"),
+            and str(note.get("external_event_id", "")) == "pulse")),
         "UI hit notice retains D source and region without mutable HP")
     check.call(str(sim.queue_environment_hit(hit).get("reason", "")) ==
         "environment_contact_cooldown", "hazard 60Hz repeat interval respected")
@@ -108,7 +108,7 @@ static func run(check: Callable) -> void:
         "lethal environmental hit yields exactly one death")
     check.call(death_notes.any(func(note: Dictionary) -> bool:
         return (str(note.get("kind", "")) == "death"
-            and str(note.get("killer_id", "")).begins_with("environment:")),
+            and str(note.get("killer_id", "")).begins_with("environment:"))),
         "death notice identifies environmental killer")
     check.call(not bool(fatal.queue_environment_hit(
         _contact("after-death", "true", 10.0)).get("ok", false)),
