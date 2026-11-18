@@ -55,11 +55,11 @@ static func describe(confirmed_E_levels: Dictionary, deployed_B_levels: Dictiona
 			if kind in PASSIVES:
 				status = "passive_applied"
 			elif kind == "breakable_sprint":
-				status = "passive_applied" if bool(runtime_state.get("sprint_active",false)) else "broken_until_reactivation"
+				status = "passive_applied" if bool(runtime_state["sprint_active"]) else "broken_until_reactivation" if runtime_state.has("sprint_active") else "state_unknown"
 			elif kind == "fever":
-				status = "timed_buff_active" if tick < int(runtime_state.get("fever_until",-1)) else "charging"
+				status = ("timed_buff_active" if tick < int(runtime_state["fever_until"]) else "charging") if runtime_state.has("fever_until") else "state_unknown"
 			elif kind == "kill_power":
-				status = "stacked_passive_active" if int(runtime_state.get("kill_power_stacks",0)) > 0 else "awaiting_kill"
+				status = ("stacked_passive_active" if int(runtime_state["kill_power_stacks"]) > 0 else "awaiting_kill") if runtime_state.has("kill_power_stacks") else "state_unknown"
 			elif kind == "grant_rare":
 				status = "E_receipt_only_no_combat_proc"
 		var level_effects: Array = entry.get("level_effects",[])
