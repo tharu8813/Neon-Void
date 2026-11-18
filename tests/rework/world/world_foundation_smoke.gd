@@ -24,7 +24,7 @@ func _run() -> void:
         check(not distinct_ids.has(id), "unique hardware ID " + id)
         distinct_ids[id] = true
         check(Catalog.objectives(id).size() >= 1, "objective contract " + id)
-    for seed in range(100):
+    for seed in range(125):
         var mission: Dictionary = Planner.create_mission(seed, seed / 10)
         check(mission == Planner.create_mission(seed, seed / 10), "mission replay " + str(seed))
         check(Planner.count_easy(mission) >= 1, "minimum easy " + str(seed))
@@ -107,5 +107,5 @@ func _run() -> void:
     check(scene.get_node_or_null("TileContainer") != null, "procedural preview generated")
     scene.queue_free()
     if failures == 0:
-        print("REWORK WORLD FOUNDATION PASS (5 hardware, 100 seeds, reachable maps, extraction)")
+        print("REWORK WORLD FOUNDATION PASS (5 hardware, 125 seed accessibility audit, extraction)")
     quit(0 if failures == 0 else 1)
