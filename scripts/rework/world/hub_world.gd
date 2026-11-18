@@ -45,26 +45,33 @@ func _build() -> void:
     _wall(holder, "EastWall", Vector3(26, 0.8, 9), Vector3(0.35, 1.6, 18))
     var accent := StandardMaterial3D.new()
     accent.albedo_color = Color(0.12, 0.55, 0.75)
+    accent.emission_enabled = true
+    accent.emission = Color(0.035, 0.22, 0.34)
+    accent.emission_energy_multiplier = 1.1
     for terminal_id in Layout.TERMINALS:
         var data: Dictionary = Layout.TERMINALS[terminal_id]
         var position: Vector3 = data["position"]
+        # Interactable hubs are FLOOR pads, not 1.2m blocking pedestals.
+        # A player can stand directly on the marked F area. The gameplay
+        # request is gated by Layout's true radius, never mesh collision.
         var marker := MeshInstance3D.new()
         marker.name = terminal_id.capitalize() + "Terminal"
         var mesh := BoxMesh.new()
-        mesh.size = Vector3(0.9, 1.2, 0.9)
+        mesh.size = Vector3(1.4, 0.06, 1.4)
         marker.mesh = mesh
         marker.material_override = accent
-        marker.position = position + Vector3.UP * 0.6
+        marker.position = position + Vector3.UP * 0.03
         holder.add_child(marker)
         var sign := Label3D.new()
         sign.name = terminal_id + "Nameplate"
         sign.text = str(data["label"]) + "  [F]"
-        sign.font_size = 42
-        sign.pixel_size = 0.006
+        sign.font_size = 26
+        sign.pixel_size = 0.0045
         sign.rotation_degrees = Vector3(-90, 0, 0)
-        sign.position = position + Vector3.UP * 1.4
+        sign.position = position + Vector3(0.0, 0.11, -0.85)
         holder.add_child(sign)
-        _collider(holder, terminal_id + "Collider", marker.position, mesh.size)
+        # No StaticBody3D on a terminal pad. The perimeter and floor retain
+        # their collision, and Layout still rejects out-of-range F requests.
 
 func _wall(holder: Node3D, label: String, position: Vector3, dimensions: Vector3) -> void:
     var marker := MeshInstance3D.new()
