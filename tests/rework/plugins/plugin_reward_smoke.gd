@@ -248,5 +248,14 @@ func _run() -> void:
 	var rare_contract = preload("res://tests/rework/plugins/plugin_atomic_rare_cases.gd").new()
 	if not _check(rare_contract.run(), "E-only rare receipts and all 27 level caps"):
 		return
+	var E_B_matrix = preload("res://tests/rework/plugins/plugin_s01_e_b_receipts.gd").new()
+	if not _check(E_B_matrix.run(), "S01 all 27 E durable receipts -> production B levels"):
+		return
+	var production_shields = preload("res://tests/rework/plugins/plugin_s01_production_matrix.gd").new()
+	if not _check(production_shields.run(), "S01 production B adapter shield levels + actual HP"):
+		return
+	var environment_contacts = preload("res://tests/rework/plugins/plugin_environment_damage_cases.gd").new()
+	if not _check(environment_contacts.run(), "B environment-hit C trigger and 8 shield level contracts"):
+		return
 	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, caps, E rare receipts, proc path")
 	quit(0)

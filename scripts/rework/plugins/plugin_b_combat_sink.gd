@@ -55,8 +55,8 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 						return float(left["distance"]) < float(right["distance"]))
 				if shape=="lightning":
 					var count: int = maxi(0,int(command.get("chain_targets",1)))
-					if nearby.is_empty():
-						return {"ok":false,"reason":"missing_adjacent_chain_target"}
+					# One surviving enemy (boss/last mob) is a legal zero-hit chain.
+					# Do not fault C or B merely because no second target exists.
 					var max_reach: float = float(command.get("search_distance_mult",1.0)) * float(next.get("lightning_base_reach",8.0))
 					for neighbor in nearby:
 						if float(neighbor["distance"]) <= max_reach and targets_hit.size() < count:
@@ -131,8 +131,11 @@ static func apply(commands: Array, world: Dictionary) -> Dictionary:
 					incoming[coefficient] = float(incoming.get(coefficient,0.0)) * float(command.get("damage_multiplier",1.0))
 				next["pending_attack"] = incoming
 			"rare_reward_request":
-				# E must persist a separate receipt before it is displayed.
-				rewards.append(command.duplicate(true))
+				# Legacy callers must not fabricate a second E-owned payout.
+				return {"ok":false,"reason":"rare_grant_owned_by_E_source_transaction"}
+			"rare_reward_notice":
+				# Read-only hint. Only E's verified source+bonus receipt may grant.
+				pass
 			_:
 				return {"ok":false,"reason":"unknown_effect_command"}
 	next["generated_events"] = events
