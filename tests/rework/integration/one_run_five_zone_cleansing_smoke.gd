@@ -328,11 +328,44 @@ func _run() -> void:
     check(region_count == 5 and boss_deaths == 5,
         "ONE mission, five completed regions and five real B boss kills")
     check(not bool(pilot.get("frozen")), "no uncertain E receipts or fatal world errors")
+    var extracted_disk: Dictionary = _saved()
     paused = false
     root.remove_child(pilot)
     pilot.queue_free()
     await process_frame
+    # Restart a real A pilot scene with the SAME completed E save slot. A
+    # must not replay an already-closed run or reset XP, earned investment
+    # points, acquired inventory, skills, vaccine copies or receipt history.
+    if region_count == 5 and errors == 0:
+        var reopened: Node3D = Pilot.instantiate()
+        reopened.set("slot_id", slot_id)
+        reopened.set("initial_vaccine_id", "a-full-run-vaccine")
+        root.add_child(reopened)
+        await process_frame
+        var after_restart: Dictionary = _saved()
+        var previous_vaccine: Dictionary = extracted_disk["snapshot"]["vaccine"]
+        var current_vaccine: Dictionary = after_restart["snapshot"]["vaccine"]
+        check(not bool(reopened.get("frozen")) and
+            str(reopened.get_node("World").get("current_mode")) == "hub" and
+            int(after_restart.get("revision", -1)) ==
+                int(extracted_disk.get("revision", -2)),
+            "after full 5/5 E extraction, a new QA session starts safely in hub"
+            + " with exactly the same durable E revision")
+        for field in ["level", "xp", "total_xp", "earned_fragments",
+                "unspent_fragments", "invested_stats", "known_skills",
+                "equipped_skills", "archive", "carried", "receipts",
+                "closed_runs", "copies_remaining"]:
+            check(previous_vaccine.get(field) == current_vaccine.get(field),
+                "after complete extraction and app restart E keeps " + str(field))
+        check(current_vaccine.get("mission") == null and
+            str(current_vaccine.get("closed_runs", {}).get(run_id, "")) ==
+                "extracted",
+            "relaunch cannot duplicate, reopen or repay completed run")
+        paused = false
+        root.remove_child(reopened)
+        reopened.queue_free()
+        await process_frame
     _clean(slot_path)
     if errors == 0:
-        print("REWORK A FULL FIVE-ZONE RUN PASS: same E run, CPU/GPU/RAM/SSD/HDD real objectives + 5 B bosses, E clean receipts, physical board returns, 5/5 final extraction")
+        print("REWORK A FULL FIVE-ZONE RUN PASS: same E run, CPU/GPU/RAM/SSD/HDD real objectives + 5 B bosses, E clean receipts, physical board returns, 5/5 final extraction + durable restart")
     quit(0 if errors == 0 else 1)
