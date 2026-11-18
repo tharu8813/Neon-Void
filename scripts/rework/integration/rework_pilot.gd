@@ -18,9 +18,14 @@ const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd
 const MissionResult = preload("res://scripts/rework/ui/pilot_mission_result.gd")
 const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
 const SkillBar = preload("res://scripts/rework/ui/pilot_skill_bar.gd")
+const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
+const QA_SKILL_IDS: Array[String] = [
+    "nv_skill_arc_pulse", "nv_skill_penetrator", "nv_skill_root_packet"]
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
+## Opt-in QA scene only. Real saved E transactions; never enabled in release pilot.
+@export var qa_skill_tools_enabled: bool = false
 
 @onready var world: Node3D = $World
 
@@ -46,6 +51,7 @@ var recovery_label: Label
 var tactical_hud: PanelContainer
 var hub_panel: PanelContainer
 var hub_button: Button
+var qa_skill_button: Button
 var mission_tracker: PanelContainer
 var result_panel: PanelContainer
 var status_effects: PanelContainer
@@ -225,6 +231,13 @@ func _create_ui() -> void:
     hub_button.text = "백신·능력치·플러그인·스킬 관리  [Tab]"
     hub_button.pressed.connect(_toggle_management)
     outer.add_child(hub_button)
+    if qa_skill_tools_enabled:
+        qa_skill_button = Button.new()
+        qa_skill_button.name = "QAInstallAuthorizedSkills"
+        qa_skill_button.text = "QA 전용 · E 저장으로 테스트 스킬 3종 장착"
+        qa_skill_button.tooltip_text = "리워크 QA 슬롯 전용. 정식 보상 정책과 무관한 임시 스킬 3종"
+        qa_skill_button.pressed.connect(_qa_install_authorized_skills)
+        outer.add_child(qa_skill_button)
     deposit_button = Button.new()
     deposit_button.text = "허브 소지 플러그인 수동 보관"
     deposit_button.pressed.connect(_deposit_carried)
@@ -342,14 +355,94 @@ func _refresh() -> void:
     if vaccine.is_empty():
         _halt("missing_vaccine")
         return
-    status_label.text = "백신 Lv.%d · 복제 %d회 남음 · 저장 r%d" % [
+    status_label.text = "%s백신 Lv.%d · 복제 %d회 남음 · 저장 r%d" % [
+        "리워크 QA 전용 · " if qa_skill_tools_enabled else "",
         int(vaccine.get("level", 1)),
         int(vaccine.get("copies_remaining", 0)),
         int(loaded.get("revision", 0))]
+    if qa_skill_button != null:
+        var ready_skills: bool = vaccine.get("equipped_skills", []) == QA_SKILL_IDS
+        qa_skill_button.visible = qa_skill_tools_enabled and (
+            str(world.get("current_mode")) == "hub")
+        qa_skill_button.disabled = frozen or bridge != null or ready_skills
+        qa_skill_button.text = "QA 스킬 3종 · E 저장 완료" if ready_skills else \
+            "QA 전용 · E 저장으로 테스트 스킬 3종 장착"
     # Per-plugin DB UI replaces accidental bulk transfers; preserve test API.
     deposit_button.visible = false
     hub_button.disabled = frozen
     new_vaccine_button.visible = false
+
+## QA-only helper: seed provisional B test skills using E's normal
+## revision-guarded durable transactions. No direct edits to saves, B actors
+## or owner modules. Can only be invoked in the isolated QA scene's hub.
+func _qa_install_authorized_skills() -> void:
+    if not qa_skill_tools_enabled or frozen or bridge != null \
+            or str(world.get("current_mode")) != "hub" \
+            or (result_panel != null and result_panel.visible):
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("QA_E_skill_snapshot_unavailable")
+        return
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var vaccine: Dictionary = saved.get("vaccine", {})
+    if bool(saved.get("selection_required", false)) or vaccine.is_empty() \
+            or vaccine.get("alive") != true or vaccine.get("mission") != null:
+        _halt("QA_skills_require_valid_idle_E_vaccine")
+        return
+    for skill_id in QA_SKILL_IDS:
+        if SkillRegistry.definition(skill_id).is_empty():
+            _halt("QA_B_skill_registry_missing:" + skill_id)
+            return
+        if vaccine.get("known_skills", []).has(skill_id):
+            continue
+        var expected: int = int(loaded.get("revision", -1))
+        var saved_ack: Dictionary = Gateway.transact_command(slot_path, {
+            "action": "learn_skill",
+            "vaccine_id": str(vaccine["vaccine_id"]),
+            "generation": int(saved["generation"]),
+            "receipt_id": "qa:learn:" + skill_id + ":" + str(expected),
+            "skill_id": skill_id
+        }, expected)
+        if not bool(saved_ack.get("applied", false)):
+            _halt("QA_skill_E_learn_rejected:" + str(
+                saved_ack.get("reason", "unknown")))
+            return
+        loaded = Gateway.snapshot(slot_path)
+        if not bool(loaded.get("ok", false)) \
+                or int(loaded.get("revision", -1)) <= expected:
+            _halt("QA_skill_E_readback_failed:" + skill_id)
+            return
+        saved = loaded["snapshot"]
+        vaccine = saved.get("vaccine", {})
+        if not vaccine.get("known_skills", []).has(skill_id):
+            _halt("QA_skill_E_learn_receipt_unconfirmed:" + skill_id)
+            return
+    if vaccine.get("equipped_skills", []) != QA_SKILL_IDS:
+        var expected: int = int(loaded.get("revision", -1))
+        var equipped_ack: Dictionary = Gateway.transact_command(slot_path, {
+            "action": "equip_skills",
+            "vaccine_id": str(vaccine["vaccine_id"]),
+            "generation": int(saved["generation"]),
+            "receipt_id": "qa:equip:" + str(expected),
+            "equipped": QA_SKILL_IDS.duplicate()
+        }, expected)
+        if not bool(equipped_ack.get("applied", false)):
+            _halt("QA_skill_E_equip_rejected:" + str(
+                equipped_ack.get("reason", "unknown")))
+            return
+        loaded = Gateway.snapshot(slot_path)
+        if not bool(loaded.get("ok", false)) \
+                or int(loaded.get("revision", -1)) <= expected:
+            _halt("QA_skill_E_equip_readback_failed")
+            return
+        vaccine = loaded.get("snapshot", {}).get("vaccine", {})
+        if vaccine.get("equipped_skills", []) != QA_SKILL_IDS:
+            _halt("QA_skill_E_equip_unconfirmed")
+            return
+    message_label.text = "QA 스킬 3종 E 저장 확인 r%d · 출전 후 Q/E/C 테스트 가능" % [
+        int(loaded["revision"])]
+    _refresh()
 
 ## A owns UI-to-E writes: only a fresh, verified hub revision can authorize them.
 ## Receipt IDs include expected revision; unknown ACK freezes instead of retrying.
