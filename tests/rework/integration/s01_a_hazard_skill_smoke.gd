@@ -1,6 +1,6 @@
 extends SceneTree
 ## A S01 end-to-end bridge check on a NEW synthetic E slot.
-## D emits a typed GPU contact, A validates its saved map and forwards once to
+## D reports typed GPU contact, A validates the saved map before D forwards to
 ## B's real 60 Hz HP ledger. No live user saves or legacy files are touched.
 const PilotScene = preload("res://scenes/rework/integration/rework_pilot.tscn")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
@@ -100,19 +100,20 @@ func _run() -> void:
                     "hazard_kind": "coolant_overload_beam",
                     "hazard_id": "GPU:beam:0", "cycle": 0, "tick": 90,
                     "player_world": world.player.global_position,
+                    "source_world": world.player.global_position,
                     "damage_type": "magic"
                 }
                 if world.has_signal("environment_contact_requested"):
-                    world.emit_signal("environment_contact_requested", fact)
+                    world.call("_on_environment_contact", fact)
                 _check(not bool(pilot.get("frozen")),
-                    "A validates and forwards a durable-map contact without halt")
+                    "A checks E durable map and D submits contact once")
                 router.live.advance_test_tick({"VACCINE": {
                     "move": Vector2.ZERO, "aim_world": world.player.global_position
                     + Vector3.RIGHT, "fire": false}})
                 var after: float = float(b.actor_snapshot("VACCINE")["stats"]["health"])
                 _check(after < before, "B real HP lost after GPU contact at 60 Hz")
                 if world.has_signal("environment_contact_requested"):
-                    world.emit_signal("environment_contact_requested", fact)
+                    world.call("_on_environment_contact", fact)
                 router.live.advance_test_tick({"VACCINE": {
                     "move": Vector2.ZERO, "fire": false}})
                 var duplicate: float = float(b.actor_snapshot("VACCINE")["stats"]["health"])
@@ -120,7 +121,7 @@ func _run() -> void:
                     "same GPU contact cannot damage twice")
                 fact["run_id"] = "old-run"
                 if world.has_signal("environment_contact_requested"):
-                    world.emit_signal("environment_contact_requested", fact)
+                    world.call("_on_environment_contact", fact)
                 _check(not bool(pilot.get("frozen")),
                     "stale run contact is ignored without save mutation")
                 _check(int(Gateway.snapshot(slot_path).get("revision", -1)) > 0,
