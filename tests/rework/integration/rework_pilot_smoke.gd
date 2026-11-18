@@ -116,6 +116,31 @@ func _run() -> void:
             "pilot:CPU:" + str(objective_id))), "D CPU objective -> E receipt")
     check(bool(run_state.call("confirm_boss_defeated", "CPU", "pilot:CPU:boss")),
         "D CPU cleanse gated by objectives")
+    # The skill draft is deliberately deferred until after D's cleanse ACK;
+    # give the overlay one idle frame, then answer it like a player.
+    await process_frame
+    var skill_panel: Control = pilot.get("skill_panel") as Control
+    check(skill_panel != null and skill_panel.visible and paused,
+        "A offers a draft skill only after E acknowledged hardware_cleansed")
+    var draft: Array = pilot.get("skill_candidates")
+    check(draft.size() == 3, "skill draft has three deterministic candidates")
+    snapshot = Gateway.snapshot(slot_path)
+    var known_before: int = snapshot["snapshot"]["vaccine"]["known_skills"].size()
+    var chosen_skill: String = str(draft[0].get("id", "")) if draft.size() > 0 else ""
+    pilot.call("_on_skill_chosen", chosen_skill)
+    check(not bool(pilot.get("frozen")) and not paused,
+        "skill choice commits to E and resumes only after B sync")
+    snapshot = Gateway.snapshot(slot_path)
+    check(bool(snapshot.get("ok", false))
+        and snapshot["snapshot"]["vaccine"]["known_skills"].has(chosen_skill)
+        and snapshot["snapshot"]["vaccine"]["known_skills"].size() == known_before + 1,
+        "learned skill is durable in E before the overlay closes")
+    var stored_slots: Dictionary = live_facade.get("bridge").skill_snapshot()
+    var stored_ids: Array = []
+    for entry in stored_slots.get("slots", []):
+        stored_ids.append(str(entry.get("skill_id", "")))
+    check(stored_ids.has(chosen_skill),
+        "B encounter loadout replaced only after the fresh E revision")
     snapshot = Gateway.snapshot(slot_path)
     check(bool(snapshot.get("ok", false))
         and snapshot["snapshot"]["vaccine"]["mission"]["hardware_cleaned_ids"].has("CPU"),

@@ -120,6 +120,7 @@ jobs:
             tests/rework/integration/pilot_status_effects_smoke.gd
             tests/rework/integration/pilot_responsive_ui_smoke.gd
             tests/rework/integration/a_verified_growth_skill_world_smoke.gd
+            tests/rework/integration/skill_draft_boss_pressure_smoke.gd
             tests/rework/integration/one_run_five_zone_cleansing_smoke.gd
             tests/rework/integration/rework_qa_boot_smoke.gd
             tests/rework/integration/hub_terminal_access_smoke.gd
@@ -177,6 +178,7 @@ jobs:
             'tests/rework/integration/pilot_status_effects_smoke.gd',
             'tests/rework/integration/pilot_responsive_ui_smoke.gd',
             'tests/rework/integration/a_verified_growth_skill_world_smoke.gd',
+            'tests/rework/integration/skill_draft_boss_pressure_smoke.gd',
             'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd',
             'tests/rework/integration/rework_qa_boot_smoke.gd',
             'tests/rework/integration/hub_terminal_access_smoke.gd',

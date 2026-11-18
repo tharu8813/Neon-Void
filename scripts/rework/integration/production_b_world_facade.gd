@@ -112,6 +112,24 @@ func configure_authorized_progression(loaded: Dictionary) -> Dictionary:
 func authorized_growth_snapshot() -> Dictionary:
     return bridge.authorized_growth_snapshot() if bridge != null else {}
 
+## Mid-mission skill discovery. Only a FRESH E snapshot whose revision is newer
+## than the one B installed may pass; stats/HP/rewards are untouched.
+func apply_authorized_skill_loadout(loaded: Dictionary) -> Dictionary:
+    if bridge == null:
+        return {"ok": false, "reason": "B_growth_adapter_unavailable"}
+    var approved: Dictionary = bridge.apply_authorized_skill_loadout(loaded)
+    if not bool(approved.get("ok", false)):
+        last_error = "B_skill_loadout_rejected:" + str(approved.get("reason", "unknown"))
+        integration_failed.emit(last_error)
+    return approved.duplicate(true)
+
+## Field recovery after D has an E ACK for a world fact. BALANCE_DRAFT ratios,
+## never a reward claim and never a save write.
+func recover_player(health_ratio: float, mana_ratio: float) -> Dictionary:
+    if bridge == null:
+        return {"ok": false, "reason": "B_growth_adapter_unavailable"}
+    return bridge.recover_player(health_ratio, mana_ratio)
+
 func skill_snapshot() -> Dictionary:
     return bridge.skill_snapshot() if bridge != null else {}
 

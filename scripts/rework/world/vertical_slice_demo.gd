@@ -27,6 +27,10 @@ const CombatRouter = preload("res://scripts/rework/world/world_combat_router.gd"
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
 const WorldState = preload("res://scripts/rework/world/extraction_state.gd")
 const Gate = preload("res://scripts/rework/world/extraction_gate.gd")
+# BALANCE_DRAFT: GDD has no approved objective-clear field recovery number.
+# Applied by D only AFTER E acknowledges hardware_cleansed; never a reward.
+const FIELD_RECOVERY_HP_RATIO: float = 0.15
+const FIELD_RECOVERY_MANA_RATIO: float = 0.15
 
 @export var demo_mode: bool = true
 @export var mission_seed: int = 42
@@ -58,6 +62,7 @@ func _ready() -> void:
     add_child(camera)
     camera.current = true
     camera.global_position = Vector3(13, 14, 9)
+    _configure_environment()
     combat = CombatRouter.new()
     combat.name = "WorldCombatRouter"
     add_child(combat)
@@ -85,6 +90,36 @@ func _build_player() -> void:
     model.material_override = material
     player.add_child(model)
     add_child(player)
+
+func _configure_environment() -> void:
+    ## Presentation only. Every value is a readable neon-draft look, not a
+    ## GDD-approved mood constant, and it never affects B combat or E saves.
+    var holder := get_node_or_null("WorldEnvironment") as WorldEnvironment
+    if holder == null:
+        return
+    var environment := Environment.new()
+    environment.background_mode = Environment.BG_COLOR
+    environment.background_color = Color(0.011, 0.017, 0.04)
+    environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    environment.ambient_light_color = Color(0.14, 0.2, 0.38)
+    environment.ambient_light_energy = 0.6
+    environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    environment.glow_enabled = true
+    environment.glow_intensity = 0.85
+    environment.glow_bloom = 0.22
+    environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+    environment.fog_enabled = true
+    environment.fog_light_color = Color(0.07, 0.15, 0.3)
+    environment.fog_light_energy = 0.55
+    environment.fog_density = 0.012
+    environment.adjustment_enabled = true
+    environment.adjustment_saturation = 1.12
+    holder.environment = environment
+    var light := get_node_or_null("DirectionalLight3D") as DirectionalLight3D
+    if light != null:
+        light.light_color = Color(0.72, 0.84, 1.0)
+        light.light_energy = 1.05
+        light.shadow_enabled = true
 
 func _physics_process(delta: float) -> void:
     if player == null or camera == null:
@@ -505,10 +540,20 @@ func acknowledge_world_fact(receipt_id: String, ack: Dictionary) -> bool:
     if not bool(ack.get("ok", false)):
         _freeze_with_error("E_world_fact_commit_failed:" + receipt_id)
         return false
+    var fact: Dictionary = pending_world_receipts[receipt_id]
     pending_world_receipts.erase(receipt_id)
+    if str(fact.get("type", "")) == "hardware_cleansed":
+        _apply_field_recovery()
     if pending_world_receipts.is_empty() and extraction_gate != null and not extraction_gate.pending.is_empty():
         _on_extraction_prepared(extraction_gate.pending)
     return true
+
+func _apply_field_recovery() -> void:
+    ## BALANCE_DRAFT. Runs only after E accepted hardware_cleansed, so a failed
+    ## or ambiguous save never heals the player. Formal B encounters only.
+    if demo_mode or combat == null or str(combat.get("mode")) != "formal":
+        return
+    combat.call("recover_player", FIELD_RECOVERY_HP_RATIO, FIELD_RECOVERY_MANA_RATIO)
 
 func _on_board_return_interacted(fact: Dictionary) -> void:
     if str(fact.get("type", "")) != "hardware_board_return_requested":

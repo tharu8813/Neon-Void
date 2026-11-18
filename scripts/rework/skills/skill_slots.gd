@@ -61,6 +61,8 @@ func cast(slot: int, at_tick: int, haste: int, flags: Dictionary = {}) -> Dictio
         "mana_spent": cost, "ready_at_tick": ready_at[skill_id],
         "attack": def.get("attack", {}).duplicate(true),
         "status_effects": def.get("status_effects", []).duplicate(true),
+        "self_status_effects": def.get("self_status_effects", []).duplicate(true),
+        "cast": def.get("cast", {}).duplicate(true),
         "can_crit": bool(def.get("can_crit", false))
     }
 

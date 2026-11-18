@@ -20,7 +20,7 @@ The CI action explicitly switches only its **second build's temporary project se
 - Top-right overlay: **REWORK QA · NOV 18**, 22 permanent E stats, 27 C plugin catalog entries, 3 B provisional active skill IDs and 5 D hardware zones.
 - HUB Tab: five-section management panel, including vaccine/copies, 22 permanent investment fields, DB, skills and B combat details.
 - First-run QA test slot `nv-rework-qa-20261118` gives a **synthetic demo-only starter loadout** with three E-authorized skills (`Q` Arc Pulse, `E` Penetrator, `C` Root Packet), 5 investable points, 3 vaccine copies, 2 archived common plugins and 1 carried common plugin. This is **not normal game earning or approved game balance**. Only the initial, absent QA slot is created; existing QA progress is never overwritten, reset, or double-granted. No Python or legacy saves are touched.
-- Real 27 C plugin definitions are a **reward catalog**, not 27 simultaneously equipped modules. Level-up shows three random cards to choose one; archive and carried modules persist under E contracts. Skill availability is still an incomplete normal-game discovery flow, which is why this QA scene explicitly seeds three only to permit hands-on testing.
+- Real 27 C plugin definitions are a **reward catalog**, not 27 simultaneously equipped modules. Level-up shows three random cards to choose one; archive and carried modules persist under E contracts. Normal play now has a **draft** discovery flow: after `hardware_cleansed` is E-acknowledged, three deterministic skill cards appear and the choice is stored by E. The pool (9 IDs) and its numbers are **BALANCE_DRAFT**, not approved final balance; this QA scene still seeds the same three demo skills directly so combat can be tested without playing a full mission.
 
 ## Recommended manual Windows QA
 
@@ -33,7 +33,7 @@ The CI action explicitly switches only its **second build's temporary project se
 
 ## Remaining genuine work
 
-- Finish the regular-player active skill discovery/unlock loop beyond the 3 demo skills.
+- Approve the regular-player skill pool and balance, then verify the draft discovery UI in real mouse/keyboard play (tooltips, rebinding, interruption and full-pool behavior).
 - Improve differentiation of boss visual models, environmental material and hazards, region navigation, and status effect VFX. CI currently verifies logic and receipts, not human perception of art/game feel.
 - Review B/GDD draft skill and stat increments, plus Windows GPU/audio/DPI/framerate and full player-controlled long-session QA.
 

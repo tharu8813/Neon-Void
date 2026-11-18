@@ -19,6 +19,10 @@ const MissionTracker = preload("res://scripts/rework/ui/pilot_mission_tracker.gd
 const MissionResult = preload("res://scripts/rework/ui/pilot_mission_result.gd")
 const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
 const SkillBar = preload("res://scripts/rework/ui/pilot_skill_bar.gd")
+const SkillDraft = preload("res://scripts/rework/ui/pilot_skill_draft.gd")
+const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
+const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
+const Audio = preload("res://scripts/rework/audio/rework_audio.gd")
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -51,6 +55,12 @@ var mission_tracker: PanelContainer
 var result_panel: PanelContainer
 var status_effects: PanelContainer
 var skill_bar: PanelContainer
+var skill_panel: PanelContainer
+var skill_candidates: Array = []
+var skill_region: String = ""
+var pending_skill_region: String = ""
+var offered_skill_regions: Dictionary = {}
+var audio: Node
 var status_column: VBoxContainer
 var _hud_elapsed: float = 0.0
 var _combat_detail_elapsed: float = 0.0
@@ -60,6 +70,8 @@ func _ready() -> void:
     # The reward overlay must respond while the simulation itself is paused.
     world.process_mode = Node.PROCESS_MODE_PAUSABLE
     world.set("demo_mode", false)
+    audio = Audio.new()
+    add_child(audio)
     _create_ui()
     get_viewport().size_changed.connect(_update_ui_geometry)
     _update_ui_geometry()
@@ -77,6 +89,8 @@ func _ready() -> void:
     var preview_combat: Node = world.get("combat") as Node
     if preview_combat != null:
         preview_combat.connect("enemy_defeated", Callable(self, "_on_enemy_defeated"))
+        preview_combat.connect("combat_notice", Callable(self, "_on_combat_notice_audio"))
+        preview_combat.connect("player_died", Callable(self, "_on_player_died_audio"))
         var live: Variant = preview_combat.get("live")
         if live != null:
             live.require_e_authorization = true
@@ -146,6 +160,8 @@ func _update_ui_geometry() -> void:
         status_effects.update_layout()
     if skill_bar != null:
         skill_bar.update_layout()
+    if skill_panel != null:
+        skill_panel.update_layout()
     if mission_tracker != null:
         mission_tracker.update_layout()
     if hub_panel != null:
@@ -205,6 +221,10 @@ func _create_ui() -> void:
     layer.add_child(status_effects)
     skill_bar = SkillBar.new()
     layer.add_child(skill_bar)
+    skill_panel = SkillDraft.new()
+    layer.add_child(skill_panel)
+    skill_panel.skill_chosen.connect(_on_skill_chosen)
+    skill_panel.draft_skipped.connect(_on_skill_skipped)
     mission_tracker = MissionTracker.new()
     layer.add_child(mission_tracker)
     hub_panel = HubManagement.new()
@@ -386,7 +406,7 @@ func _on_hub_terminal_requested(fact: Dictionary) -> void:
 ## A owns UI-to-E writes: only a fresh, verified hub revision can authorize them.
 ## Receipt IDs include expected revision; unknown ACK freezes instead of retrying.
 func _toggle_management() -> void:
-    if frozen or hub_panel == null or offer_panel.visible or learn_panel.visible             or (result_panel != null and result_panel.visible):
+    if frozen or hub_panel == null or offer_panel.visible or learn_panel.visible             or (skill_panel != null and skill_panel.visible)             or (result_panel != null and result_panel.visible):
         return
     if hub_panel.visible:
         _close_management()
@@ -492,6 +512,8 @@ func _on_hub_equip_skills(equipped: Array, expected: int) -> void:
 
 func _on_mission_requested(request: Dictionary) -> void:
     if frozen or bridge != null or (result_panel != null and result_panel.visible):
+        return
+    if skill_panel != null and skill_panel.visible:
         return
     if hub_panel != null and hub_panel.visible:
         _close_management()
@@ -788,6 +810,7 @@ func _choose_card(index: int) -> void:
     message_label.text = "플러그인 저장 완료" + bonus_message
     _refresh()
     _maybe_open_offer()
+    _resume_pending_skill()
 
 func _reroll_card(index: int) -> void:
     if frozen or offers == null:
@@ -806,6 +829,12 @@ func _on_mission_returned(fact: Dictionary) -> void:
     current_run_id = ""
     offer_panel.visible = false
     learn_panel.visible = false
+    if skill_panel != null:
+        skill_panel.dismiss()
+    skill_candidates = []
+    skill_region = ""
+    pending_skill_region = ""
+    offered_skill_regions.clear()
     learn_checks.clear()
     pending_extraction.clear()
     if hub_panel != null:
@@ -878,6 +907,159 @@ func _on_world_fact_requested(fact: Dictionary) -> void:
     if not bool(world.call("acknowledge_world_fact",
             str(fact.get("receipt_id", "")), ack)):
         _halt("hardware_objective_ack_failed")
+        return
+    if str(fact.get("type", "")) == "hardware_cleansed":
+        # Only after E acknowledged the cleanse. Deferred so D finishes its
+        # own ACK-dependent state (recovery, extraction gate) first.
+        call_deferred("_maybe_offer_skill", str(fact.get("region_id", "")))
+
+## A-only discovered-skill draft. Candidates are derived from the durable
+## mission seed + cleaned region + known skills, so no extra E schema or
+## volatile offer checkpoint is needed. The pool itself is BALANCE_DRAFT.
+func _maybe_offer_skill(region: String) -> void:
+    if frozen or bridge == null or region.is_empty() or skill_panel == null:
+        return
+    if offered_skill_regions.has(region):
+        return
+    if skill_panel.visible or offer_panel.visible or learn_panel.visible \
+            or (result_panel != null and result_panel.visible) \
+            or (hub_panel != null and hub_panel.visible):
+        pending_skill_region = region
+        return
+    if current_run_id.is_empty():
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("skill_snapshot_unavailable")
+        return
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var raw_vaccine: Variant = saved.get("vaccine", null)
+    if not (raw_vaccine is Dictionary):
+        return
+    var vaccine: Dictionary = raw_vaccine
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary):
+        pending_skill_region = ""
+        return
+    var mission: Dictionary = mission_value
+    if str(mission.get("run_id", "")) != current_run_id:
+        return
+    var candidates: Array[Dictionary] = SkillOffer.candidates(
+        int(mission.get("seed", 0)), region, vaccine.get("known_skills", []))
+    if candidates.is_empty():
+        offered_skill_regions[region] = true
+        message_label.text = "이번 구역 스킬 초안 없음 · 모든 초안 스킬 습득 완료"
+        return
+    skill_candidates = candidates
+    skill_region = region
+    offered_skill_regions[region] = true
+    pending_skill_region = ""
+    skill_panel.present(candidates, vaccine.get("equipped_skills", []))
+    get_tree().paused = true
+
+func _on_skill_chosen(skill_id: String) -> void:
+    if frozen or bridge == null or skill_region.is_empty():
+        return
+    var offered: bool = false
+    for definition in skill_candidates:
+        if definition is Dictionary and str(definition.get("id", "")) == skill_id:
+            offered = true
+            break
+    if not offered:
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("skill_snapshot_unavailable")
+        return
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var raw_vaccine: Variant = saved.get("vaccine", null)
+    if not (raw_vaccine is Dictionary):
+        _halt("skill_vaccine_missing")
+        return
+    var vaccine: Dictionary = raw_vaccine
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary) \
+            or str(mission_value.get("run_id", "")) != current_run_id:
+        _halt("skill_mission_identity_changed")
+        return
+    var equipped: Array = vaccine.get("equipped_skills", []).duplicate()
+    if not equipped.has(skill_id):
+        if equipped.size() < 3:
+            equipped.append(skill_id)
+        else:
+            equipped[equipped.size() - 1] = skill_id
+    var receipt: String = "skill:%s:%s:%s" % [current_run_id, skill_region, skill_id]
+    var ack: Dictionary = Gateway.transact_command(slot_path, {
+        "action": "learn_skill", "vaccine_id": str(vaccine.get("vaccine_id", "")),
+        "generation": int(saved.get("generation", 0)), "run_id": current_run_id,
+        "receipt_id": receipt, "skill_id": skill_id,
+        "equip_on_discovery": equipped
+    })
+    if not bool(ack.get("applied", false)):
+        _halt("skill_E_commit_failed:" + str(ack.get("reason", "unknown")))
+        return
+    var confirmed: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(confirmed.get("ok", false)):
+        _halt("skill_E_readback_failed")
+        return
+    var confirmed_vaccine: Dictionary = confirmed.get("snapshot", {}).get("vaccine", {})
+    if int(confirmed.get("revision", -1)) <= int(loaded.get("revision", -1)) \
+            or not confirmed_vaccine.get("known_skills", []).has(skill_id):
+        _halt("skill_E_readback_mismatch")
+        return
+    var combat: Variant = world.get("combat")
+    if combat == null:
+        _halt("skill_B_sync_unavailable")
+        return
+    var applied: Dictionary = combat.apply_authorized_skill_loadout(confirmed)
+    if not bool(applied.get("ok", false)):
+        _halt("skill_B_sync_failed:" + str(applied.get("reason", "unknown")))
+        return
+    var skill_name: String = str(SkillRegistry.definition(
+        skill_id).get("name_ko", skill_id))
+    skill_panel.dismiss()
+    skill_candidates = []
+    skill_region = ""
+    if audio != null:
+        audio.play("pick")
+    message_label.text = "스킬 습득 저장 완료 · " + skill_name
+    _resume_paused_gameplay()
+    _refresh()
+
+func _on_skill_skipped() -> void:
+    if skill_panel == null:
+        return
+    skill_panel.dismiss()
+    skill_candidates = []
+    skill_region = ""
+    if not frozen:
+        message_label.text = "이번 구역 스킬 초안을 건너뜀"
+    _resume_paused_gameplay()
+
+func _resume_paused_gameplay() -> void:
+    if frozen or skill_panel == null:
+        return
+    if skill_panel.visible or offer_panel.visible or learn_panel.visible \
+            or (result_panel != null and result_panel.visible) \
+            or (hub_panel != null and hub_panel.visible):
+        return
+    get_tree().paused = false
+    _resume_pending_skill()
+
+func _resume_pending_skill() -> void:
+    if pending_skill_region.is_empty() or frozen or bridge == null:
+        return
+    var region: String = pending_skill_region
+    pending_skill_region = ""
+    call_deferred("_maybe_offer_skill", region)
+
+func _on_combat_notice_audio(notice: Dictionary) -> void:
+    if audio != null:
+        audio.play_notice(notice)
+
+func _on_player_died_audio() -> void:
+    if audio != null:
+        audio.play("dead")
 
 func _on_extraction_requested(fact: Dictionary) -> void:
     if frozen or bridge == null:
@@ -992,6 +1174,11 @@ func _halt(reason: String) -> void:
         offer_panel.visible = false
     if learn_panel != null:
         learn_panel.visible = false
+    if skill_panel != null:
+        skill_panel.dismiss()
+    skill_candidates = []
+    skill_region = ""
+    pending_skill_region = ""
     # A failed/ambiguous E commit freezes ALL gameplay ticks, not merely
     # movement. Keep the A CanvasLayer responsive for recovery instructions.
     get_tree().paused = true

@@ -26,15 +26,23 @@ if not ack.get("ok", false):
 
 ## Active skill registry
 
-B registry `scripts/rework/skills/skill_registry.gd` defines 3 explicitly named **BALANCE_DRAFT / provisional** skills, not an approved full GDD pool:
+B registry `scripts/rework/skills/skill_registry.gd` defines 9 explicitly named **BALANCE_DRAFT / provisional** skills, not an approved full GDD pool. Only the skill ID is persisted by E; shape/heal/blink data below is B-owned runtime data and never a save migration.
 
 | E skill ID | Proposed effect | Cost / cooldown |
 | --- | --- | --- |
-| `nv_skill_arc_pulse` | Magic projectile, base 8 + 0.75 AP, not crit | 18 mana / 90 ticks |
-| `nv_skill_penetrator` | Physical projectile, base 5 + 1.2 AD, crit allowed | 22 mana / 120 ticks |
+| `nv_skill_arc_pulse` | Radial magic burst, 4 projectiles, base 8 + 0.75 AP, not crit | 18 mana / 90 ticks |
+| `nv_skill_penetrator` | Physical rail, pierces up to 4, base 5 + 1.2 AD, crit allowed | 22 mana / 120 ticks |
 | `nv_skill_root_packet` | Magic projectile, base 4 + 0.5 AP, applies 90-tick root before CC resistance | 30 mana / 180 ticks |
+| `nv_skill_overclock` | Self buff: +2.0 attack speed, +1.5 move speed for 300 ticks | 24 mana / 300 ticks |
+| `nv_skill_patch_kit` | Self heal 22% max HP + 25 mana | 20 mana / 420 ticks |
+| `nv_skill_blink_step` | 6.5m aim-direction blink clipped by D floor tiles, +1.5 move speed for 120 ticks | 26 mana / 300 ticks |
+| `nv_skill_scatter` | 3-projectile physical fan, base 4 + 0.8 AD, crit allowed | 20 mana / 150 ticks |
+| `nv_skill_emp_ring` | Radial magic burst of 8, base 6 + 0.6 AP, applies 90-tick slow | 34 mana / 240 ticks |
+| `nv_skill_seeker_swarm` | 2 homing magic projectiles, base 6 + 0.7 AP, crit allowed | 28 mana / 210 ticks |
 
 These proposals must be reviewed by A. E may store unknown skill IDs without B failing to load a **different** equipped skill; equipping an ID absent from the B registry explicitly fails. No invented fallback attack.
+
+Mid-mission discovery uses `apply_authorized_skill_loadout(fresh_E_snapshot)`. B rejects it unless the snapshot revision is newer than the installed one, `vaccine_id`/`generation` match, `invested_stats` are byte-identical, and the new loadout validates. It replaces only the three active slots; it never changes HP, stats, mana pool or rewards. A must pass a snapshot read back **after** the E `learn_skill` ACK.
 
 The existing skill pipeline retains haste-adjusted nonzero cooldown, 60Hz regen, 3 slots, silence/stopped/root controls, critical flags, C on-skill triggers, B hit damage/status and deterministic impact. New observable notices: `skill_cast` (slot, skill ID, mana_spent, ready_at_tick), `skill_rejected` (slot, reason), and `skill_impact` (skill ID, actual_damage, target_id, event_id). A can query `bridge.skill_snapshot()`, `bridge.actor_snapshot()`, `bridge.authorized_growth_snapshot()`; all return copies. Existing `simulation.snapshot` keeps `stats`, `slots`, `mana` and adds `effective_stats` and `skill_state`.
 
@@ -54,8 +62,8 @@ B `permanent_growth.gd::INCREMENTS` maps E `STAT_COSTS` to B keys and GDD sectio
 ## A/E open integration tasks
 
 - **A**: forward formal API on `production_b_world_facade`; in `rework_pilot.gd::_sync_authorized_build_from_E()`, pass loaded E snapshot and block the first tick until both B growth and C plugin acknowledgements succeeded; change read-only actor proxy to `bridge.actor_snapshot` so UI sees shield and effective stats. Do not edit E UI drafts or other team files in this B PR.
-- **A/E**: define approved mid-mission new-skill discovery ACK bridge separately. Current B formal loadout is locked once the first tick has run.
-- **A**: approve or replace 3 prototype skill definitions. Unknown E IDs cannot be silently treated as generic bullets.
+- **A/E**: approve the remaining discovery UX/rules: draft reroll/skip policy, duplicate and full-pool behavior, and whether a mission-end draft is offered. The ACK bridge itself now exists as `apply_authorized_skill_loadout`; the live pilot offers only after `hardware_cleansed` is E-acknowledged.
+- **A**: approve or replace the 9 BALANCE_DRAFT skill definitions and their numbers. Unknown E IDs cannot be silently treated as generic bullets.
 - **A**: decide HP/mana refill policy for later real-time allocation changes (not permitted mid-encounter yet), stat soft/hard caps, and whether to surface effective vs raw stats in hub UI.
 - **A/D**: verify actual five-zone entry, physical mouse aim/skill bindings and Windows gameplay FPS; CI headless smoke is not physical QA.
 

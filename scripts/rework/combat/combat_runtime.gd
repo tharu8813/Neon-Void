@@ -42,6 +42,7 @@ var attack_provider: Callable = Callable()
 var damage_absorber: Callable = Callable()
 var fire_gate_provider: Callable = Callable()
 var projectile_segment_filter: Callable = Callable()
+var blink_filter: Callable = Callable()
 var last_processed_events: Array[Dictionary] = []
 var tick_durations_us: Array[int] = []
 
@@ -63,6 +64,7 @@ func begin(seed_value: int, config: Dictionary = {}) -> void:
     damage_absorber = Callable()
     fire_gate_provider = Callable()
     projectile_segment_filter = Callable()
+    blink_filter = Callable()
     bus.reset()
     settings.merge(config, true)
     bus.max_pending_events = maxi(1, int(settings.get("max_pending_events", 8192)))
@@ -222,6 +224,8 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
     var radius: float = float(actor["projectile_radius"])
     if radius < 0.0:
         radius = maxf(0.01, float(stat.get("projectile_size", 10)) * float(settings["projectile_radius_scale"]))
+    if overrides.has("radius"):
+        radius = maxf(0.01, float(overrides["radius"]))
     var velocity: Vector2 = direction.normalized() * maxf(0.0,
         float(overrides.get("speed", actor["projectile_speed"])) *
         float(stat.get("projectile_speed_mult", 1.0)))
@@ -236,11 +240,17 @@ func _spawn(actor_id: String, direction: Vector2, attack: Dictionary,
             ["on_hit", "on_crit"] if tags.has("basic_attack") or tags.has("skill_damage") else []).duplicate(),
         "on_hit_damage_efficiency": float(overrides.get("on_hit_damage_efficiency", 1.0)),
         "proc_path": overrides.get("proc_path", []).duplicate(),
-        "skill_id": str(overrides.get("skill_id", ""))
+        "skill_id": str(overrides.get("skill_id", "")),
+        # Optional motion shapes are B-only data; no E schema or UI draft.
+        "homing": bool(overrides.get("homing", false)),
+        "turn_rate_radians_per_second": float(
+            overrides.get("turn_rate_radians_per_second", 0.0))
     })
     projectiles.append(projectile)
     counters["shots"] += 1
     presentation.append({"kind": "projectile_spawn", "id": id,
+        "actor_id": actor_id, "team": actor["team"],
+        "skill_id": str(overrides.get("skill_id", "")),
         "position": projectile["position"], "velocity": velocity})
     if tags.has("basic_attack"):
         bus.submit_root({"kind": "basic_attack", "trigger_kind": "basic_attack",
@@ -338,17 +348,86 @@ func _step_actor(actor_id: String, input: Dictionary) -> void:
                 "trigger_kind": "skill_cast", "source_tags": ["skill_cast"],
                 "allowed_proc_triggers": ["skill_cast"],
                 "skill_id": cast["skill_id"]})
-            if not cast["attack"].is_empty():
-                var skill_attack: Dictionary = cast["attack"].duplicate(true)
-                skill_attack["can_crit"] = bool(cast["can_crit"])
-                skill_attack["status_effects"] = cast["status_effects"].duplicate(true)
-                _spawn(actor_id, aim, skill_attack,
-                    ["skill_damage", "projectile_hit"], {"skill_id": cast["skill_id"]})
+            _execute_skill_cast(actor_id, aim, cast)
         else:
             presentation.append({"kind": "skill_rejected", "actor_id": actor_id,
                 "slot": slot, "reason": str(cast.get("reason", "unknown"))})
     if firing:
         _fire_if_ready(actor_id, aim)
+
+func _execute_skill_cast(actor_id: String, aim: Vector2, cast: Dictionary) -> void:
+    ## B-owned interpretation of a registered skill's `cast` data. E only ever
+    ## persists the skill ID, so shapes stay replaceable without migrations.
+    var cfg: Dictionary = cast.get("cast", {})
+    var skill_id: String = str(cast.get("skill_id", ""))
+    var actor: Dictionary = actors[actor_id]
+    # Movement/self effects resolve before projectiles so a blink fires from
+    # the destination and a heal can never be lost to a same-tick death.
+    var blink_distance: float = maxf(0.0, float(cfg.get("blink_distance", 0.0)))
+    if blink_distance > 0.0:
+        var origin: Vector3 = actor["position"]
+        var destination: Vector3 = origin + Vector3(aim.x, 0.0, aim.y) * blink_distance
+        if blink_filter.is_valid():
+            var clipped: Variant = blink_filter.call(origin, destination)
+            if clipped is Dictionary and clipped.has("position"):
+                destination = clipped["position"]
+        actor["position"] = destination
+        presentation.append({"kind": "blink", "actor_id": actor_id,
+            "skill_id": skill_id, "from": origin, "to": destination})
+    var heal_ratio: float = maxf(0.0, float(cfg.get("heal_ratio", 0.0)))
+    if heal_ratio > 0.0:
+        var healed: float = _heal(actor_id,
+            float(actor["stats"]["max_health"]) * heal_ratio)
+        presentation.append({"kind": "skill_heal", "actor_id": actor_id,
+            "skill_id": skill_id, "amount": healed})
+    var mana_restore: float = maxf(0.0, float(cfg.get("mana_restore", 0.0)))
+    if mana_restore > 0.0:
+        var skills: Variant = actor["skills"]
+        var before: float = float(skills.mana)
+        skills.mana = minf(skills.max_mana, before + mana_restore)
+        presentation.append({"kind": "skill_mana", "actor_id": actor_id,
+            "skill_id": skill_id, "amount": float(skills.mana) - before})
+    for status in cast.get("self_status_effects", []):
+        if not status is Dictionary:
+            continue
+        var definition: Dictionary = status.duplicate(true)
+        definition["source_id"] = actor_id
+        Statuses.apply(actor["status_state"], definition)
+    var attack: Dictionary = cast.get("attack", {})
+    if attack.is_empty():
+        presentation.append({"kind": "skill_resolved", "actor_id": actor_id,
+            "skill_id": skill_id, "shape": str(cfg.get("shape", "self")),
+            "projectiles": 0})
+        return
+    var skill_attack: Dictionary = attack.duplicate(true)
+    skill_attack["can_crit"] = bool(cast.get("can_crit", false))
+    skill_attack["status_effects"] = cast.get("status_effects", []).duplicate(true)
+    var options: Dictionary = {"skill_id": skill_id}
+    for key in ["speed", "pierce", "lifetime_ticks", "radius", "homing",
+            "turn_rate_radians_per_second"]:
+        if cfg.has(key):
+            options[key] = cfg[key]
+    var shape: String = str(cfg.get("shape", "projectile"))
+    var count: int = 1
+    var spread: float = 0.0
+    if shape == "radial" or shape == "scatter" or shape == "homing":
+        count = maxi(1, int(cfg.get("count", 1)))
+        spread = (TAU / float(count)) if shape == "radial" \
+            else float(cfg.get("spread_radians", 0.0))
+    if shape == "homing":
+        options["homing"] = true
+    var spawned: int = 0
+    for index in range(count):
+        var direction: Vector2 = aim
+        if shape == "radial":
+            direction = aim.rotated(TAU * float(index) / float(count))
+        elif count > 1:
+            direction = aim.rotated((float(index) - float(count - 1) * 0.5) * spread)
+        if not _spawn(actor_id, direction, skill_attack,
+                ["skill_damage", "projectile_hit"], options).is_empty():
+            spawned += 1
+    presentation.append({"kind": "skill_resolved", "actor_id": actor_id,
+        "skill_id": skill_id, "shape": shape, "projectiles": spawned})
 
 func _retire(projectile: Dictionary) -> void:
     bus.retire_hit_key(str(projectile["hit_key"]))

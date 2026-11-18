@@ -4,7 +4,7 @@
 
 **`main`의 기본 실행은 이제 버전 선택 화면(`scenes/launcher.tscn`)이야.** 기존 4개 OS 구역 Godot 게임은 삭제하지 않았고 선택 메뉴의 **기존 Godot 게임**에서 실행할 수 있어. Python/Tk 게임은 그대로 [`python/`](python/)에 보존되어 있어.
 
-- **새 리워크 플레이:** `scenes/rework/integration/rework_main.tscn`. 일반 백신 성장·5개 하드웨어·E 영구 저장을 사용해. 별도의 `nv-rework-main-v1` 슬롯을 사용하며 테스트용 스킬이나 성장 포인트를 자동 지급하지 않아. 일반 플레이의 스킬 획득/보스·맵 개성 개선은 [#143](https://github.com/tharu8813/Neon-Void/issues/143)에서 진행 중이야.
+- **새 리워크 플레이:** `scenes/rework/integration/rework_main.tscn`. 일반 백신 성장·5개 하드웨어·E 영구 저장을 사용해. 별도의 `nv-rework-main-v1` 슬롯을 사용하며 테스트용 스킬이나 성장 포인트를 자동 지급하지 않아. 일반 플레이의 스킬 획득·보스 패턴·연출 개선은 [#143](https://github.com/tharu8813/Neon-Void/issues/143)에서 진행 중이며, 현재 파일럿에는 **초안** 스킬 9종·결정적 3장 초안·보스 패턴·절차적 사운드가 들어가 있어. 스킬 풀과 수치는 아직 `[미확정]`/BALANCE_DRAFT라 승인된 최종 밸런스가 아니야.
 - **새 리워크 QA:** `scenes/rework/integration/rework_qa_boot.tscn`. 테스트용 스킬 3종, 능력치 포인트 5개, 복제 3회 등이 제공되는 **독립 QA 슬롯**을 사용해. 실제 일반 플레이 보상이나 획득 방식과 동일한 시작 조건이 아니야.
 - **기존 Godot 게임:** `scenes/main.tscn`. 이전 화면·게임플레이·저장 시스템을 그대로 유지해.
 - **기존 Python 게임:** `python/`. 별도 실행, 저장 파일 자동 이관 없음.

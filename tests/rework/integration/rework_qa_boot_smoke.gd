@@ -49,7 +49,13 @@ func _run() -> void:
         _check(main_scene == "res://scenes/rework/integration/rework_qa_boot.tscn",
             "QA executable must NOT launch legacy scenes/main.tscn: " + main_scene)
     _check(Catalog.entries().size() == 27, "27 C reward catalog IDs are loaded")
-    _check(Registry.DEFINITIONS.size() == 3, "three explicit B active skill definitions")
+    # The draft pool is larger than the three QA-granted skills, so assert the
+    # QA fixtures specifically instead of pinning the total registry size.
+    _check(Registry.ids().size() >= 3
+        and not Registry.definition("nv_skill_arc_pulse").is_empty()
+        and not Registry.definition("nv_skill_penetrator").is_empty()
+        and not Registry.definition("nv_skill_root_packet").is_empty(),
+        "three explicit B active skill definitions")
     var id: String = "qa-boot-smoke-%d-%d" % [
         OS.get_process_id(), Time.get_ticks_usec()]
     var path: String = Store.default_slot_path(id)

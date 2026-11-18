@@ -39,6 +39,7 @@ var _staged_progression: Dictionary = {}
 var _reported_deaths: Dictionary = {}
 var _projectile_kinds: Dictionary = {}
 var _old_projectiles: Dictionary = {}
+var _boss_telegraphs: Dictionary = {}
 var _dash_key_down: bool = false
 var _skill_keys_down: Array[bool] = [false, false, false]
 var _old_player_movement: bool = true
@@ -59,8 +60,101 @@ var balance_draft: Dictionary = {
     "enemy_attack_range": 1.15,
     "enemy_damage_base": 1.0,
     "boss_control_resistance": 0.5,
-    "projectile_radius": 0.09
+    "projectile_radius": 0.09,
+    # BALANCE_DRAFT: objective-cleared field recovery is not an approved GDD
+    # number. D asks for it only after E acknowledges the objective fact.
+    "objective_recovery_hp_ratio": 0.15,
+    "objective_recovery_mana_ratio": 0.15
 }
+
+## BALANCE_DRAFT role table. Region catalog roles already exist in D, but B
+## previously ignored them and every virus used one generic stat line.
+## Entries are additive-only: an unknown role or an explicit spawn override
+## keeps the old generic baseline, so legacy fixture spawns stay unchanged.
+const ARCHETYPES: Dictionary = {
+    "process_rusher": {
+        "health": 16.0, "move_speed": 3.4, "attack_speed": 1.4,
+        "attack_damage": 2.0, "attack_range": 1.05,
+        "preferred_min_range": 0.0, "preferred_max_range": 0.7,
+        "projectile_speed": 14.0, "color": Color(1.0, 0.36, 0.28)
+    },
+    "overheater": {
+        "health": 22.0, "move_speed": 1.9, "attack_speed": 0.7,
+        "attack_damage": 2.5, "attack_range": 9.0,
+        "preferred_min_range": 3.5, "preferred_max_range": 7.0,
+        "projectile_speed": 9.0, "color": Color(1.0, 0.58, 0.2)
+    },
+    "beam_caster": {
+        "health": 20.0, "move_speed": 2.0, "attack_speed": 0.8,
+        "attack_damage": 2.5, "attack_range": 10.0,
+        "preferred_min_range": 4.0, "preferred_max_range": 8.5,
+        "projectile_speed": 13.0, "pierce": 2, "color": Color(0.36, 0.82, 1.0)
+    },
+    "hazard_warden": {
+        "health": 40.0, "move_speed": 1.4, "attack_speed": 0.6,
+        "attack_damage": 3.0, "attack_range": 6.0,
+        "preferred_min_range": 2.0, "preferred_max_range": 5.0,
+        "projectile_speed": 8.0, "color": Color(0.55, 0.45, 1.0)
+    },
+    "mirror": {
+        "health": 18.0, "move_speed": 2.6, "attack_speed": 1.0,
+        "attack_damage": 2.0, "attack_range": 8.0,
+        "preferred_min_range": 2.5, "preferred_max_range": 6.0,
+        "projectile_speed": 12.0, "color": Color(0.75, 0.95, 1.0)
+    },
+    "duplicator": {
+        "health": 14.0, "move_speed": 2.4, "attack_speed": 1.3,
+        "attack_damage": 1.5, "attack_range": 4.0,
+        "preferred_min_range": 1.0, "preferred_max_range": 3.0,
+        "projectile_speed": 11.0, "color": Color(0.55, 1.0, 0.7)
+    },
+    "rapid_runner": {
+        "health": 12.0, "move_speed": 4.2, "attack_speed": 1.8,
+        "attack_damage": 2.0, "attack_range": 0.95,
+        "preferred_min_range": 0.0, "preferred_max_range": 0.6,
+        "projectile_speed": 16.0, "color": Color(1.0, 0.9, 0.35)
+    },
+    "data_sentry": {
+        "health": 26.0, "move_speed": 1.2, "attack_speed": 0.5,
+        "attack_damage": 3.0, "attack_range": 8.0,
+        "preferred_min_range": 3.0, "preferred_max_range": 7.0,
+        "projectile_speed": 10.0, "pierce": 1, "color": Color(0.4, 1.0, 0.9)
+    },
+    "fragment": {
+        "health": 10.0, "move_speed": 3.0, "attack_speed": 1.5,
+        "attack_damage": 1.5, "attack_range": 2.0,
+        "preferred_min_range": 0.0, "preferred_max_range": 1.5,
+        "projectile_speed": 12.0, "color": Color(0.95, 0.6, 0.9)
+    },
+    "sector_guardian": {
+        "health": 44.0, "move_speed": 1.5, "attack_speed": 0.6,
+        "attack_damage": 4.0, "attack_range": 3.0,
+        "preferred_min_range": 0.0, "preferred_max_range": 2.5,
+        "projectile_speed": 9.0, "color": Color(0.9, 0.42, 0.2)
+    },
+    "kernel_overseer": {
+        "boss": true, "pattern": "radial_ring", "pattern_interval": 240,
+        "color": Color(1.0, 0.12, 0.68)
+    },
+    "shader_colossus": {
+        "boss": true, "pattern": "line_sweep", "pattern_interval": 210,
+        "color": Color(0.3, 0.75, 1.0)
+    },
+    "memory_phantom": {
+        "boss": true, "pattern": "homing_echoes", "pattern_interval": 270,
+        "color": Color(0.78, 0.86, 1.0)
+    },
+    "flash_daemon": {
+        "boss": true, "pattern": "rail_volley", "pattern_interval": 200,
+        "color": Color(1.0, 0.85, 0.25)
+    },
+    "disk_leviathan": {
+        "boss": true, "pattern": "quake", "pattern_interval": 260,
+        "color": Color(0.95, 0.45, 0.2)
+    }
+}
+const PATTERN_TELEGRAPH_TICKS: int = 42
+const BOSS_PATTERN_INITIAL_DELAY: int = 150
 
 func _ready() -> void:
     combat_actor_died.connect(_on_combat_actor_died)
@@ -109,6 +203,7 @@ func begin_encounter(player_node: CharacterBody3D, camera_node: Camera3D,
         reset()
         return false
     simulation.projectile_segment_filter = Callable(self, "_clip_projectile_to_floor")
+    simulation.blink_filter = Callable(self, "_clip_blink_to_floor")
     effects.attach(simulation, PLAYER_ID, new_run_id, encounter_seed ^ 0x70726f63)
     _has_player_movement = _has_property(player, "movement_enabled")
     if _has_player_movement:
@@ -155,6 +250,7 @@ func reset() -> void:
     _projectile_kinds.clear()
     _old_projectiles.clear()
     _reported_deaths.clear()
+    _clear_all_telegraphs()
     pending_input.clear()
     _dash_key_down = false
     _skill_keys_down = [false, false, false]
@@ -190,6 +286,11 @@ func spawn_hostile(info: Dictionary) -> bool:
         if not Maps.is_floor(map_plan, tile):
             return false
     var boss: bool = bool(info.get("boss", false))
+    var role: String = str(info.get("role", ""))
+    var archetype: Dictionary = ARCHETYPES.get(role, {})
+    if bool(archetype.get("boss", false)) and not boss:
+        # A boss signature role must never be registered as a normal mob.
+        return false
     var body := CharacterBody3D.new()
     body.name = "Hostile_" + id
     var collider := CollisionShape3D.new()
@@ -204,29 +305,40 @@ func spawn_hostile(info: Dictionary) -> bool:
     sphere.height = 0.88 if boss else 0.54
     mesh.mesh = sphere
     var material := StandardMaterial3D.new()
-    material.albedo_color = Color(1.0, 0.12, 0.68) if boss else Color(0.92, 0.24, 0.3)
+    material.albedo_color = archetype.get("color",
+        Color(1.0, 0.12, 0.68) if boss else Color(0.92, 0.24, 0.3))
+    material.emission_enabled = true
+    material.emission = material.albedo_color
+    material.emission_energy_multiplier = 0.85 if boss else 0.35
     mesh.material_override = material
     body.add_child(mesh)
     add_child(body)
     body.global_position = position + Vector3.UP * 0.5
-    var hp: float = float(info.get("max_health",
-        balance_draft["boss_health"] if boss else balance_draft["enemy_health"]))
-    var speed: float = float(info.get("move_speed",
-        balance_draft["boss_move_speed"] if boss else balance_draft["enemy_move_speed"]))
+    var hp: float = float(info.get("max_health", archetype.get("health",
+        balance_draft["boss_health"] if boss else balance_draft["enemy_health"])))
+    var speed: float = float(info.get("move_speed", archetype.get("move_speed",
+        balance_draft["boss_move_speed"] if boss else balance_draft["enemy_move_speed"])))
     var combat_stats: Dictionary = Stats.make({
         "max_health": hp, "health": hp, "move_speed": speed,
-        "attack_speed": float(info.get("attack_speed", balance_draft["enemy_attack_speed"])),
-        "attack_damage": 9.0 if boss else 3.0,
+        "attack_speed": float(info.get("attack_speed", archetype.get("attack_speed",
+            balance_draft["enemy_attack_speed"]))),
+        "attack_damage": float(info.get("attack_damage", archetype.get("attack_damage",
+            9.0 if boss else 3.0))),
         "boss_control_resistance": float(balance_draft["boss_control_resistance"]) if boss else 0.0
     })
     var registered: bool = register_node(id, "virus", body, combat_stats, {
         "radius": 0.44 if boss else 0.27,
         "external_movement": true,
-        "attack_range": float(info.get("attack_range", balance_draft["enemy_attack_range"])),
-        "preferred_min_range": float(info.get("preferred_min_range", 0.0)),
-        "preferred_max_range": float(info.get("preferred_max_range", 0.85)),
-        "projectile_speed": float(balance_draft["projectile_speed"]),
+        "attack_range": float(info.get("attack_range", archetype.get("attack_range",
+            balance_draft["enemy_attack_range"]))),
+        "preferred_min_range": float(info.get("preferred_min_range",
+            archetype.get("preferred_min_range", 0.0))),
+        "preferred_max_range": float(info.get("preferred_max_range",
+            archetype.get("preferred_max_range", 0.85))),
+        "projectile_speed": float(info.get("projectile_speed",
+            archetype.get("projectile_speed", balance_draft["projectile_speed"]))),
         "projectile_radius": 0.12,
+        "projectile_pierce": int(archetype.get("pierce", 0)),
         "attack_definition": {"damage_type": "physical",
             "base_damage": float(balance_draft["enemy_damage_base"]),
             "ad_ratio": 1.0, "can_crit": false}
@@ -234,7 +346,12 @@ func spawn_hostile(info: Dictionary) -> bool:
     if not registered:
         body.queue_free()
         return false
-    enemies[id] = {"body": body, "boss": boss, "speed": speed}
+    var pattern: String = str(archetype.get("pattern", ""))
+    enemies[id] = {"body": body, "boss": boss, "speed": speed, "role": role,
+        "pattern": pattern,
+        "pattern_interval": int(archetype.get("pattern_interval", 240)),
+        "pattern_timer": BOSS_PATTERN_INITIAL_DELAY if not pattern.is_empty() else 0,
+        "pattern_fired": 0, "telegraph_sent": false, "enraged": false}
     return true
 
 func _parse_authorized_progression(loaded: Dictionary) -> Dictionary:
@@ -330,6 +447,81 @@ func _install_authorized_progression(approved: Dictionary) -> Dictionary:
     return {"ok": true, "revision": approved["revision"],
         "vaccine_id": approved["vaccine_id"],
         "generation": approved["generation"]}
+
+func apply_authorized_skill_loadout(e_gateway_snapshot: Dictionary) -> Dictionary:
+    ## E -> A -> B mid-mission skill acquisition only. The caller must pass a
+    ## freshly read Gateway.snapshot() whose revision is newer than the one B
+    ## already installed. Growth allocations must be identical; this method
+    ## only replaces the 3-slot active-skill loadout, never HP/stats or rewards.
+    var checked: Dictionary = _parse_authorized_progression(e_gateway_snapshot)
+    if not bool(checked.get("ok", false)):
+        progression_error = str(checked.get("reason", "invalid_E_progression"))
+        return {"ok": false, "reason": progression_error}
+    if not running or not simulation.actors.has(PLAYER_ID):
+        return {"ok": false, "reason": "no_running_encounter"}
+    if _authorized_progression.is_empty():
+        return {"ok": false, "reason": "missing_authorized_baseline"}
+    if str(checked["vaccine_id"]) != str(_authorized_progression.get("vaccine_id", "")) \
+            or int(checked["generation"]) != int(_authorized_progression.get("generation", -1)):
+        return {"ok": false, "reason": "E_B_progression_identity_diverged"}
+    if int(checked["revision"]) <= int(_authorized_progression.get("revision", -1)):
+        return {"ok": false, "reason": "stale_skill_revision"}
+    if JSON.stringify(checked["invested_stats"]) != JSON.stringify(
+            _authorized_progression.get("invested_stats", {})):
+        return {"ok": false, "reason": "skill_api_cannot_change_stats"}
+    var validation: Dictionary = SkillRegistry.validate_loadout(
+        checked["known_skills"], checked["equipped_skills"])
+    if not bool(validation.get("ok", false)):
+        return {"ok": false, "reason": str(validation.get("reason", "invalid_loadout"))}
+    var actor: Dictionary = simulation.actors[PLAYER_ID]
+    var previous: Variant = actor["skills"]
+    var next_slots = SkillSlots.new()
+    next_slots.configure(simulation._effective_stats(actor))
+    # Keep the current mana pool; a discovered skill must not refill mana.
+    next_slots.mana = minf(float(previous.mana), next_slots.max_mana)
+    for index in range(checked["equipped_skills"].size()):
+        var uid: String = str(checked["equipped_skills"][index])
+        if not next_slots.learn(SkillRegistry.definition(uid)) \
+                or not next_slots.equip(index, uid, true):
+            return {"ok": false, "reason": "skill_install_failed:" + uid}
+        # Retained skills keep their real cooldown; only the new skill starts
+        # ready. Ready-at ticks are encounter-local, not persisted balance.
+        if previous.ready_at.has(uid):
+            next_slots.ready_at[uid] = int(previous.ready_at[uid])
+    next_slots.dash_ready_at = int(previous.dash_ready_at)
+    actor["skills"] = next_slots
+    _authorized_progression = checked.duplicate(true)
+    progression_error = ""
+    _emit_resource_changes(true)
+    return {"ok": true, "revision": int(checked["revision"]),
+        "vaccine_id": str(checked["vaccine_id"]),
+        "generation": int(checked["generation"]),
+        "equipped_skills": checked["equipped_skills"].duplicate()}
+
+func recover_player(health_ratio: float, mana_ratio: float) -> Dictionary:
+    ## Called by D only AFTER E acknowledged an objective fact. This is field
+    ## recovery, never a reward ledger entry, and it does not touch save data.
+    if not running or game_over or not simulation.actors.has(PLAYER_ID):
+        return {"ok": false, "reason": "no_running_encounter"}
+    var actor: Dictionary = simulation.actors[PLAYER_ID]
+    if not bool(actor["alive"]):
+        return {"ok": false, "reason": "player_dead"}
+    var hp_before: float = float(actor["stats"]["health"])
+    var healed: float = simulation._heal(PLAYER_ID,
+        float(actor["stats"]["max_health"]) * clampf(health_ratio, 0.0, 1.0))
+    var skills: Variant = actor["skills"]
+    var mana_before: float = float(skills.mana)
+    skills.mana = minf(skills.max_mana, mana_before +
+        skills.max_mana * clampf(mana_ratio, 0.0, 1.0))
+    _emit_resource_changes(true)
+    var note: Dictionary = {"kind": "field_recovery", "actor_id": PLAYER_ID,
+        "health_restored": healed, "health": float(actor["stats"]["health"]),
+        "max_health": float(actor["stats"]["max_health"]),
+        "mana_restored": float(skills.mana) - mana_before,
+        "mana": float(skills.mana), "max_mana": float(skills.max_mana)}
+    combat_notice.emit(note)
+    return {"ok": true, "health_before": hp_before,
+        "health_restored": healed, "mana_restored": float(skills.mana) - mana_before}
 
 func actor_snapshot(actor_id: String = PLAYER_ID) -> Dictionary:
     var state: Dictionary = simulation.snapshot(actor_id)
@@ -458,6 +650,7 @@ func advance_production_tick() -> Array[Dictionary]:
         return base_notes
     _move_physical_player()
     _move_physical_enemies()
+    _run_boss_patterns()
     _notify_retired_projectiles(base_notes)
     var c_notes: Array[Dictionary] = effects.after_fixed_step(simulation.last_processed_events)
     for note in c_notes:
@@ -594,16 +787,177 @@ func _clip_projectile_to_floor(start: Vector3, finish: Vector3,
                 "blocked": true}
     return {"position": finish, "blocked": false}
 
+func _clip_blink_to_floor(start: Vector3, finish: Vector3) -> Dictionary:
+    ## B blink movement is clipped by the same immutable D tile contract as a
+    ## projectile segment: no phasing through walls and no landing in a solid
+    ## tile. D geometry therefore stays authoritative for skill movement too.
+    return _clip_projectile_to_floor(start, finish, {})
+
+## BALANCE_DRAFT boss pressure. GDD names the five boss roles but the concrete
+## bullet counts/intervals below are not approved final numbers. Normal mob
+## fixtures never enter this path because only ARCHETYPES carries a pattern.
+func _run_boss_patterns() -> void:
+    if not running or game_over or not simulation.actors.has(PLAYER_ID) \
+            or not bool(simulation.actors[PLAYER_ID]["alive"]):
+        return
+    for id in enemies.keys():
+        if not simulation.actors.has(id) or not bool(simulation.actors[id]["alive"]):
+            _clear_telegraph(str(id))
+            continue
+        var entity: Dictionary = enemies[id]
+        var pattern: String = str(entity.get("pattern", ""))
+        if pattern.is_empty():
+            continue
+        var timer: int = int(entity.get("pattern_timer", 0)) - 1
+        entity["pattern_timer"] = timer
+        if not bool(entity.get("telegraph_sent", false)) and timer <= PATTERN_TELEGRAPH_TICKS:
+            entity["telegraph_sent"] = true
+            _show_boss_telegraph(str(id), entity, pattern)
+            combat_notice.emit({"kind": "boss_pattern_telegraph",
+                "actor_id": str(id), "pattern": pattern,
+                "ticks": maxi(0, timer), "tick": simulation.fixed_tick})
+        if timer > 0:
+            continue
+        var fired: int = _fire_boss_pattern(str(id), pattern)
+        var interval: int = maxi(PATTERN_TELEGRAPH_TICKS + 30,
+            int(entity.get("pattern_interval", 240)))
+        entity["pattern_timer"] = interval
+        entity["pattern_fired"] = int(entity.get("pattern_fired", 0)) + 1
+        entity["telegraph_sent"] = false
+        _clear_telegraph(str(id))
+        combat_notice.emit({"kind": "boss_pattern", "actor_id": str(id),
+            "pattern": pattern, "projectiles": fired,
+            "tick": simulation.fixed_tick})
+
+func _fire_boss_pattern(id: String, pattern: String) -> int:
+    var actor: Dictionary = simulation.actors[id]
+    var origin: Vector3 = actor["position"]
+    var player_position: Vector3 = simulation.actors[PLAYER_ID]["position"]
+    var toward: Vector2 = Vector2(player_position.x - origin.x,
+        player_position.z - origin.z)
+    var aim: Vector2 = toward.normalized() if toward.length_squared() > 0.000001 \
+        else Vector2.RIGHT
+    var attack: Dictionary = actor["attack_definition"].duplicate(true)
+    attack["base_damage"] = float(attack.get("base_damage", 1.0)) * 2.2
+    # Owned by B, not persisted: a pattern is presentation + projectile data.
+    var spec: Dictionary = {
+        "count": 1, "spread": 0.0, "radial": false, "speed": 10.0,
+        "radius": 0.12, "lifetime": 60, "pierce": 0, "homing": false,
+        "turn_rate": 0.0
+    }
+    match pattern:
+        "radial_ring":
+            spec.merge({"count": 12, "radial": true, "speed": 7.5,
+                "radius": 0.14, "lifetime": 70})
+        "line_sweep":
+            spec.merge({"count": 3, "spread": 0.12, "speed": 16.0,
+                "radius": 0.11, "lifetime": 42, "pierce": 1})
+        "homing_echoes":
+            spec.merge({"count": 3, "spread": 0.6, "speed": 6.5,
+                "radius": 0.13, "lifetime": 210, "homing": true,
+                "turn_rate": 2.4})
+        "rail_volley":
+            spec.merge({"count": 5, "spread": 0.15, "speed": 22.0,
+                "radius": 0.09, "lifetime": 52, "pierce": 2})
+        "quake":
+            spec.merge({"count": 20, "radial": true, "speed": 5.0,
+                "radius": 0.2, "lifetime": 95})
+        _:
+            return 0
+    var count: int = maxi(1, int(spec["count"]))
+    var spawned: int = 0
+    for index in range(count):
+        var direction: Vector2 = aim
+        if bool(spec["radial"]):
+            direction = aim.rotated(TAU * float(index) / float(count))
+        elif count > 1:
+            direction = aim.rotated((float(index) - float(count - 1) * 0.5)
+                * float(spec["spread"]))
+        var options: Dictionary = {
+            "speed": float(spec["speed"]), "radius": float(spec["radius"]),
+            "lifetime_ticks": int(spec["lifetime"]),
+            "pierce": int(spec["pierce"])
+        }
+        if bool(spec["homing"]):
+            options["homing"] = true
+            options["turn_rate_radians_per_second"] = float(spec["turn_rate"])
+        if not simulation._spawn(id, direction, attack,
+                ["boss_pattern", "projectile_hit"], options).is_empty():
+            spawned += 1
+    return spawned
+
+func _show_boss_telegraph(id: String, entity: Dictionary, pattern: String) -> void:
+    _clear_telegraph(id)
+    var body: Variant = entity.get("body", null)
+    if not is_instance_valid(body):
+        return
+    var ring := MeshInstance3D.new()
+    var mesh := TorusMesh.new()
+    mesh.inner_radius = 1.15
+    mesh.outer_radius = 1.45
+    mesh.rings = 24
+    mesh.ring_segments = 8
+    ring.mesh = mesh
+    var material := StandardMaterial3D.new()
+    var color: Color = ARCHETYPES.get(str(entity.get("role", "")),
+        {}).get("color", Color(1.0, 0.2, 0.6))
+    material.albedo_color = color
+    material.emission_enabled = true
+    material.emission = color
+    material.emission_energy_multiplier = 1.6
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    material.albedo_color.a = 0.55
+    ring.material_override = material
+    ring.name = "BossTelegraph_" + id
+    add_child(ring)
+    ring.global_position = body.global_position + Vector3.DOWN * 0.42
+    ring.set_meta("pattern", pattern)
+    _boss_telegraphs[id] = ring
+
+func _clear_telegraph(id: String) -> void:
+    if not _boss_telegraphs.has(id):
+        return
+    var ring: Variant = _boss_telegraphs[id]
+    if is_instance_valid(ring):
+        ring.queue_free()
+    _boss_telegraphs.erase(id)
+
+func _clear_all_telegraphs() -> void:
+    for id in _boss_telegraphs.keys():
+        var ring: Variant = _boss_telegraphs[id]
+        if is_instance_valid(ring):
+            ring.queue_free()
+    _boss_telegraphs.clear()
+
 func _make_bullet_visual(p: Dictionary) -> Node3D:
     var shot := MeshInstance3D.new()
+    var radius: float = maxf(0.025, float(p.get("radius", 0.09)))
     var mesh := SphereMesh.new()
-    mesh.radius = maxf(0.025, float(p.get("radius", 0.09)))
-    mesh.height = mesh.radius * 2.0
+    mesh.radius = radius
+    mesh.height = radius * 2.0
     shot.mesh = mesh
+    var velocity: Vector2 = p.get("velocity", Vector2.ZERO)
+    var player_shot: bool = str(p.get("team", "")) == "vaccine"
+    var skill_id: String = str(p.get("skill_id", ""))
+    var color := Color(0.25, 0.95, 1.0) if player_shot \
+        else Color(1.0, 0.3, 0.4)
+    if not skill_id.is_empty():
+        # Skill bullets stay visually distinct without touching skill balance.
+        color = Color(0.75, 0.55, 1.0) if player_shot \
+            else Color(1.0, 0.55, 0.2)
     var mat := StandardMaterial3D.new()
-    mat.albedo_color = Color(0.25, 0.95, 1.0) if str(p.get("team", "")) == "vaccine" else Color(1.0, 0.3, 0.4)
+    mat.albedo_color = color
+    mat.emission_enabled = true
+    mat.emission = color
+    mat.emission_energy_multiplier = 2.1 if player_shot else 1.4
     mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     shot.material_override = mat
+    # Stretch along travel so fast rail/homing rounds read as streaks.
+    var speed: float = velocity.length()
+    if speed > 0.0001:
+        shot.rotation.y = atan2(-velocity.y, velocity.x)
+        shot.scale = Vector3(clampf(1.0 + speed * 0.22, 1.0, 4.5), 1.0, 1.0)
     return shot
 
 func _notify_retired_projectiles(notes: Array[Dictionary]) -> void:
@@ -653,6 +1007,7 @@ func _on_combat_actor_died(actor_id: String, _killer_id: String) -> void:
     if not enemies.has(actor_id):
         return
     var body: Variant = enemies[actor_id].get("body", null)
+    _clear_telegraph(actor_id)
     enemies.erase(actor_id)
     bound_nodes.erase(actor_id)
     if is_instance_valid(body):
@@ -689,6 +1044,22 @@ func _apply_hit(enemy_id: String, hit_key: String) -> void:
             combat_actor_died.emit(str(note["actor_id"]), str(note.get("killer_id", PLAYER_ID)))
     _emit_resource_changes()
 
+func boss_pressure_snapshot() -> Dictionary:
+    ## Read-only UI/telemetry view. Never feeds damage or rewards.
+    var bosses: Array[Dictionary] = []
+    for id in enemies.keys():
+        var entity: Dictionary = enemies[id]
+        var pattern: String = str(entity.get("pattern", ""))
+        if pattern.is_empty():
+            continue
+        bosses.append({
+            "actor_id": str(id), "pattern": pattern,
+            "timer": int(entity.get("pattern_timer", 0)),
+            "fired": int(entity.get("pattern_fired", 0)),
+            "telegraph": bool(entity.get("telegraph_sent", false))
+        })
+    return {"bosses": bosses, "telegraph_ticks": PATTERN_TELEGRAPH_TICKS}
+
 func diagnostics() -> Dictionary:
     return {
         "run_id": run_id, "active": running, "tick": simulation.fixed_tick,
@@ -701,6 +1072,7 @@ func diagnostics() -> Dictionary:
         "progression_error": progression_error,
         "authorized_progression": _authorized_progression.duplicate(true),
         "skill_slots": skill_snapshot(),
+        "boss_pressure": boss_pressure_snapshot(),
         "fixed_tick_profile": simulation.profiling_snapshot(),
         "C_fault": effects.fault
     }

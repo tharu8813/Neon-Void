@@ -60,6 +60,18 @@ func configure_authorized_build(levels: Dictionary, instances: Array,
     ## A obtains these exclusively from E-authorized snapshots or reward ACKs.
     return live.configure_authorized_build(levels, instances, skills)
 
+func apply_authorized_skill_loadout(loaded: Dictionary) -> Dictionary:
+    ## E-authorized mid-mission discovery. Formal B only.
+    if mode != "formal" or live == null:
+        return {"ok": false, "reason": "not_formal_combat"}
+    return live.apply_authorized_skill_loadout(loaded)
+
+func recover_player(health_ratio: float, mana_ratio: float) -> Dictionary:
+    ## D calls only after an E world-fact ACK. BALANCE_DRAFT field recovery.
+    if mode != "formal" or live == null:
+        return {"ok": false, "reason": "not_formal_combat"}
+    return live.recover_player(health_ratio, mana_ratio)
+
 func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
     ## The E receipt is already durably committed by A. Never grant a
     ## transient plugin to the B runtime before this step.
