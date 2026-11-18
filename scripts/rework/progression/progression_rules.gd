@@ -411,8 +411,13 @@ static func _mission_skill_proof(vaccine: Dictionary, run_id: String,
         return _reject("invalid_skill_discovery_receipt")
     var region: String = fields[0]
     var checkpoint: Dictionary = Checkpoint.view(mission)
-    if not checkpoint.get("ok", false) or not checkpoint.checkpoint.regions.has(region):
-        return _reject("skill_region_not_checkpointed")
+    # During ordinary play D saves the map before entry. Existing synthetic
+    # A smoke can acknowledge a fully cleansed region without navigating the map.
+    # Both are E-ACKed, durable region facts; neither is a transient UI flag.
+    var region_committed: bool = checkpoint.get("ok", false) \
+        and checkpoint.checkpoint.regions.has(region)
+    if not region_committed and not mission.hardware_cleaned_ids.has(region):
+        return _reject("skill_region_not_committed")
     # Exactly one new skill per hardware per run, including ACK-lost retries
     # with a DIFFERENT skill/receipt. The saved receipts are the ledger.
     for existing in vaccine.receipts:
