@@ -674,6 +674,7 @@ func advance_production_tick() -> Array[Dictionary]:
     _run_boss_patterns()
     _notify_retired_projectiles(base_notes)
     var c_notes: Array[Dictionary] = effects.after_fixed_step(simulation.last_processed_events)
+    _sync_knockback_nodes(c_notes)
     for note in c_notes:
         combat_notice.emit(note)
         if str(note.get("kind", "")) == "death":
@@ -735,6 +736,26 @@ func _move_physical_enemies() -> void:
         body.velocity = Vector3(movement.x, 0.0, movement.y) * speed
         body.move_and_slide()
         simulation.set_actor_position(str(id), body.global_position)
+
+func _sync_knockback_nodes(notes: Array[Dictionary]) -> void:
+    ## C/B status proc has already changed the B authoritative XZ position.
+    ## Move the actual D character body before presenting success to the HUD.
+    for note in notes:
+        if str(note.get("kind", "")) != "knockback_applied":
+            continue
+        var id: String = str(note.get("actor_id", ""))
+        if not enemies.has(id) or not simulation.actors.has(id):
+            continue
+        var body: CharacterBody3D = enemies[id].get("body", null)
+        if body == null or not is_instance_valid(body):
+            continue
+        var destination: Vector3 = note.get("to", body.global_position)
+        var displacement: Vector3 = destination - body.global_position
+        if displacement.length_squared() > 0.000001:
+            body.move_and_collide(displacement)
+        simulation.set_actor_position(id, body.global_position)
+        note["to"] = body.global_position
+
 
 func _cell(point: Vector3) -> Vector2i:
     return Vector2i(floori(point.x / Maps.TILE_SIZE), floori(point.z / Maps.TILE_SIZE))
