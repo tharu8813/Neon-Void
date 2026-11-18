@@ -70,7 +70,7 @@ func impact(state: Dictionary, amount: float, collision_id: String) -> Dictionar
 	var before_shield: float = state["c"].shield_value()
 	# One authoritative B damage input, NOT C.process() nor UI simulated HP.
 	# ENV is an explicit non-vaccine actor: never counts as player on_hit.
-	var submission: String = b.bus.submit_root({
+	var submission: Dictionary = b.bus.submit_root({
 		"kind":"damage","trigger_kind":"on_hit",
 		"actor_id":"ENV_CONTACT","target_id":"VACCINE",
 		"collision_id":collision_id,
