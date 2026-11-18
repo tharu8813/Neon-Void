@@ -35,12 +35,12 @@ static func run(check: Callable) -> void:
         var notices: Array[Dictionary] = sim.step_fixed({"P": {
             "fire": false, "aim_world": Vector3(10, 0, 0), "skill_slot": 0}})
         check.call(notices.any(func(n: Dictionary) -> bool:
-            return str(n.get("kind", "")) == "skill_cast" and
-                str(n.get("skill_id", "")) == uid),
+            return (str(n.get("kind", "")) == "skill_cast"
+                and str(n.get("skill_id", "")) == uid),
             uid + " produces real cast notice")
         check.call(notices.any(func(n: Dictionary) -> bool:
-            return str(n.get("kind", "")) == "skill_resolved" and
-                int(n.get("projectiles", -1)) == int(expected[uid])),
+            return (str(n.get("kind", "")) == "skill_resolved"
+                and int(n.get("projectiles", -1)) == int(expected[uid])),
             uid + " executes declared shape/projectile count")
         var mana: float = float(sim.snapshot("P")["mana"])
         var cost: float = float(skill["mana_cost"])
@@ -53,8 +53,8 @@ static func run(check: Callable) -> void:
         var rejected: Array[Dictionary] = sim.step_fixed({"P": {
             "fire": false, "aim_world": Vector3(10, 0, 0), "skill_slot": 0}})
         check.call(rejected.any(func(n: Dictionary) -> bool:
-            return str(n.get("kind", "")) == "skill_rejected" and
-                str(n.get("reason", "")) == "cooldown"),
+            return (str(n.get("kind", "")) == "skill_rejected"
+                and str(n.get("reason", "")) == "cooldown"),
             uid + " rejects early recast instead of draining mana")
         check.call(_near(float(sim.snapshot("P")["mana"]), mana),
             uid + " failed recast cannot double-spend")
