@@ -24,6 +24,11 @@ static func inspect_slot(slot_path: String) -> Dictionary:
     ## Safe for the hub/UI to call before creating a world instance.
     return Recovery.inspect_slot(slot_path)
 
+static func diagnose_slot(slot_path: String) -> Dictionary:
+    ## Pure read-only inspection. Never heals damaged files, clears locks,
+    ## restarts missions or decides whether to forfeit pending rewards.
+    return Recovery.diagnose_slot(slot_path)
+
 static func reconcile_receipt(slot_path: String, vaccine_id: String,
         generation: int, run_id: String, receipt_id: String,
         offer_id: String = "") -> Dictionary:
@@ -139,7 +144,7 @@ static func dispatch(state: Dictionary, command: Dictionary) -> Dictionary:
                 return {"ok": false, "reason": "invalid_discovery_loadout"}
             return Rules.learn_skill(state, vaccine_id, generation,
                 receipt_id, str(command.get("skill_id", "")),
-                command.get("equip_on_discovery", []))
+                command.get("equip_on_discovery", []), run_id)
         "equip_skills":
             if typeof(command.get("equipped")) != TYPE_ARRAY:
                 return {"ok": false, "reason": "invalid_skills"}
