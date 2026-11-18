@@ -30,7 +30,7 @@ func _run() -> void:
     var launcher: Control = Launcher.instantiate()
     root.add_child(launcher)
     await process_frame
-    check(get_tree().paused == false, "launcher must not leave gameplay paused")
+    check(not paused, "launcher must not leave gameplay paused")
     check(launcher.name == "NeonVoidLauncher", "expected startup selection root")
     var choices: Dictionary = launcher.get("buttons")
     var expected: Dictionary = {
