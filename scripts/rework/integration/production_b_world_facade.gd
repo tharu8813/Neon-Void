@@ -130,6 +130,16 @@ func recover_player(health_ratio: float, mana_ratio: float) -> Dictionary:
         return {"ok": false, "reason": "B_growth_adapter_unavailable"}
     return bridge.recover_player(health_ratio, mana_ratio)
 
+## A-only forwarding gate. D owns contact geometry; E authorizes the run;
+## B owns damage/shields/status and the 60 Hz combat event ledger.
+func queue_environment_hit(spec: Dictionary) -> Dictionary:
+    if bridge == null or not bridge.running \
+            or (require_e_authorization and not _encounter_authorized):
+        return {"ok": false, "reason": "environment_requires_E_authorized_combat"}
+    if str(spec.get("run_id", "")) != str(bridge.run_id):
+        return {"ok": false, "reason": "environment_run_mismatch"}
+    return bridge.queue_environment_hit(spec.duplicate(true))
+
 func skill_snapshot() -> Dictionary:
     return bridge.skill_snapshot() if bridge != null else {}
 

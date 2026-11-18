@@ -12,6 +12,7 @@ var heading: Label
 var hint: Label
 var card_buttons: Array[Button] = []
 var skip_button: Button
+var replacement_selector: OptionButton
 var _equipped: Array = []
 
 func _ready() -> void:
@@ -50,6 +51,10 @@ func _ready() -> void:
         card.pressed.connect(_choose.bind(index))
         row.add_child(card)
         card_buttons.append(card)
+    replacement_selector = OptionButton.new()
+    replacement_selector.name = "ReplacementSlot"
+    replacement_selector.visible = false
+    column.add_child(replacement_selector)
     skip_button = Button.new()
     skip_button.text = "이번 구역 스킬 초안 건너뛰기"
     skip_button.pressed.connect(_skip)
@@ -58,6 +63,15 @@ func _ready() -> void:
 
 func present(candidates: Array, equipped: Array) -> void:
     _equipped = equipped.duplicate()
+    replacement_selector.clear()
+    replacement_selector.add_item("교체할 장착 슬롯을 선택해")
+    replacement_selector.set_item_disabled(0, true)
+    for index in range(_equipped.size()):
+        var known: Dictionary = Registry.definition(str(_equipped[index]))
+        replacement_selector.add_item("%d번 · %s 교체" % [
+            index + 1, str(known.get("name_ko", _equipped[index]))])
+    replacement_selector.select(0)
+    replacement_selector.visible = _equipped.size() >= 3
     for index in range(3):
         var button: Button = card_buttons[index]
         var candidate: Dictionary = candidates[index] if index < candidates.size() else {}
@@ -72,7 +86,7 @@ func present(candidates: Array, equipped: Array) -> void:
     if slots_left > 0:
         hint.text = "발견 즉시 습득하고 빈 슬롯 %d개 중 하나에 장착합니다. 실제 수치는 승인 전 초안입니다." % slots_left
     else:
-        hint.text = "모든 스킬 슬롯이 사용 중입니다. 선택하면 마지막 슬롯을 이 스킬로 교체합니다. 실제 수치는 승인 전 초안입니다."
+        hint.text = "스킬이 3개 장착되어 있어. 교체할 슬롯을 직접 선택해야 습득할 수 있어. 수치는 초안이야."
     visible = true
 
 func dismiss() -> void:
@@ -94,11 +108,19 @@ func _card_text(definition: Dictionary) -> String:
     var cooldown: float = maxf(0.0, float(definition.get("cooldown_ticks", 0.0))) / CLOCK_HZ
     return "%s\n\n%s\n\n마나 %d · 재사용 %.1f초" % [name_ko, description, cost, cooldown]
 
+func selected_replacement_slot() -> int:
+    if _equipped.size() < 3:
+        return _equipped.size()
+    return replacement_selector.selected - 1 if replacement_selector.selected > 0 else -1
+
 func _choose(index: int) -> void:
     if index < 0 or index >= card_buttons.size():
         return
     var skill_id: String = str(card_buttons[index].get_meta("skill_id", ""))
     if skill_id.is_empty() or not Registry.definition(skill_id):
+        return
+    if _equipped.size() >= 3 and selected_replacement_slot() < 0:
+        hint.text = "먼저 교체할 스킬 슬롯을 선택해. 아직 기존 스킬은 유지돼."
         return
     skill_chosen.emit(skill_id)
 

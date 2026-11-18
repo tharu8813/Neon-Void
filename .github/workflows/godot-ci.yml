@@ -125,6 +125,7 @@ jobs:
             tests/rework/integration/rework_qa_boot_smoke.gd
             tests/rework/integration/hub_terminal_access_smoke.gd
             tests/rework/integration/main_launcher_smoke.gd
+            tests/rework/integration/s01_a_hazard_skill_smoke.gd
           )
           count=0
           failures=0
@@ -182,7 +183,8 @@ jobs:
             'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd',
             'tests/rework/integration/rework_qa_boot_smoke.gd',
             'tests/rework/integration/hub_terminal_access_smoke.gd',
-            'tests/rework/integration/main_launcher_smoke.gd'
+            'tests/rework/integration/main_launcher_smoke.gd',
+            'tests/rework/integration/s01_a_hazard_skill_smoke.gd'
           )
           $count = 0
           $failures = 0

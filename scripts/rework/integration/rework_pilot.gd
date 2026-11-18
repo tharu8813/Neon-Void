@@ -21,6 +21,7 @@ const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
 const SkillBar = preload("res://scripts/rework/ui/pilot_skill_bar.gd")
 const SkillDraft = preload("res://scripts/rework/ui/pilot_skill_draft.gd")
 const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
+const PluginLiveView = preload("res://scripts/rework/plugins/plugin_live_view.gd")
 const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
 const Audio = preload("res://scripts/rework/audio/rework_audio.gd")
 
@@ -86,6 +87,10 @@ func _ready() -> void:
     world.connect("extraction_commit_requested", Callable(self, "_on_extraction_requested"))
     world.connect("death_commit_requested", Callable(self, "_on_death_requested"))
     world.connect("unavailable_hardware_requested", Callable(self, "_on_unavailable"))
+    # D emits typed contacts only; A verifies the E checkpoint and forwards to B.
+    if world.has_signal("environment_contact_requested"):
+        world.connect("environment_contact_requested",
+            Callable(self, "_on_environment_contact_requested"))
     var preview_combat: Node = world.get("combat") as Node
     if preview_combat != null:
         preview_combat.connect("enemy_defeated", Callable(self, "_on_enemy_defeated"))
@@ -336,6 +341,43 @@ func _accept_saved_state(loaded: Dictionary) -> void:
             return
     _refresh()
 
+## Build the display only from the SAME E validated save and B production
+## adapter. Never infer ownership from a visible offer or grant missing items.
+func _render_verified_plugins(loaded: Dictionary) -> void:
+    if tactical_hud == null:
+        return
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var vaccine_value: Variant = saved.get("vaccine", null)
+    var router: Variant = world.get("combat")
+    if not (vaccine_value is Dictionary) or router == null \
+            or str(router.get("mode")) != "formal":
+        tactical_hud.render_plugin_view({})
+        return
+    var live: Variant = router.get("live")
+    if live == null or live.bridge == null or not live.bridge.running:
+        tactical_hud.render_plugin_view({})
+        return
+    var vaccine: Dictionary = vaccine_value
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary) \
+            or str(mission_value.get("run_id", "")) != current_run_id:
+        tactical_hud.render_plugin_view({})
+        return
+    var authorized_levels: Dictionary = {}
+    var carried: Dictionary = vaccine.get("carried", {})
+    for uid in carried:
+        authorized_levels[str(uid)] = int(carried[uid].get("level", 0))
+    var obtained: Dictionary = mission_value.get("obtained_plugins", {})
+    for uid in obtained:
+        authorized_levels[str(uid)] = int(obtained[uid].get("level", 0))
+    var verified: Dictionary = PluginLiveView.describe(authorized_levels,
+        live.bridge.effects.active_levels(), {},
+        int(live.bridge.simulation.fixed_tick))
+    tactical_hud.render_plugin_view(verified)
+    if not bool(verified.get("ok", false)) \
+            and str(verified.get("reason", "")).begins_with("B_exceeds_E:"):
+        _halt("C_B_plugin_level_exceeds_E_record")
+
 func _refresh() -> void:
     if slot_path.is_empty():
         return
@@ -346,6 +388,7 @@ func _refresh() -> void:
     var saved: Dictionary = loaded.get("snapshot", {})
     if tactical_hud != null:
         tactical_hud.render_saved_snapshot(loaded)
+        _render_verified_plugins(loaded)
         if frozen:
             tactical_hud.show_blocked()
     if mission_tracker != null:
@@ -987,7 +1030,11 @@ func _on_skill_chosen(skill_id: String) -> void:
         if equipped.size() < 3:
             equipped.append(skill_id)
         else:
-            equipped[equipped.size() - 1] = skill_id
+            var target_slot: int = int(skill_panel.selected_replacement_slot())
+            if target_slot < 0 or target_slot >= equipped.size():
+                message_label.text = "교체할 스킬 슬롯을 먼저 선택해"
+                return
+            equipped[target_slot] = skill_id
     var receipt: String = "skill:%s:%s:%s" % [current_run_id, skill_region, skill_id]
     var ack: Dictionary = Gateway.transact_command(slot_path, {
         "action": "learn_skill", "vaccine_id": str(vaccine.get("vaccine_id", "")),
@@ -1136,6 +1183,63 @@ func _on_death_requested(fact: Dictionary) -> void:
         return
     if not bool(world.call("acknowledge_death", ack)):
         _halt("death_world_ack_failed")
+
+## D owns physical contact generation and one B queue submission. A only
+## verifies the E-authorized map/run BEFORE D's synchronous B forwarding.
+## NEVER submit the contact a second time here (duplicate HP/status damage).
+func _on_environment_contact_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        return
+    var region: String = str(fact.get("region_id", ""))
+    if str(fact.get("run_id", "")) != current_run_id \
+            or str(world.get("current_mode")).to_upper() != region:
+        return # obsolete scene event: not a new combat hit
+    if int(fact.get("schema", -1)) != 1 \
+            or str(fact.get("type", "")) != "world_hazard_contact" \
+            or not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(region) \
+            or str(fact.get("actor_id", "")) != "VACCINE" \
+            or int(fact.get("cycle", -1)) < 0 \
+            or int(fact.get("tick", -1)) < 1 \
+            or not str(fact.get("hazard_id", "")).begins_with(region + ":"):
+        _halt("hazard_D_contract_invalid")
+        return
+    var at: Variant = fact.get("player_world", null)
+    var player_node: Node3D = world.get("player") as Node3D
+    if not (at is Vector3) or player_node == null \
+            or not (at as Vector3).is_finite() \
+            or player_node.global_position.distance_to(at) > 0.05:
+        _halt("hazard_contact_position_invalid")
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("hazard_E_snapshot_unreadable")
+        return
+    var vaccine: Dictionary = loaded.get("snapshot", {}).get("vaccine", {})
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary):
+        _halt("hazard_E_mission_missing")
+        return
+    var mission: Dictionary = mission_value
+    var checkpoint: Dictionary = mission.get("environment_rolls", {}).get(
+        "e_checkpoint_v1", {}).get("regions", {}).get(region, {})
+    var plan: Dictionary = world.get("mission").get("regions", {}).get(region, {})
+    if str(mission.get("run_id", "")) != current_run_id \
+            or checkpoint.is_empty() or plan.is_empty() \
+            or int(checkpoint.get("seed", -1)) != int(plan.get("map_seed", -2)) \
+            or str(checkpoint.get("generator_id", "")) != Maps.GENERATOR_ID:
+        _halt("hazard_requires_E_saved_map")
+        return
+    var router: Variant = world.get("combat")
+    if router == null or str(router.get("mode")) != "formal":
+        _halt("hazard_requires_formal_B")
+        return
+    var live: Variant = router.get("live")
+    if live == null or live.bridge == null or live.bridge.run_id != current_run_id:
+        _halt("hazard_B_encounter_mismatch")
+        return
+    # D will now call router.queue_environment_hit exactly ONCE, which reaches
+    # our E-gated A facade and then B's 60Hz damage+shield+status calculation.
+    message_label.text = region + " 위험 접촉 · 전투 피해 판정 대기"
 
 func _on_unavailable(region_id: String) -> void:
     message_label.text = region_id + "는 아직 제작 중이야"
