@@ -23,6 +23,8 @@ const SkillDraft = preload("res://scripts/rework/ui/pilot_skill_draft.gd")
 const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
 const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
 const Audio = preload("res://scripts/rework/audio/rework_audio.gd")
+# [BALANCE_DRAFT] GPU beam damage; GDD does not approve a final coefficient.
+const GPU_BEAM_MAGIC_DAMAGE: float = 8.0
 
 @export var slot_id: String = "integration-pilot"
 @export var initial_vaccine_id: String = "pilot-vaccine"
@@ -86,6 +88,10 @@ func _ready() -> void:
     world.connect("extraction_commit_requested", Callable(self, "_on_extraction_requested"))
     world.connect("death_commit_requested", Callable(self, "_on_death_requested"))
     world.connect("unavailable_hardware_requested", Callable(self, "_on_unavailable"))
+    # D emits typed contacts only; A verifies the E checkpoint and forwards to B.
+    if world.has_signal("environment_contact_requested"):
+        world.connect("environment_contact_requested",
+            Callable(self, "_on_environment_contact_requested"))
     var preview_combat: Node = world.get("combat") as Node
     if preview_combat != null:
         preview_combat.connect("enemy_defeated", Callable(self, "_on_enemy_defeated"))
@@ -987,7 +993,11 @@ func _on_skill_chosen(skill_id: String) -> void:
         if equipped.size() < 3:
             equipped.append(skill_id)
         else:
-            equipped[equipped.size() - 1] = skill_id
+            var target_slot: int = int(skill_panel.selected_replacement_slot())
+            if target_slot < 0 or target_slot >= equipped.size():
+                message_label.text = "교체할 스킬 슬롯을 먼저 선택해"
+                return
+            equipped[target_slot] = skill_id
     var receipt: String = "skill:%s:%s:%s" % [current_run_id, skill_region, skill_id]
     var ack: Dictionary = Gateway.transact_command(slot_path, {
         "action": "learn_skill", "vaccine_id": str(vaccine.get("vaccine_id", "")),
@@ -1136,6 +1146,75 @@ func _on_death_requested(fact: Dictionary) -> void:
         return
     if not bool(world.call("acknowledge_death", ack)):
         _halt("death_world_ack_failed")
+
+## GPU contact → validated E run/map → A facade → B's authoritative queue.
+## No optimistic HP/status change, XP receipt, or environment reward here.
+func _on_environment_contact_requested(fact: Dictionary) -> void:
+    if frozen or bridge == null:
+        return
+    if int(fact.get("schema", -1)) != 1 \
+            or str(fact.get("type", "")) != "world_hazard_contact" \
+            or str(fact.get("region_id", "")) != "GPU" \
+            or str(fact.get("actor_id", "")) != "VACCINE" \
+            or str(fact.get("hazard_kind", "")) != "coolant_overload_beam" \
+            or str(fact.get("damage_type", "")) != "magic":
+        _halt("GPU_hazard_contract_invalid")
+        return
+    # Late signals from a previous run/scene must NEVER reach the new battle.
+    if str(fact.get("run_id", "")) != current_run_id \
+            or str(world.get("current_mode")) != "gpu":
+        return
+    var cycle: int = int(fact.get("cycle", -1))
+    if cycle < 0 or int(fact.get("tick", -1)) < 1 \
+            or str(fact.get("hazard_id", "")) != "GPU:beam:%d" % cycle:
+        _halt("GPU_hazard_event_id_invalid")
+        return
+    var player_position: Variant = fact.get("player_world", null)
+    var active_player: Node3D = world.get("player") as Node3D
+    if not (player_position is Vector3) or active_player == null \
+            or active_player.global_position.distance_to(player_position) > 0.05:
+        _halt("GPU_hazard_contact_position_invalid")
+        return
+    var loaded: Dictionary = Gateway.snapshot(slot_path)
+    if not bool(loaded.get("ok", false)):
+        _halt("GPU_hazard_E_snapshot_unreadable")
+        return
+    var vaccine: Dictionary = loaded.get("snapshot", {}).get("vaccine", {})
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary):
+        _halt("GPU_hazard_E_mission_missing")
+        return
+    var mission: Dictionary = mission_value
+    var region_checkpoint: Dictionary = mission.get("environment_rolls", {}).get(
+        "e_checkpoint_v1", {}).get("regions", {}).get("GPU", {})
+    var planned: Dictionary = world.get("mission").get("regions", {}).get("GPU", {})
+    if str(mission.get("run_id", "")) != current_run_id \
+            or region_checkpoint.is_empty() or planned.is_empty() \
+            or int(region_checkpoint.get("seed", -1)) != int(planned.get("map_seed", -2)) \
+            or str(region_checkpoint.get("generator_id", "")) != Maps.GENERATOR_ID:
+        _halt("GPU_hazard_requires_E_saved_map")
+        return
+    var combat: Variant = world.get("combat")
+    if combat == null or str(combat.get("mode")) != "formal":
+        _halt("GPU_hazard_requires_formal_B")
+        return
+    var live: Variant = combat.get("live")
+    if live == null or not live.has_method("queue_environment_hit"):
+        _halt("GPU_hazard_B_adapter_unavailable")
+        return
+    var queued: Dictionary = live.queue_environment_hit({
+        "run_id": current_run_id, "source_id": "GPU:coolant_overload_beam",
+        "region_id": "GPU", "event_id": current_run_id + ":" + str(fact["hazard_id"]),
+        "target_id": "VACCINE", "damage_type": "magic",
+        "base_damage": GPU_BEAM_MAGIC_DAMAGE, "repeat_ticks": 0
+    })
+    if not bool(queued.get("ok", false)):
+        # Duplicate contact is idempotent, never another damage grant.
+        if str(queued.get("reason", "")) == "environment_contact_cooldown":
+            return
+        _halt("GPU_hazard_B_rejected:" + str(queued.get("reason", "unknown")))
+        return
+    message_label.text = "GPU 냉각 빔 접촉 · 전투 판정 대기"
 
 func _on_unavailable(region_id: String) -> void:
     message_label.text = region_id + "는 아직 제작 중이야"
