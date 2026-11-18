@@ -26,7 +26,11 @@ static func run(root: Node, check: Callable) -> void:
         return
     var hit_notices: Array[Dictionary] = []
     router.combat_notice.connect(func(notice: Dictionary) -> void:
-        if str(notice.get("kind", "")) == "hit"                 and bool(notice.get("environment_source", false)):
+        # Direct D contacts have external_event_id; subsequent B DoT ticks
+        # are real damage but must not count as an additional direct hit.
+        if str(notice.get("kind", "")) == "hit" and bool(
+                notice.get("environment_source", false)) and not str(
+                notice.get("external_event_id", "")).is_empty():
             hit_notices.append(notice.duplicate(true)))
     var initial: float = float(router.actor_snapshot("VACCINE").get("stats", {}).get("health", -1))
     for id in ["CPU", "GPU", "RAM", "SSD", "HDD"]:
