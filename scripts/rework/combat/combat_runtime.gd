@@ -169,6 +169,56 @@ func queue_environment_hit(spec: Dictionary) -> Dictionary:
         "accepted_tick": fixed_tick, "target_id": target_id}
 
 
+func apply_radial_knockback(source_id: String, force: float,
+        radius: float) -> Dictionary:
+    ## BALANCE_DRAFT: C low-HP knockback is a real B displacement, not VFX only.
+    ## Root/stopped block voluntary actions, not external force; boss CC and
+    ## tenacity reduce distance on this same 60Hz tick.
+    if not actors.has(source_id) or not bool(actors[source_id]["alive"]):
+        return {"ok": false, "reason": "invalid_knockback_source"}
+    if is_nan(force) or is_inf(force) or force < 0.0 or (
+            is_nan(radius) or is_inf(radius) or radius <= 0.0):
+        return {"ok": false, "reason": "invalid_knockback_parameters"}
+    var source: Dictionary = actors[source_id]
+    var origin: Vector3 = source["position"]
+    var moved: Array[Dictionary] = []
+    for candidate_id in _ids():
+        if candidate_id == source_id:
+            continue
+        var target: Dictionary = actors[candidate_id]
+        if not bool(target["alive"]) or target["team"] == source["team"]:
+            continue
+        var flags: Dictionary = Statuses.active_flags(target["status_state"])
+        if bool(flags.get("invulnerable", false)):
+            continue  # BALANCE_DRAFT: immunity also blocks forced displacement.
+        var start: Vector3 = target["position"]
+        var direction: Vector2 = Vector2(start.x - origin.x, start.z - origin.z)
+        if direction.length() > radius + float(target.get("radius", 0.0)):
+            continue
+        if direction.length_squared() <= 0.000001:
+            direction = Vector2.RIGHT
+        var effective: Dictionary = _effective_stats(target)
+        var tenacity: float = Stats.valid_rate(float(effective.get("tenacity", 0.0)))
+        var boss_resist: float = Stats.valid_rate(
+            float(effective.get("boss_control_resistance", 0.0)))
+        var distance: float = force * (1.0 - tenacity) * (1.0 - boss_resist)
+        if distance <= 0.0:
+            continue
+        var heading: Vector2 = direction.normalized()
+        var destination: Vector3 = start + Vector3(
+            heading.x, 0.0, heading.y) * distance
+        if blink_filter.is_valid():
+            var clipped: Variant = blink_filter.call(start, destination)
+            if clipped is Dictionary and clipped.has("position"):
+                destination = clipped["position"]
+        if destination.distance_squared_to(start) <= 0.000001:
+            continue
+        target["position"] = destination
+        moved.append({"actor_id": str(candidate_id), "from": start, "to": destination,
+            "effective_force": start.distance_to(destination), "tick": fixed_tick})
+    return {"ok": true, "targets": moved}
+
+
 func remove_actor(actor_id: String) -> void:
     actors.erase(actor_id)
 
@@ -511,9 +561,13 @@ func _step_projectiles() -> void:
                     p["velocity"] = velocity
         if str(p.get("shape", "")) == "boomerang":
             if int(p.get("ttl", 0)) <= int(p.get("return_threshold", 0)):
-                velocity = -velocity if not bool(p.get("returning", false)) else velocity
                 p["returning"] = true
-                p["velocity"] = velocity
+            if bool(p.get("returning", false)) and actors.has(str(p["actor_id"])):
+                var home: Vector3 = actors[str(p["actor_id"])]["position"]
+                var toward_home: Vector2 = Vector2(home.x - start.x, home.z - start.z)
+                if toward_home.length_squared() > 0.000001:
+                    velocity = toward_home.normalized() * velocity.length()
+                    p["velocity"] = velocity
         var end: Vector3 = start + Vector3(velocity.x, 0.0, velocity.y) * DT
         p["ttl"] = int(p["ttl"]) - 1
         var ended: bool = false
@@ -527,6 +581,7 @@ func _step_projectiles() -> void:
                     end = clipped["position"]
         var candidates: Array[Dictionary] = Grid.segment_hits(grid, actors,
             start, end, float(p["radius"]), str(p["team"]))
+        var splash_radius: float = maxf(0.0, float(p.get("splash_radius", 0.0)))
         counters["broadphase_candidates"] += candidates.size()
         for candidate in candidates:
             var victim: String = str(candidate["actor_id"])
@@ -547,6 +602,26 @@ func _step_projectiles() -> void:
             if root.is_empty():
                 continue
             counters["collisions"] += 1
+            if splash_radius > 0.0:
+                # Per-projectile hit ledger prevents repeat splash hits to the
+                # same actor, while allowing different valid targets/proc hops.
+                var center: Vector3 = actors[victim]["position"]
+                for splash_id in _ids():
+                    if splash_id == victim:
+                        continue
+                    var neighbor: Dictionary = actors[splash_id]
+                    if not bool(neighbor["alive"]) or neighbor["team"] == p["team"]:
+                        continue
+                    var dxz: Vector2 = Vector2(
+                        neighbor["position"].x - center.x,
+                        neighbor["position"].z - center.z)
+                    if dxz.length() > splash_radius + float(neighbor.get("radius", 0.0)):
+                        continue
+                    var splash: Dictionary = hit_payload.duplicate(true)
+                    splash["target_id"] = str(splash_id)
+                    splash["attack"] = hit_payload["attack"].duplicate(true)
+                    splash["attack"]["is_area"] = true
+                    bus.submit_continuation(splash, root.get("proc_path", []))
             if not bool(p["infinite_pierce"]):
                 if int(p["remaining_pierce"]) <= 0:
                     ended = true
@@ -554,6 +629,13 @@ func _step_projectiles() -> void:
                     break
                 p["remaining_pierce"] = int(p["remaining_pierce"]) - 1
         p["position"] = end
+        if str(p.get("shape", "")) == "boomerang" and (
+                bool(p.get("returning", false)) and actors.has(str(p["actor_id"]))):
+            var owner: Vector3 = actors[str(p["actor_id"])]["position"]
+            var to_owner: Vector2 = Vector2(owner.x - start.x, owner.z - start.z)
+            var to_end: Vector2 = Vector2(owner.x - end.x, owner.z - end.z)
+            if to_owner.length_squared() <= 0.25 or to_owner.dot(to_end) <= 0.0:
+                ended = true
         if ended or terrain_blocked or int(p["ttl"]) <= 0:
             _retire(p)
         else:
