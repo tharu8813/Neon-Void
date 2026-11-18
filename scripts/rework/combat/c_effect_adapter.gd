@@ -338,6 +338,9 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
     # consumed. Stale transforms must not lock basic fire forever.
     var eligible: Array = []
     for command in commands:
+        if not command is Dictionary:
+            eligible.append(command)
+            continue
         if str(command.get("type", "")) == "projectile_transform":
             var attack_id: String = str(_context.get("attack_id", ""))
             var found: bool = false
