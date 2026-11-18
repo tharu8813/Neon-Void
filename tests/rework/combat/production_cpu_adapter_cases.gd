@@ -247,6 +247,34 @@ static func run(check: Callable, scene_root: Node) -> void:
         "crowd canary preserves stable enemy registry and C runtime")
     print("B PRODUCTION LOAD CANARY: 100 live enemies, 250 projectiles, 5 ticks; elapsed_us=", elapsed,
         " (not a measured Windows FPS guarantee)")
+    # Production (non-synthetic) B C-event -> real 3D hostile body movement.
+    battle.reset()
+    player.global_position = Vector3(0, 0.5, 0)
+    battle.begin_encounter(player, camera, {}, "knockback-live-proof")
+    check.call(battle.spawn_hostile({"actor_id": "KNOCK",
+        "position": Vector3(1, 0, 0)}), "3D knockback target registered")
+    check.call(battle.configure_plugins({"nv_r_low_hp_knockback": 1}, 4242),
+        "real C low HP knockback installed in B production bridge")
+    Statuses.apply(battle.simulation.actors["KNOCK"]["status_state"],
+        {"id": "root_forced_move", "duration_ticks": 100,
+        "control": true, "flags": ["rooted"]})
+    battle.simulation.actors["VACCINE"]["stats"]["health"] = 25.0
+    battle.simulation.bus.submit_root({
+        "kind": "damage", "actor_id": "KNOCK", "target_id": "VACCINE",
+        "source_tags": ["enemy_attack"],
+        "attack": {"damage_type": "true", "base_damage": 1.0, "can_crit": false}})
+    battle.set_combat_input({"fire": false, "move": Vector2.ZERO})
+    var knock_notes: Array[Dictionary] = battle.advance_production_tick()
+    var physical: CharacterBody3D = battle.enemies["KNOCK"]["body"]
+    check.call(physical.global_position.x > 2.5 and
+        close_to(physical.global_position.x,
+            float(battle.simulation.snapshot("KNOCK")["position"].x)),
+        "C low HP proc moves actual 3D body and reconciles B authoritative XZ state")
+    var knock_reported: bool = false
+    for notice in knock_notes:
+        if str(notice.get("kind", "")) == "knockback_applied":
+            knock_reported = true
+    check.call(knock_reported, "A HUD receives real knockback applied notice")
     battle.reset()
     player.global_position = Vector3(0, 0.5, 0)
     battle.begin_encounter(player, camera, {}, "death-proof")
