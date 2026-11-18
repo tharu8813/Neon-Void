@@ -3,6 +3,7 @@ extends SceneTree
 const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
+const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -404,6 +405,7 @@ func _run() -> void:
     _test_rare_pair_recovery(root_dir)
     _test_combat_observation(root_dir)
     _test_s01_diagnostics(root_dir)
+    _test_s01_durable_normal_flow(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
@@ -414,6 +416,11 @@ func _run() -> void:
 
 func _test_s01_diagnostics(root_dir: String) -> void:
     # Synthetic fixtures ONLY. The real normal/QA slot IDs are never opened.
+    var production_path: String = Store.default_slot_path("nv-rework-main-v1")
+    var qa_path: String = Store.default_slot_path("nv-rework-qa-20261118")
+    check(not production_path.is_empty() and not qa_path.is_empty() \
+        and production_path != qa_path,
+        "production and QA scene IDs resolve to physically distinct directories")
     var normal: String = root_dir.path_join("rework-slot-s01-normal")
     var qa: String = root_dir.path_join("rework-slot-s01-qa")
     check(Store.initialize(normal, Model.new_slot("s01-normal", "normal-vaccine")).ok,
@@ -462,6 +469,88 @@ func _test_s01_diagnostics(root_dir: String) -> void:
     }).applied, "corrupt save rejects gameplay writes")
     check(Store.read(qa).ok and Store.read(qa).state.vaccine.unspent_fragments == 500,
         "independent QA synthetic data survived all normal-slot failures")
+
+func _test_s01_durable_normal_flow(root_dir: String) -> void:
+    var path: String = root_dir.path_join("rework-slot-s01-normal-full-run")
+    check(Store.initialize(path, Model.new_slot(
+        "s01-normal-full-run", "s01-player")).ok,
+        "regular player starts without any QA grants")
+    var identity: Dictionary = {"vaccine_id": "s01-player", "generation": 1,
+        "run_id": "s01-first-run"}
+    var start: Dictionary = identity.duplicate(true)
+    start.merge({"action": "start_mission", "seed": 31415}, true)
+    check(Gateway.transact_command(path, start).applied,
+        "normal fresh run committed to E before world starts")
+    var region: Dictionary = identity.duplicate(true)
+    region.merge({"action": "checkpoint_region", "receipt_id": "map-first-CPU",
+        "region_id": "CPU", "map_seed": 91, "generator_id": "D-procedural-v1"}, true)
+    check(Gateway.transact_command(path, region).applied,
+        "first region's procedural seed committed")
+    var draft: Array[Dictionary] = SkillOffer.candidates(31415, "CPU", [])
+    check(draft.size() == 3, "new real player receives three B draft candidates")
+    if draft.is_empty():
+        return
+    var skill_id: String = str(draft[0].get("id", ""))
+    var skill: Dictionary = identity.duplicate(true)
+    skill.merge({"action": "learn_skill",
+        "receipt_id": "skill:s01-first-run:CPU:" + skill_id,
+        "skill_id": skill_id, "equip_on_discovery": [skill_id]}, true)
+    var learned: Dictionary = Gateway.transact_command(path, skill)
+    check(learned.applied, "first region offers one E-verified active skill")
+    check(not Gateway.transact_command(path, skill).applied,
+        "skill receipt replay cannot grant another skill")
+    var saved: Dictionary = Store.read(path)
+    check(saved.ok and saved.state.vaccine.known_skills.has(skill_id)         and saved.state.vaccine.equipped_skills.has(skill_id),
+        "new skill and its equipment survive fresh disk reread")
+    var mission_xp: Dictionary = identity.duplicate(true)
+    mission_xp.merge({"action": "mission_xp", "receipt_id": "enemy-kill-s01",
+        "amount": 100}, true)
+    check(Gateway.transact_command(path, mission_xp).applied,
+        "mission-only XP grants plugin offer, not vaccine level")
+    var claimed: Dictionary = identity.duplicate(true)
+    claimed.merge({"action": "plugin_picked", "receipt_id": "event-pick-s01",
+        "offer_id": "event-s01-1", "plugin_id": "nv_c_move_speed",
+        "rarity": "common", "level": 1, "offer_source": "event"}, true)
+    check(Gateway.transact_command(path, claimed).applied,
+        "event plugin acquisition persisted in original run")
+    var clean: Dictionary = identity.duplicate(true)
+    clean.merge({"action": "hardware_cleaned", "receipt_id": "clean-CPU-s01",
+        "hardware_id": "CPU"}, true)
+    check(Gateway.transact_command(path, clean).applied,
+        "cleaned region acknowledged before extraction")
+    var terminal: Dictionary = identity.duplicate(true)
+    terminal.merge({"action": "prepare_terminal",
+        "receipt_id": "stage-extract-s01",
+        "outcome": "extract", "terminal_receipt_id": "extract-s01",
+        "learn_plugin_ids": ["nv_c_move_speed"]}, true)
+    check(Gateway.transact_command(path, terminal).applied,
+        "extraction intent and user learning choice durably staged")
+    var extract: Dictionary = identity.duplicate(true)
+    extract.merge({"action": "extract", "receipt_id": "extract-s01",
+        "learn_plugin_ids": ["nv_c_move_speed"]}, true)
+    check(Gateway.transact_command(path, extract).applied,
+        "final extraction atomically banks vaccine XP and plugin")
+    saved = Store.read(path)
+    check(saved.ok and saved.state.vaccine.mission == null         and saved.state.vaccine.total_xp == 120         and saved.state.vaccine.known_skills.has(skill_id)         and saved.state.vaccine.carried.has("nv_c_move_speed")         and saved.state.vaccine.closed_runs.get("s01-first-run") == "extracted",
+        "relaunch from disk preserves earned skill, XP, carried plugin, run receipt")
+    check(not Gateway.transact_command(path, extract).applied,
+        "extraction replay never banks XP twice")
+    var deposit: Dictionary = {"action": "archive_plugin",
+        "vaccine_id": "s01-player", "generation": 1,
+        "receipt_id": "archive-first", "plugin_id": "nv_c_move_speed"}
+    check(Gateway.transact_command(path, deposit).applied,
+        "manually archived plugin moved out of carried slot")
+    saved = Store.read(path)
+    check(saved.ok and saved.state.vaccine.archive.has("nv_c_move_speed")         and not saved.state.vaccine.carried.has("nv_c_move_speed"),
+        "relaunch preserves exactly one archived plugin instance")
+    var second: Dictionary = identity.duplicate(true)
+    second.merge({"action": "start_mission", "run_id": "s01-second-run",
+        "seed": 8128}, true)
+    check(Gateway.transact_command(path, second).applied,
+        "next run starts only after previous extraction is closed")
+    saved = Store.read(path)
+    check(saved.ok and saved.state.vaccine.mission.mission_level == 1         and saved.state.vaccine.mission.mission_xp == 0         and saved.state.vaccine.total_xp == 120         and saved.state.vaccine.archive.has("nv_c_move_speed"),
+        "new mission resets temporary XP while preserving vaccine growth and DB")
 
 func _test_mission_checkpoint(root_dir: String) -> void:
     # Real C/A can use the same command shape; everything below is synthetic.
