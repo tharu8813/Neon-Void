@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/rework/integration/rework_pilot.gd" id="1_qa"]
+[ext_resource type="PackedScene" path="res://scenes/rework/world/cpu_vertical_slice.tscn" id="2_world"]
+
+[node name="ReworkWindowsQA" type="Node3D"]
+script = ExtResource("1_qa")
+slot_id = "windows-qa-20261118"
+initial_vaccine_id = "windows-qa-vaccine"
+qa_skill_tools_enabled = true
+
+[node name="World" parent="." instance=ExtResource("2_world")]
+demo_mode = false
