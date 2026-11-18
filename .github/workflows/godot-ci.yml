@@ -121,6 +121,7 @@ jobs:
             tests/rework/integration/pilot_responsive_ui_smoke.gd
             tests/rework/integration/a_verified_growth_skill_world_smoke.gd
             tests/rework/integration/one_run_five_zone_cleansing_smoke.gd
+            tests/rework/integration/qa_skill_restart_smoke.gd
           )
           count=0
           failures=0
@@ -174,7 +175,8 @@ jobs:
             'tests/rework/integration/pilot_status_effects_smoke.gd',
             'tests/rework/integration/pilot_responsive_ui_smoke.gd',
             'tests/rework/integration/a_verified_growth_skill_world_smoke.gd',
-            'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd'
+            'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd',
+            'tests/rework/integration/qa_skill_restart_smoke.gd'
           )
           $count = 0
           $failures = 0
@@ -258,10 +260,50 @@ jobs:
           if ((Get-Item $exe).Length -le 0) { throw 'Empty Windows export' }
           Invoke-CheckedProcess $exe '--headless --quit-after 3'
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
-          "Windows x64 export and headless boot passed. SHA256: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Legacy/default scene Windows x64 export/boot passed: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+      - name: Export distinct five-hardware REWORK QA executable without changing repository default scene
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "Process failed with exit code $($p.ExitCode): $binary $arguments" }
+          }
+          $project = Join-Path (Get-Location) 'project.godot'
+          $original = [System.IO.File]::ReadAllText($project)
+          $default = 'run/main_scene="res://scenes/main.tscn"'
+          $qa = 'run/main_scene="res://scenes/rework/integration/rework_windows_qa.tscn"'
+          if (-not $original.Contains($default)) { throw 'Default Godot scene has drifted; refusing ambiguous QA export' }
+          if (-not (Test-Path 'scenes/rework/integration/rework_windows_qa.tscn')) { throw 'QA scene missing' }
+          try {
+            $patched = $original.Replace($default, $qa)
+            [System.IO.File]::WriteAllText($project, $patched, [System.Text.UTF8Encoding]::new($false))
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoidReworkQA.exe'
+            $qaExe = (Resolve-Path 'build/NeonVoidReworkQA.exe').Path
+            if ((Get-Item $qaExe).Length -le 0) { throw 'Empty REWORK QA Windows export' }
+            Invoke-CheckedProcess $qaExe '--headless --quit-after 3'
+            $hash = (Get-FileHash -Algorithm SHA256 $qaExe).Hash
+            "REWORK QA scene Windows x64 export/boot passed: $hash" |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } finally {
+            [System.IO.File]::WriteAllText($project, $original, [System.Text.UTF8Encoding]::new($false))
+          }
+          Copy-Item docs/REWORK_WINDOWS_QA.md build/REWORK_WINDOWS_QA.md
+          if (-not (Select-String -LiteralPath project.godot -SimpleMatch $default -Quiet)) {
+            throw 'Default scene not restored after QA export'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: NeonVoid3D-windows-export-smoke
           path: build/NeonVoid3D.exe
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeonVoidReworkQA-windows
+          path: |
+            build/NeonVoidReworkQA.exe
+            build/REWORK_WINDOWS_QA.md
           if-no-files-found: error
           retention-days: 7
