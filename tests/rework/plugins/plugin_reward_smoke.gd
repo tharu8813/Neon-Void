@@ -248,5 +248,8 @@ func _run() -> void:
 	var rare_contract = preload("res://tests/rework/plugins/plugin_atomic_rare_cases.gd").new()
 	if not _check(rare_contract.run(), "E-only rare receipts and all 27 level caps"):
 		return
+	var production_shields = preload("res://tests/rework/plugins/plugin_s01_production_matrix.gd").new()
+	if not _check(production_shields.run(), "S01 production B adapter shield levels + actual HP"):
+		return
 	print("REWORK PLUGINS PASS: 27 entries, seeded draws, reroll, pity, caps, E rare receipts, proc path")
 	quit(0)
