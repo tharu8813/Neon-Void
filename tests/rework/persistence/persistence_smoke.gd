@@ -403,12 +403,65 @@ func _run() -> void:
     _test_mission_checkpoint(root_dir)
     _test_rare_pair_recovery(root_dir)
     _test_combat_observation(root_dir)
+    _test_s01_diagnostics(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
     if failures == 0:
         print("REWORK E PERSISTENCE PASS: synthetic atomicity, restart, recovery and isolation")
     quit(1 if failures > 0 else 0)
+
+
+func _test_s01_diagnostics(root_dir: String) -> void:
+    # Synthetic fixtures ONLY. The real normal/QA slot IDs are never opened.
+    var normal: String = root_dir.path_join("rework-slot-s01-normal")
+    var qa: String = root_dir.path_join("rework-slot-s01-qa")
+    check(Store.initialize(normal, Model.new_slot("s01-normal", "normal-vaccine")).ok,
+        "fresh normal slot initialized without synthetic QA bonuses")
+    var qa_state: Dictionary = Model.new_slot("s01-qa", "qa-vaccine")
+    qa_state.vaccine.earned_fragments = 500
+    qa_state.vaccine.unspent_fragments = 500
+    qa_state.vaccine.known_skills = ["nv_skill_arc_pulse"]
+    qa_state.vaccine.equipped_skills = ["nv_skill_arc_pulse"]
+    check(Store.initialize(qa, qa_state).ok, "separate synthetic QA slot created")
+    var pristine: Dictionary = Store.read(normal)
+    check(pristine.ok and pristine.state.vaccine.level == 1         and pristine.state.vaccine.xp == 0         and pristine.state.vaccine.unspent_fragments == 0         and pristine.state.vaccine.known_skills.is_empty()         and pristine.state.vaccine.carried.is_empty()         and pristine.state.vaccine.archive.is_empty(),
+        "normal player starts with no QA stats, plugins or skills")
+    var ready: Dictionary = Gateway.diagnose_slot(normal)
+    check(ready.ok and ready.state == "hub" and ready.can_issue_command         and not ready.automatic_repair_permitted         and ready.files.primary.status == "valid",
+        "read-only diagnostic exposes clean hub without authorizing auto recovery")
+    var prior_bytes: PackedByteArray = _bytes(normal.path_join("state.json"))
+    var again: Dictionary = Gateway.diagnose_slot(normal)
+    check(again.ok and _bytes(normal.path_join("state.json")) == prior_bytes,
+        "diagnose_slot is byte-for-byte read-only")
+    var owner: Dictionary = Store._take_lock(normal)
+    check(owner.get("ok", false), "synthetic diagnostic lock created")
+    if owner.get("ok", false):
+        var locked: Dictionary = Gateway.diagnose_slot(normal)
+        check(locked.ok and locked.lock_present and not locked.can_issue_command             and locked.lock_owner_status == "metadata_valid_process_not_verified",
+            "lock diagnostic never steals an apparently stale process lock")
+        check(Store._release_lock(normal, owner.token), "release synthetic lock")
+    var start: Dictionary = Gateway.transact_command(normal, {
+        "action": "start_mission", "vaccine_id": "normal-vaccine",
+        "generation": 1, "run_id": "s01-mission", "seed": 42
+    })
+    check(start.applied, "S01 fresh normal mission started")
+    var interrupted: Dictionary = Gateway.diagnose_slot(normal)
+    check(interrupted.ok and interrupted.state == "active_mission_blocked"         and not interrupted.safe_to_resume and not interrupted.can_issue_command         and not interrupted.recovery_policy_approved,
+        "restarted active mission does not automatically resume or forfeit")
+    var corrupt: String = root_dir.path_join("rework-slot-s01-corrupt")
+    check(Store.initialize(corrupt, Model.new_slot("s01-corrupt", "safe-vaccine")).ok,
+        "synthetic corrupt-slot fixture")
+    _write(corrupt.path_join("state.json"), "{broken save")
+    var blocked: Dictionary = Gateway.diagnose_slot(corrupt)
+    check(not blocked.ok and blocked.reason == "invalid_json"         and blocked.files.primary.status == "invalid_json"         and blocked.files.recovery.status == "valid"         and not blocked.can_issue_command and not blocked.automatic_repair_permitted,
+        "corrupt primary reports verified recovery candidate but NEVER auto-restores")
+    check(not Gateway.transact_command(corrupt, {
+        "action": "start_mission", "vaccine_id": "safe-vaccine",
+        "generation": 1, "run_id": "should-block", "seed": 42
+    }).applied, "corrupt save rejects gameplay writes")
+    check(Store.read(qa).ok and Store.read(qa).state.vaccine.unspent_fragments == 500,
+        "independent QA synthetic data survived all normal-slot failures")
 
 func _test_mission_checkpoint(root_dir: String) -> void:
     # Real C/A can use the same command shape; everything below is synthetic.
