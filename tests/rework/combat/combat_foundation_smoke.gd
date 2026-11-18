@@ -7,6 +7,8 @@ const Events = preload("res://scripts/rework/combat/events.gd")
 const RuntimeCases = preload("res://tests/rework/combat/runtime_cases.gd")
 const ProductionCases = preload("res://tests/rework/combat/production_cpu_adapter_cases.gd")
 const QueueShieldCases = preload("res://tests/rework/combat/queue_shield_cases.gd")
+const EnvironmentCases = preload("res://tests/rework/combat/environment_hit_cases.gd")
+const SkillS01Cases = preload("res://tests/rework/skills/skill_s01_cases.gd")
 ## Dynamically load to get precise parse diagnostics for B owner regressions.
 var failures: int = 0
 
@@ -136,6 +138,8 @@ func _run() -> void:
     check(bus.submit_proc(forbidden, "on_hit_plugin", {"trigger_kind": "on_hit", "target_id": "B"}).is_empty(), "proc trigger permission")
     RuntimeCases.run(Callable(self, "check"))
     QueueShieldCases.run(Callable(self, "check"))
+    EnvironmentCases.run(Callable(self, "check"))
+    SkillS01Cases.run(Callable(self, "check"))
     var modules: Array[String] = [
         "res://scripts/rework/combat/permanent_growth.gd",
         "res://scripts/rework/skills/skill_registry.gd",
