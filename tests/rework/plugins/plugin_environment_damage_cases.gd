@@ -70,17 +70,20 @@ func impact(state: Dictionary, amount: float, collision_id: String) -> Dictionar
 	var before_shield: float = state["c"].shield_value()
 	# One authoritative B damage input, NOT C.process() nor UI simulated HP.
 	# ENV is an explicit non-vaccine actor: never counts as player on_hit.
-	var submission: Dictionary = b.bus.submit_root({
+	var payload: Dictionary = {
 		"kind":"damage","trigger_kind":"on_hit",
 		"actor_id":"ENV_CONTACT","target_id":"VACCINE",
-		"collision_id":collision_id,
+		"hit_key":collision_id,
 		"source_tags":["environment_damage","hazard_contact"],
 		"allowed_proc_triggers":[],
 		"attack":{"damage_type":"true","base_damage":amount,
 			"ad_ratio":0.0,"ap_ratio":0.0,
 			"can_crit":false,"is_on_hit":false}
-	})
+	}
+	var submission: Dictionary = b.bus.submit_root(payload)
 	check(not submission.is_empty(),collision_id+" B accepted synthetic contact")
+	check(b.bus.submit_root(payload).is_empty(),
+		collision_id+" duplicate contact key rejected by authoritative B collision ledger")
 	var notices: Array[Dictionary] = fixed_step(state)
 	var damage_events: int = 0
 	var player_hits: int = 0
