@@ -6,6 +6,8 @@ const Balance = preload("res://scripts/rework/progression/balance_config.gd")
 const Checkpoint = preload("res://scripts/rework/progression/mission_checkpoint.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 const Observation = preload("res://scripts/rework/progression/combat_observation.gd")
+const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
+const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
 
 static func _reject(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}
@@ -391,8 +393,40 @@ static func reallocate_stats(state: Dictionary, vaccine_id: String, generation: 
     v.unspent_fragments = int(v.earned_fragments) - cost
     return _finish(output, "stats_reallocated")
 
+
+## Skill draft provenance is derived from the committed run seed, the saved D
+## region checkpoint, and the E-known skill list. No new save schema or
+## mutable client "offered card" proof is trusted.
+static func _mission_skill_proof(vaccine: Dictionary, run_id: String,
+        receipt_id: String, skill_id: String) -> Dictionary:
+    var mission: Dictionary = vaccine.mission
+    if not State.valid_id(run_id) or run_id != str(mission.run_id):
+        return _reject("skill_run_mismatch")
+    var prefix: String = "skill:" + run_id + ":"
+    if not receipt_id.begins_with(prefix):
+        return _reject("skill_receipt_unbound")
+    var suffix: String = receipt_id.substr(prefix.length())
+    var fields: PackedStringArray = suffix.split(":")
+    if fields.size() != 2 or not State.HARDWARE.has(fields[0])             or fields[1] != skill_id:
+        return _reject("invalid_skill_discovery_receipt")
+    var region: String = fields[0]
+    var checkpoint: Dictionary = Checkpoint.view(mission)
+    if not checkpoint.get("ok", false) or not checkpoint.checkpoint.regions.has(region):
+        return _reject("skill_region_not_checkpointed")
+    # Exactly one new skill per hardware per run, including ACK-lost retries
+    # with a DIFFERENT skill/receipt. The saved receipts are the ledger.
+    for existing in vaccine.receipts:
+        if str(existing).begins_with(prefix + region + ":"):
+            return _reject("skill_region_already_claimed")
+    for candidate in SkillOffer.candidates(int(mission.seed), region,
+            vaccine.known_skills):
+        if str(candidate.get("id", "")) == skill_id:
+            return {"ok": true}
+    return _reject("skill_not_in_durable_offer")
+
 static func learn_skill(state: Dictionary, vaccine_id: String, generation: int,
-        receipt_id: String, skill_id: String, equip_on_discovery: Array = []) -> Dictionary:
+        receipt_id: String, skill_id: String, equip_on_discovery: Array = [],
+        run_id: String = "") -> Dictionary:
     var prepared: Dictionary = _prepare(state, vaccine_id, generation)
     if not prepared.ok:
         return prepared
@@ -400,6 +434,12 @@ static func learn_skill(state: Dictionary, vaccine_id: String, generation: int,
     var v: Dictionary = output.vaccine
     if not State.valid_id(skill_id) or v.known_skills.has(skill_id):
         return _reject("skill_already_known_or_invalid")
+    if SkillRegistry.definition(skill_id).is_empty():
+        return _reject("skill_definition_missing")
+    if v.mission != null:
+        var proof_result: Dictionary = _mission_skill_proof(v, run_id, receipt_id, skill_id)
+        if not proof_result.get("ok", false):
+            return proof_result
     if not State._valid_ids(equip_on_discovery, 3):
         return _reject("invalid_discovery_loadout")
     for equipped_skill in equip_on_discovery:
@@ -428,6 +468,8 @@ static func equip_skills(state: Dictionary, vaccine_id: String, generation: int,
     for skill in equipped:
         if not v.known_skills.has(skill):
             return _reject("unknown_skill")
+        if SkillRegistry.definition(str(skill)).is_empty():
+            return _reject("skill_definition_missing")
     if not _accept_receipt(v, receipt_id):
         return _reject("duplicate_or_invalid_receipt")
     v.equipped_skills = equipped.duplicate()
