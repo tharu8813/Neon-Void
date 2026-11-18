@@ -8,6 +8,7 @@ const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Bridge = preload("res://scripts/rework/integration/mission_commit_bridge.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
+const HubLayout = preload("res://scripts/rework/world/hub_layout.gd")
 const RareBonus = preload("res://scripts/rework/progression/rare_bonus.gd")
 const RecoveryView = preload("res://scripts/rework/integration/pilot_recovery_view.gd")
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
@@ -62,6 +63,7 @@ func _ready() -> void:
     _create_ui()
     get_viewport().size_changed.connect(_update_ui_geometry)
     _update_ui_geometry()
+    world.connect("terminal_requested", Callable(self, "_on_hub_terminal_requested"))
     world.connect("mission_start_requested", Callable(self, "_on_mission_requested"))
     world.connect("hardware_checkpoint_requested", Callable(self, "_on_hardware_checkpoint_requested"))
     world.connect("mission_returned", Callable(self, "_on_mission_returned"))
@@ -350,6 +352,36 @@ func _refresh() -> void:
     deposit_button.visible = false
     hub_button.disabled = frozen
     new_vaccine_button.visible = false
+
+## D's actual in-world F terminal signal must open the right A management
+## tab. Previously only "DISPATCH" was handled by D; the other four
+## "VACCINE CONFIG [F]" style prompts silently did nothing.
+func _on_hub_terminal_requested(fact: Dictionary) -> void:
+    if frozen or bridge != null or str(world.get("current_mode")) != "hub" \
+            or int(fact.get("schema", -1)) != 1 \
+            or str(fact.get("type", "")) != "hub_terminal_requested":
+        return
+    var terminal_id: String = str(fact.get("terminal_id", ""))
+    var expected: Dictionary = HubLayout.TERMINALS.get(terminal_id, {})
+    if expected.is_empty() or str(expected.get("action", "")) != str(fact.get("action", "")):
+        return
+    var action: String = str(fact.get("action", ""))
+    if action == "start_mission":
+        # D emits mission_start_requested separately; never start twice.
+        return
+    var target_tabs := {
+        "vaccine_status": 0, "vaccine_config": 1,
+        "plugin_database": 2, "skill_loadout": 3
+    }
+    if not target_tabs.has(action):
+        return
+    if hub_panel == null or not hub_panel.visible:
+        _toggle_management()
+    if hub_panel == null or not hub_panel.visible or hub_panel.tabs == null:
+        return
+    var target: int = int(target_tabs[action])
+    if target < hub_panel.tabs.get_tab_count():
+        hub_panel.tabs.current_tab = target
 
 ## A owns UI-to-E writes: only a fresh, verified hub revision can authorize them.
 ## Receipt IDs include expected revision; unknown ACK freezes instead of retrying.
