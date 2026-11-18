@@ -305,29 +305,56 @@ func _validate_commands(commands: Array) -> Dictionary:
             if count < 0 or count > 128:
                 return {"ok": false, "reason": "invalid_projectile_count"}
             requested_projectiles += count
+        if kind == "shield":
+            var amount: float = float(command.get("amount", -1.0))
+            var lifetime: int = int(command.get("duration_ticks",
+                shield_policy.get("duration_ticks", 0)))
+            if is_nan(amount) or is_inf(amount) or amount < 0.0 or lifetime < 0:
+                return {"ok": false, "reason": "invalid_shield_layer"}
+        if kind == "knockback":
+            var impulse: float = float(command.get("force", -1.0))
+            if is_nan(impulse) or is_inf(impulse) or impulse < 0.0:
+                return {"ok": false, "reason": "invalid_knockback_force"}
         if kind == "projectile_transform":
             var shape: String = str(command.get("shape", ""))
             if not shape in ["laser", "boomerang"]:
                 return {"ok": false, "reason": "unsupported_projectile_transform"}
+            if transform_shapes.has(shape):
+                return {"ok": false, "reason": "duplicate_projectile_transform"}
             transform_shapes[shape] = true
             if shape == "boomerang":
-                requested_projectiles += maxi(0, int(command.get("count", 1)) - 1)
+                var count: int = int(command.get("count", 1))
+                if count < 1 or count > 128:
+                    return {"ok": false, "reason": "invalid_boomerang_count"}
+                requested_projectiles += count - 1
     if combat != null and combat.projectiles.size() + requested_projectiles > maxi(
             1, int(combat.settings.get("max_active_projectiles", 4096))):
         return {"ok": false, "reason": "B_projectile_capacity_rejected"}
-    if transform_shapes.size() > 1:
-        # The GDD leaves simultaneous laser+boomerang ordering unresolved.
-        return {"ok": false, "reason": "conflicting_projectile_transforms_need_approval"}
+    # BALANCE_DRAFT composition: laser pierce/width before boomerang return/copies.
     return {"ok": true}
 
 func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
-    var validation: Dictionary = _validate_commands(commands)
+    # A short-range basic projectile can retire before its basic_attack proc is
+    # consumed. Stale transforms must not lock basic fire forever.
+    var eligible: Array = []
+    for command in commands:
+        if str(command.get("type", "")) == "projectile_transform":
+            var attack_id: String = str(_context.get("attack_id", ""))
+            var found: bool = false
+            for bullet in combat.projectiles:
+                if str(bullet.get("id", "")) == attack_id:
+                    found = true
+                    break
+            if not found:
+                continue
+        eligible.append(command)
+    var validation: Dictionary = _validate_commands(eligible)
     if not bool(validation["ok"]):
         return validation
     _expire_shields()
     var next: Dictionary = world.duplicate(true)
     var executable: Array = []
-    for command in commands:
+    for command in eligible:
         if str(command.get("type", "")) == "damage" and str(command.get("shape", "")) == "lightning":
             # C's standalone sink rejects a one-target map. An empty chain is
             # an acknowledged no-op, never a fabricated adjacent victim.
@@ -407,10 +434,24 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
             _enqueue("on_hit_proc", produced)
     for requested in next.get("projectiles", []):
         _spawn_c_projectile(requested, source_event)
-    for changed in next.get("projectile_transforms", []):
-        _transform_basic_projectile(changed, source_event)
+    for shape in ["laser", "boomerang"]:
+        for changed in next.get("projectile_transforms", []):
+            if str(changed.get("shape", "")) == shape:
+                _transform_basic_projectile(changed, source_event)
     for knock in next.get("knockbacks", []):
-        notices.append({"kind": "knockback_requested", "command": knock.duplicate(true)})
+        var applied_knock: Dictionary = combat.apply_radial_knockback(
+            str(knock.get("actor_id", "")), float(knock.get("force", 0.0)),
+            float(combat.settings.get("knockback_radius", 5.0)))
+        if not bool(applied_knock.get("ok", false)):
+            notices.append({"kind": "knockback_rejected",
+                "reason": str(applied_knock.get("reason", "unknown"))})
+            continue
+        for displacement in applied_knock.get("targets", []):
+            notices.append({"kind": "knockback_applied", "source_id": player_id,
+                "plugin_id": str(knock.get("plugin_id", "")),
+                "actor_id": str(displacement["actor_id"]),
+                "from": displacement["from"], "to": displacement["to"],
+                "tick": combat.fixed_tick})
     # C has already applied the damage via B APIs to the copied world.
     # Do NOT feed the same damage through B's event queue a second time.
     world.clear()
@@ -472,9 +513,13 @@ func _transform_basic_projectile(command: Dictionary, parent: Dictionary) -> voi
             p["radius"] = float(p["radius"]) * maxf(1.0,
                 float(command.get("beam_width_mult", 1.0)))
             p["on_hit_damage_efficiency"] = float(command.get("on_hit_efficiency", 1.0))
+            p["laser_active"] = true
             p["shape"] = "laser"
         elif str(command.get("shape", "")) == "boomerang":
             p["shape"] = "boomerang"
+            p["infinite_pierce"] = true
+            p["attack"]["is_area"] = true
+            p["splash_radius"] = maxf(0.0, float(command.get("area_radius", 0.0)))
             p["return_threshold"] = maxi(1, int(p["ttl"]) / 2)
             var total: int = maxi(1, int(command.get("count", 1)))
             var ancestor: Array = parent.get("proc_path", []).duplicate()
@@ -487,15 +532,22 @@ func _transform_basic_projectile(command: Dictionary, parent: Dictionary) -> voi
                     p["velocity"].normalized().rotated(angle), {
                         "damage_type": "physical",
                         "base_damage": float(command.get("base_damage", 0.0)),
-                        "ad_ratio": 0.0, "can_crit": false, "is_on_hit": true
+                        "ad_ratio": 0.0, "can_crit": false, "is_on_hit": true,
+                        "is_area": true
                     }, ["plugin_attack", "derived_attack"], {
                         "proc_path": ancestor,
                         "allowed_proc_triggers": [],
-                        "lifetime_ticks": int(p["ttl"])
+                        "lifetime_ticks": int(p["ttl"]),
+                        "on_hit_damage_efficiency": float(
+                            p.get("on_hit_damage_efficiency", 1.0))
                     })
                 if not new_id.is_empty():
                     var extra: Dictionary = combat.projectiles.back()
                     extra["shape"] = "boomerang"
+                    extra["infinite_pierce"] = true
+                    extra["radius"] = float(p["radius"])
+                    extra["laser_active"] = bool(p.get("laser_active", false))
+                    extra["splash_radius"] = float(p["splash_radius"])
                     extra["return_threshold"] = maxi(1, int(extra["ttl"]) / 2)
                     notices.append({"kind": "projectile_spawn",
                         "id": new_id, "position": extra["position"],
