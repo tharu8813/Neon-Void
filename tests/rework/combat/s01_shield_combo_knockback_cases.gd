@@ -86,6 +86,29 @@ static func run(check: Callable) -> void:
     check.call(_near(shields.shield_value(), 12.0) and
         _near(float(sim.snapshot("P")["stats"]["health"]), 90.0),
         "explicit true bypass consumes HP without consuming barrier")
+    # A barrier protects against each DoT tick independently, and only HP
+    # damage after shield depletion can trigger ordinary damage-taken procs.
+    var dot_sim = Runtime.new(202, {"encounter_id": "shield-dot-order"})
+    dot_sim.register_actor("P", "vaccine", Vector3.ZERO,
+        {"max_health": 100.0, "health": 100.0, "attack_speed": 0.0},
+        {"player_controlled": true})
+    dot_sim.register_actor("E", "virus", Vector3(4,0,0),
+        {"attack_speed": 0.0, "move_speed": 0.0}, {"attack_range": 0.0})
+    var dot_shield = CEffects.new()
+    check.call(dot_shield.attach(dot_sim, "P", "dot-order", 202),
+        "shield versus DoT scenario attaches live C absorber")
+    _add_shield(dot_shield, "dot-shield", 2.0, 5)
+    Statuses.apply(dot_sim.actors["P"]["status_state"],
+        {"id": "burn", "source_id": "E", "duration_ticks": 3,
+         "dot_dps": 60.0, "dot_damage_type": "true"})
+    dot_sim.step_fixed({"P": {"fire": false}})
+    dot_sim.step_fixed({"P": {"fire": false}})
+    check.call(_near(dot_shield.shield_value(), 0.0) and
+        _near(float(dot_sim.snapshot("P")["stats"]["health"]), 100.0),
+        "first two DoT ticks consume exactly two barrier points")
+    dot_sim.step_fixed({"P": {"fire": false}})
+    check.call(_near(float(dot_sim.snapshot("P")["stats"]["health"]), 99.0),
+        "third DoT tick crosses spent barrier exactly once")
     # Composite laser+boomerang must not cause a C abort or a permanent firing lock.
     var combo = Runtime.new(203, {"encounter_id": "laser-return",
         "max_active_projectiles": 16})
@@ -137,6 +160,19 @@ static func run(check: Callable) -> void:
         int(effects._auxiliary["boomerang_outstanding"]) == 0 and
         not bool(effects._auxiliary["basic_attack_blocked"]),
         "all return/timeout receipts release attack lock exactly once")
+    var stale = Runtime.new(204, {"encounter_id": "stale-transform"})
+    stale.register_actor("P", "vaccine", Vector3.ZERO,
+        {"attack_speed": 1.0}, {"player_controlled": true,
+        "projectile_lifetime_ticks": 1, "projectile_speed": 40.0})
+    var stale_c = CEffects.new()
+    stale_c.attach(stale, "P", "stale-transform", 204)
+    stale_c.configure_levels({"nv_l_laser": 1, "nv_l_boomerang": 1}, 204)
+    stale.step_fixed({"P": {"fire": true, "aim_world": Vector3(10,0,0)}})
+    stale_c.after_fixed_step(stale.last_processed_events)
+    check.call(stale.projectiles.is_empty() and stale_c.fault.is_empty() and
+        int(stale_c._auxiliary["boomerang_outstanding"]) == 0 and
+        not bool(stale_c._auxiliary["basic_attack_blocked"]),
+        "expired projectile cannot create immortal boomerang attack lock")
     # CC interactions: boss resistance and tenacity affect displacement;
     # voluntary root stays active, but does not cancel *external* knockback.
     var force_sim = Runtime.new(205, {"encounter_id": "knockback-cc"})
