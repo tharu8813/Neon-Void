@@ -3,6 +3,7 @@ extends SceneTree
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
 const Planner = preload("res://scripts/rework/world/mission_planner.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
+const AccessAudit = preload("res://scripts/rework/world/hardware_access_audit.gd")
 const Extraction = preload("res://scripts/rework/world/extraction_state.gd")
 const Preview = preload("res://scenes/rework/world/procedural_preview.tscn")
 var failures: int = 0
@@ -37,8 +38,15 @@ func _run() -> void:
             if region["environment"]["id"] == "mutation":
                 check(int(region["environment"]["mutation_stage"]) >= 1 and int(region["environment"]["mutation_stage"]) <= 5, "mutation stage range")
             if seed > 19:
+                # CI runs a lightweight 100-seed accessibility audit for every
+                # hardware even when the heavier deep-replay fixtures are skipped.
+                var audited: Dictionary = Maps.generate(id, region["map_seed"], region["environment"])
+                check(bool(AccessAudit.inspect(audited).get("ok", false)),
+                    "seed %d D physical F access audit %s" % [seed, id])
                 continue
             var map_a: Dictionary = Maps.generate(id, region["map_seed"], region["environment"])
+            check(bool(AccessAudit.inspect(map_a).get("ok", false)),
+                "seed %d full-route access audit %s" % [seed, id])
             check(not map_a.is_empty(), "map generation succeeds " + id)
             if map_a.is_empty():
                 continue
