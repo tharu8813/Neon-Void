@@ -12,6 +12,97 @@ static func _blocked(reason: String, revision: int = -1) -> Dictionary:
         "safe_to_resume": false, "requires_user_action": true,
         "reconciliation_complete": false}
 
+
+## User-facing metadata only. Never expose recovery bytes or lock owner tokens.
+## A must not infer safe continuation merely from "primary valid": maps and
+## card RNG are NOT complete B/D combat state.
+static func diagnose_slot(slot_path: String) -> Dictionary:
+    var result: Dictionary = {
+        "ok": false, "reason": "unverified", "revision": -1,
+        "state": "unreadable", "can_issue_command": false,
+        "safe_to_resume": false, "requires_user_action": true,
+        "automatic_repair_permitted": false, "recovery_policy_approved": false,
+        "lock_present": false, "lock_owner_status": "absent",
+        "files": {}, "fence_status": "unverified",
+        "offline_recovery_hint": "inspect_manually"
+    }
+    if not Store._valid_slot(slot_path):
+        result.reason = "invalid_slot_path"
+        return result
+    var files: Dictionary = {
+        "primary": Store.STATE_FILE,
+        "recovery": Store.RECOVERY_FILE,
+        "backup": Store.BACKUP_FILE,
+        "intent": Store.INTENT_FILE
+    }
+    for kind in files:
+        var bytes_result: Dictionary = Store._read_bytes(slot_path.path_join(files[kind]))
+        if not bytes_result.get("ok", false):
+            result.files[kind] = {
+                "status": str(bytes_result.get("reason", "read_failed")),
+                "revision": -1
+            }
+            continue
+        var decoded: Dictionary = Store._decode(bytes_result.bytes)
+        if not decoded.get("ok", false):
+            result.files[kind] = {
+                "status": str(decoded.get("reason", "invalid_envelope")),
+                "revision": -1
+            }
+            continue
+        if str(decoded.state.slot_id) != slot_path.get_file().trim_prefix("rework-slot-"):
+            result.files[kind] = {"status": "slot_mismatch", "revision": -1}
+            continue
+        result.files[kind] = {"status": "valid", "revision": int(decoded.revision)}
+    var fence: Dictionary = Store._read_fence(slot_path)
+    result.fence_status = "valid" if fence.get("ok", false)         else str(fence.get("reason", "fence_unreadable"))
+    var lock_path: String = slot_path + ".write-lock"
+    result.lock_present = DirAccess.dir_exists_absolute(lock_path)
+    if result.lock_present:
+        result.lock_owner_status = "missing_or_unreadable"
+        var lock_bytes: Dictionary = Store._read_bytes(lock_path.path_join("owner.json"))
+        if lock_bytes.get("ok", false):
+            var parsed := JSON.new()
+            var owner_text: String = lock_bytes.bytes.get_string_from_utf8()
+            if owner_text.to_utf8_buffer() == lock_bytes.bytes                     and parsed.parse(owner_text) == OK                     and typeof(parsed.data) == TYPE_DICTIONARY:
+                var owner: Dictionary = parsed.data
+                if Model.natural(owner.get("pid"), 2147483647)                         and Model.natural(owner.get("created_unix"))                         and typeof(owner.get("token")) == TYPE_STRING                         and str(owner.token).length() == 32:
+                    result.lock_owner_status = "metadata_valid_process_not_verified"
+    var loaded: Dictionary = Store.read(slot_path)
+    if not loaded.get("ok", false):
+        result.reason = str(loaded.get("reason", "save_unreadable"))
+        if result.lock_present:
+            result.offline_recovery_hint = "inspect_lock_and_save_offline"
+        elif result.files.intent.status != "not_found":
+            result.offline_recovery_hint = "reconcile_intent_offline_with_consent"
+        elif result.files.recovery.status == "valid":
+            result.offline_recovery_hint = "inspect_recovery_copy_offline_with_consent"
+        return result
+    result.ok = true
+    result.revision = int(loaded.revision)
+    result.reason = "slot_verified"
+    result.offline_recovery_hint = "none"
+    var mission: Variant = loaded.state.vaccine.get("mission")         if loaded.state.vaccine != null else null
+    if loaded.state.vaccine == null:
+        result.state = "vaccine_selection"
+        result.reason = "vaccine_selection_required"
+    elif mission != null:
+        result.state = "active_mission_blocked"
+        result.reason = str(inspect_slot(slot_path).get("reason",
+            "resume_or_cancel_policy_unapproved"))
+    else:
+        result.state = "hub"
+    if result.lock_present:
+        result.reason = "lock_present_requires_offline_verification"
+        result.offline_recovery_hint = "inspect_lock_offline"
+    elif result.files.intent.status != "not_found":
+        result.reason = "committed_intent_cleanup_pending"
+        result.offline_recovery_hint = "inspect_intent_offline"
+    elif result.state == "hub":
+        result.can_issue_command = true
+        result.requires_user_action = false
+    return result
+
 static func inspect_slot(slot_path: String) -> Dictionary:
     var loaded: Dictionary = Store.read(slot_path)
     if not loaded.get("ok", false):
