@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/rework/integration/rework_pilot.gd" id="1_pilot"]
+[ext_resource type="PackedScene" path="res://scenes/rework/world/cpu_vertical_slice.tscn" id="2_world"]
+
+[node name="ReworkPersistentPilot" type="Node3D"]
+script = ExtResource("1_pilot")
+slot_id = "integration-pilot"
+initial_vaccine_id = "pilot-vaccine"
+
+[node name="World" parent="." instance=ExtResource("2_world")]
+demo_mode = false

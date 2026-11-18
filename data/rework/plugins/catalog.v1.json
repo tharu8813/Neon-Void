@@ -1,0 +1,1214 @@
+{
+  "schema_version": 1,
+  "status": "GDD concepts; all max_level and most level_effects are proposals, not approved balance",
+  "rarities": [
+    "common",
+    "rare",
+    "legendary",
+    "mythic"
+  ],
+  "entries": [
+    {
+      "plugin_id": "nv_c_random_stats",
+      "name_ko": "무작위 능력치 3종 증가",
+      "description_ko": "무작위 능력치 3개 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "무작위 능력치 3개 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "능력치별 증가량 강화",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "on_acquire",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "on_acquire",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_move_speed",
+      "name_ko": "고속 이동",
+      "description_ko": "이동속도 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "이동속도 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "이동속도 보너스 강화",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "passive",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "passive",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_bullet_size",
+      "name_ko": "확장 탄환",
+      "description_ko": "탄환 크기 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "탄환 크기 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "탄환 크기 추가 증가",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "passive",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "passive",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_percent_penetration",
+      "name_ko": "관통 알고리즘",
+      "description_ko": "물리/마법 방어 관통력 비율 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "물리/마법 방어 관통력 비율 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "관통 비율 추가 증가",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "passive",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "passive",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_periodic_shield",
+      "name_ko": "주기적 방어막",
+      "description_ko": "30초마다 방어막 생성",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "30초마다 방어막 생성",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "방어막 흡수량 증가",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "periodic",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": 30,
+      "cooldown_scope": "per_actor",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "periodic",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_rapid_projectiles",
+      "name_ko": "고속 사격",
+      "description_ko": "공격속도와 탄환속도 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "공격속도와 탄환속도 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "공격속도/탄환속도 추가 증가",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "passive",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "passive",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_skill_shield",
+      "name_ko": "스킬 보호막",
+      "description_ko": "스킬 사용 시 방어막 생성",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "스킬 사용 시 방어막 생성",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "보호막 흡수량 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "skill_cast",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "skill_cast",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_mobility_sprint",
+      "name_ko": "기동성 가속",
+      "description_ko": "돌진·도약·점멸·순간이동 스킬 사용 또는 투명 해제 후 2초 이동속도 증가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "돌진·도약·점멸·순간이동 스킬 사용 또는 투명 해제 후 2초 이동속도 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "이동속도 효과 강화",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "mobility_or_reveal",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "mobility_or_reveal",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_low_hp_emergency",
+      "name_ko": "긴급 복구",
+      "description_ko": "낮은 체력에서 최대 체력의 50%에 관한 회복 또는 방어 효과 및 이동속도, 60초 쿨타임; 50% 적용 대상 미확정",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "낮은 체력에서 최대 체력의 50%에 관한 회복 또는 방어 효과 및 이동속도, 60초 쿨타임; 50% 적용 대상 미확정",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "회복 또는 방어 효과 보완 (원안 의미 확인 필요)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "health_threshold",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": 60,
+      "cooldown_scope": "per_actor",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "health_threshold",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_chain_lightning",
+      "name_ko": "연쇄 번개",
+      "description_ko": "탄환 적중 시 주변 적에게 연쇄 번개, 대상별 내부 쿨타임 3초",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 5,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "인근 1명에게 마법 피해 12+AP×0.20, 대상별 3초 (GDD v0.1)",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "번개 피해량 25% 증가 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "연쇄 대상 +1명 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 4,
+          "summary_ko": "연쇄 거리 +30% (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 5,
+          "summary_ko": "치명타 시 연쇄 대상 +1명 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "projectile_hit",
+        "source_tags": [
+          "basic_attack"
+        ]
+      },
+      "internal_cooldown_seconds": 3,
+      "cooldown_scope": "per_target",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [
+          "proc_damage"
+        ],
+        "can_trigger_on_hit_effects": true,
+        "policy_status": "proposal_enabled_from_GDD_chain_or_hit_efficiency",
+        "allowed_proc_triggers": [
+          "on_hit"
+        ]
+      },
+      "effect_kind": "projectile_hit",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_breakable_sprint",
+      "name_ko": "불안정 가속",
+      "description_ko": "이동속도 100% 증가, 피해를 입으면 비활성화; 재활성 조건 미확정",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "이동속도 100% 증가, 피해를 입으면 비활성화; 재활성 조건 미확정",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "재활성 조건 검토 (미확정)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "passive_and_damage_taken",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "passive_and_damage_taken",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_armor_shred",
+      "name_ko": "방어력 해제",
+      "description_ko": "적에게 피해를 입히면 4초 동안 물리·마법 방어력 감소 중첩",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "적에게 피해를 입히면 4초 동안 물리·마법 방어력 감소 중첩",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "방어력 감소 중첩 효과 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "damage_dealt",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "damage_dealt",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_proc_volley",
+      "name_ko": "적중 폭주",
+      "description_ko": "적중 효과 4회 발생 시 탄환 4발 추가 연사, 추가탄 적중 효과 피해 효율 70%",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "적중 효과 4회 발생 시 탄환 4발 추가 연사, 추가탄 적중 효과 피해 효율 70%",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "추가 연사 사이클 개선",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "on_hit_proc_count",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [
+          "extra_basic_attack"
+        ],
+        "can_trigger_on_hit_effects": true,
+        "policy_status": "proposal_enabled_from_GDD_chain_or_hit_efficiency",
+        "allowed_proc_triggers": [
+          "on_hit"
+        ],
+        "on_hit_damage_efficiency": 0.7
+      },
+      "effect_kind": "on_hit_proc_count",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_skill_followup",
+      "name_ko": "스킬 후속탄",
+      "description_ko": "스킬 피해 시 대상에게 자동 발사 탄환 1개 추가",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "스킬 피해 시 대상에게 자동 발사 탄환 1개 추가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "후속탄 피해량 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "skill_damage",
+        "source_tags": [
+          "skill_damage"
+        ]
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "skill_damage",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_random_rare",
+      "name_ko": "레어 데이터 추출",
+      "description_ko": "무작위 레어 플러그인 획득",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "무작위 레어 플러그인 획득",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "추가 레어 획득 정책 검토 (미확정)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "on_acquire",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "on_acquire",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_dash_explosion",
+      "name_ko": "대시 폭발",
+      "description_ko": "대시 경로에 폭발 발생",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "대시 경로에 폭발 발생",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "폭발 범위 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "dash",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "dash",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_c_hit_explosion",
+      "name_ko": "적중 폭발",
+      "description_ko": "탄환 적중 시 대상 폭발, 대상별 내부 쿨타임 3초",
+      "rarity": "common",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "탄환 적중 시 대상 폭발, 대상별 내부 쿨타임 3초",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "폭발 피해량 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "projectile_hit",
+        "source_tags": [
+          "basic_attack"
+        ]
+      },
+      "internal_cooldown_seconds": 3,
+      "cooldown_scope": "per_target",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [
+          "proc_damage"
+        ],
+        "can_trigger_on_hit_effects": true,
+        "policy_status": "proposal_enabled_from_GDD_chain_or_hit_efficiency",
+        "allowed_proc_triggers": [
+          "on_hit"
+        ]
+      },
+      "effect_kind": "projectile_hit",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_execute",
+      "name_ko": "취약점 공격",
+      "description_ko": "체력 50% 미만 적에게 입히는 피해 15% 증가",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "체력 50% 미만 적에게 입히는 피해 15% 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "조건부 피해 증가량 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "damage_dealt",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "damage_dealt",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_kill_power",
+      "name_ko": "처치 적응",
+      "description_ko": "적 처치 시 공격력 소량 증가; 누적 처리 미확정",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "적 처치 시 공격력 소량 증가; 누적 처리 미확정",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "처치 보너스 효율 강화",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "kill",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "kill",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_low_hp_knockback",
+      "name_ko": "긴급 반발",
+      "description_ko": "플레이어 체력 30% 이하일 때 주변 적 밀쳐냄",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "플레이어 체력 30% 이하일 때 주변 적 밀쳐냄",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "밀쳐내기 범위 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "health_threshold",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "health_threshold",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_disassembly",
+      "name_ko": "해체 프로토콜",
+      "description_ko": "적중 효과마다 대상에 무제한 중첩 해체 DoT, 지속 마법 피해",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 4,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "중첩당 초당 마법 피해 2, 유지 4초 (GDD v0.1)",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "중첩 유지 4→6초 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "중첩당 초당 피해 3 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 4,
+          "summary_ko": "대상 처치 시 잔여 중첩 기반 폭발 (GDD v0.1)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "on_hit_proc",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "on_hit_proc",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_dash_shield",
+      "name_ko": "돌진 방어막",
+      "description_ko": "돌진 또는 점멸 이후 방어막 생성",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 2,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "돌진 또는 점멸 이후 방어막 생성",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "보호막 흡수량 강화",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "dash_or_blink",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "dash_or_blink",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_extra_bullet",
+      "name_ko": "이중 발사",
+      "description_ko": "발사 탄환 1개 추가, 추가탄 적중 효과 피해 효율 80%",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "발사 탄환 1개 추가, 추가탄 적중 효과 피해 효율 80%",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "추가탄 피해량 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "basic_attack",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [
+          "extra_basic_attack"
+        ],
+        "can_trigger_on_hit_effects": true,
+        "policy_status": "proposal_enabled_from_GDD_chain_or_hit_efficiency",
+        "allowed_proc_triggers": [
+          "on_hit"
+        ],
+        "on_hit_damage_efficiency": 0.8
+      },
+      "effect_kind": "basic_attack",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_r_homing",
+      "name_ko": "유도탄",
+      "description_ko": "적 추적 유도탄 발사",
+      "rarity": "rare",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "적 추적 유도탄 발사",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "유도 성능 강화",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "basic_attack",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": true,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "basic_attack",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_l_laser",
+      "name_ko": "레이저 코어",
+      "description_ko": "레이저 탄환 전환, 적중 효과 피해 효율 70%",
+      "rarity": "legendary",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "기본 탄환을 관통 레이저로, 적중 효과 피해 효율 70% (GDD v0.1)",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "레이저 폭 +20% (GDD v0.1)",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "적중 효과 피해 효율 85% (GDD v0.1)",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "basic_attack",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": false,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": true,
+        "policy_status": "proposal_enabled_from_GDD_chain_or_hit_efficiency",
+        "allowed_proc_triggers": [
+          "on_hit"
+        ],
+        "on_hit_damage_efficiency": 0.7
+      },
+      "effect_kind": "basic_attack",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_l_boomerang",
+      "name_ko": "부메랑 코어",
+      "description_ko": "부메랑 범위 피해·귀환, 귀환 전 공격 불가, 레벨업으로 부메랑 수 증가",
+      "rarity": "legendary",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "부메랑 범위 피해·귀환, 귀환 전 공격 불가, 레벨업으로 부메랑 수 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "동시 부메랑 수 증가",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "부메랑 개수 추가 증가",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "basic_attack",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": false,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "basic_attack",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    },
+    {
+      "plugin_id": "nv_l_fever",
+      "name_ko": "피버타임",
+      "description_ko": "적중 효과 또는 처치로 게이지 충전, 충전 시 일정 시간 전 능력치 증가",
+      "rarity": "legendary",
+      "acquisition_condition": "mission_reward",
+      "max_level": 3,
+      "max_level_status": "proposal_v0.1",
+      "level_effects": [
+        {
+          "level": 1,
+          "summary_ko": "적중 효과 또는 처치로 게이지 충전, 충전 시 일정 시간 전 능력치 증가",
+          "status": "concept_confirmed_numbers_as_labeled"
+        },
+        {
+          "level": 2,
+          "summary_ko": "피버 지속시간 증가",
+          "status": "proposal_v0.1"
+        },
+        {
+          "level": 3,
+          "summary_ko": "효과 범위·위력의 추가 강화 제안",
+          "status": "proposal_v0.1"
+        }
+      ],
+      "trigger": {
+        "event": "on_hit_proc_or_kill",
+        "source_tags": []
+      },
+      "internal_cooldown_seconds": null,
+      "cooldown_scope": "none",
+      "learnable": false,
+      "proc_permissions": {
+        "emit_tags": [],
+        "can_trigger_on_hit_effects": false,
+        "policy_status": "proposal_restricted_until_review",
+        "allowed_proc_triggers": []
+      },
+      "effect_kind": "on_hit_proc_or_kill",
+      "visual_audio": {
+        "effect_id": "",
+        "sound_id": ""
+      },
+      "version": 1
+    }
+  ]
+}
