@@ -54,6 +54,9 @@ func _run() -> void:
                 "seed=%d %s %s" % [seed, id, str(result.get("issues", []))])
             if not bool(result.get("ok", false)):
                 continue
+            if id == "GPU":
+                check(not Audit.gpu_dodge_orientations(generated).is_empty(),
+                    "GPU only schedules physically dodgeable beam directions")
             if seed < 3:
                 check(generated == Maps.generate(id, int(plan["map_seed"]), plan["environment"]),
                     "old v1 map replays exactly: " + id)

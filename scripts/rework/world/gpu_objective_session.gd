@@ -11,6 +11,7 @@ const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
 const EnvironmentRules = preload("res://scripts/rework/world/environment_rules.gd")
+const AccessAudit = preload("res://scripts/rework/world/hardware_access_audit.gd")
 var run_id: String = ""
 var world_state: Variant
 var region_plan: Dictionary = {}
@@ -27,6 +28,7 @@ var physics_tick: int = 0
 var action_number: int = 0
 var beam_tick: int = 0
 var beam: MeshInstance3D
+var beam_orientations: Array[bool] = []
 
 func configure(new_run_id: String, planned: Dictionary, new_state: RefCounted,
         new_geometry: Node3D) -> bool:
@@ -42,6 +44,9 @@ func configure(new_run_id: String, planned: Dictionary, new_state: RefCounted,
     objectives.objective_completed.connect(_on_objective_completed)
     objectives.progress_changed.connect(_on_progress_changed)
     encounter_rng.seed = int(region_plan["encounter_seed"])
+    beam_orientations = AccessAudit.gpu_dodge_orientations(geometry.map_plan)
+    if beam_orientations.is_empty():
+        return false
     _build_beam()
     return true
 
@@ -86,7 +91,9 @@ func tick_player(player_world: Vector3) -> void:
     # 45/90 fixed 60-Hz frames warn of the coming strike. F on the coolant
     # device starts the sequence; walking out of the beam earns each dodge.
     var trial: int = int(objectives.progress["stabilize_coolant"]["current"])
-    var horizontal: bool = trial % 2 == 0
+    # A narrow corridor may not admit a legal escape for both axes. Rotate
+    # ONLY through physically dodgeable beam orientations, never a softlock.
+    var horizontal: bool = beam_orientations[trial % beam_orientations.size()]
     beam.rotation.y = 0.0 if horizontal else PI / 2.0
     beam.visible = beam_tick >= 45
     if beam_tick < 90:

@@ -65,9 +65,42 @@ static func inspect(plan: Dictionary) -> Dictionary:
         var world: Vector3 = item.get("world", Vector3(INF, INF, INF))
         if not world.is_finite() or world.distance_to(Maps.cell_to_world(cell)) > 0.001:
             issues.append("objective_marker_not_on_walkable_cell:" + goal_id)
+    if id == "GPU" and gpu_dodge_orientations(plan).is_empty():
+        issues.append("gpu_beam_has_no_walkable_dodge")
     return {
         "ok": issues.is_empty(), "issues": issues,
         "region_id": id, "reachable_floor_cells": distances.size(),
         "objective_count": objectives.size(),
         "generator_id": Maps.GENERATOR_ID
     }
+
+## Legal beam orientations must allow at least one actual floor-centre dodge
+## inside the GPU coolant arena. Never rotate a beam into a seeded softlock.
+static func gpu_dodge_orientations(plan: Dictionary) -> Array[bool]:
+    var allowed: Array[bool] = []
+    var coolant: Vector3 = Vector3(INF, INF, INF)
+    for goal in plan.get("objectives", []):
+        if goal is Dictionary and str(goal.get("id", "")) == "stabilize_coolant":
+            coolant = goal.get("world", Vector3(INF, INF, INF))
+            break
+    if not coolant.is_finite():
+        return allowed
+    for horizontal in [true, false]:
+        var found: bool = false
+        for y in range(1, int(plan.get("height", 0)) - 1):
+            for x in range(1, int(plan.get("width", 0)) - 1):
+                if not Maps.is_floor(plan, Vector2i(x, y)):
+                    continue
+                var at: Vector3 = Maps.cell_to_world(Vector2i(x, y))
+                var offset := Vector2(at.x - coolant.x, at.z - coolant.z)
+                # Exactly matches the live beam width + actor capsule and
+                # arena radius in gpu_objective_session.gd.
+                if offset.length() <= 3.8 and absf(
+                        offset.y if horizontal else offset.x) > 0.65:
+                    found = true
+                    break
+            if found:
+                break
+        if found:
+            allowed.append(horizontal)
+    return allowed
