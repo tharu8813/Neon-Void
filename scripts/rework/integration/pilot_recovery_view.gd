@@ -16,9 +16,15 @@ static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dict
     if slot_path.is_empty():
         report["text"] = "저장 슬롯 경로가 없어. 사용자 데이터를 변경하지 않았어."
         return report
+    # E S01 metadata-only report. All statuses are advisory, never a grant,
+    # auto-restore or proof that an interrupted active mission can resume.
+    var diagnostic: Dictionary = Gateway.diagnose_slot(slot_path)
     var inspected: Dictionary = Gateway.inspect_slot(slot_path)
     if not bool(inspected.get("ok", false)):
-        report["text"] = "저장 파일 검증 실패: " + str(inspected.get("reason", "unknown")) + "\n원본을 변경하지 않았어. 수동 점검이 필요해."
+        report["text"] = "저장 파일 검증 실패: " + str(inspected.get("reason", "unknown")) \
+            + "\\nE 진단: " + str(diagnostic.get("reason", "unknown")) \
+            + "\\n오프라인 점검: " + str(diagnostic.get("offline_recovery_hint", "inspect_manually")) \
+            + "\\n원본을 변경하지 않았어. 수동 점검이 필요해."
         return report
 
     report["readable"] = true
@@ -39,6 +45,12 @@ static func inspect(slot_path: String, pending_command: Dictionary = {}) -> Dict
         lines.append("카드 체크포인트: " + ("있음" if bool(inspected.get("checkpoint_present", false)) else "없음"))
         lines.append("재추첨 잔여: %d" % int(reward.get("rerolls_left", 0)))
     lines.append("안전 판정: " + str(inspected.get("reason", "unknown")))
+    var files: Dictionary = diagnostic.get("files", {})
+    lines.append("파일 상태: 원본 " + str(files.get("primary", {}).get("status", "unverified")) \
+        + " · 백업 " + str(files.get("backup", {}).get("status", "unverified")) \
+        + " · 복구본 " + str(files.get("recovery", {}).get("status", "unverified")))
+    lines.append("쓰기 잠금: " + str(diagnostic.get("lock_owner_status", "unverified")) \
+        + " · 오프라인 안내: " + str(diagnostic.get("offline_recovery_hint", "inspect_manually")))
     lines.append("자동 재개·포기·재지급·슬롯 초기화는 허용하지 않아.")
 
     if not pending_command.is_empty():
