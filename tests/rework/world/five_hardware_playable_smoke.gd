@@ -4,6 +4,7 @@ extends SceneTree
 const Scene = preload("res://scenes/rework/world/cpu_vertical_slice.tscn")
 const Board = preload("res://scripts/rework/world/motherboard_layout.gd")
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
+const HazardContract = preload("res://scripts/rework/world/environment_hit_contract.gd")
 var failures: int = 0
 
 func check(ok: bool, what: String) -> void:
@@ -43,6 +44,10 @@ func _complete_gpu(world: Variant) -> void:
             "objective_id", "") == "disable_emitter", "GPU switch")
     check(_activate(world, world.hardware.objective_world("stabilize_coolant")).get(
         "objective_id", "") == "stabilize_coolant", "GPU coolant")
+    # Collision at centre must emit one real D contact, but preview no HP.
+    var coolant: Vector3 = world.hardware.objective_world("stabilize_coolant")
+    for tick in range(90):
+        world.region_session.tick_player(coolant + Vector3.UP * 0.5)
     var anchor: Vector3 = world.hardware.objective_world("stabilize_coolant")
     var x: Vector3 = _dodge_tile(world.hardware.map_plan, anchor, true)
     var z: Vector3 = _dodge_tile(world.hardware.map_plan, anchor, false)
@@ -59,6 +64,10 @@ func _complete_ram(world: Variant) -> void:
     for i in range(4):
         check(_activate(world, world.hardware.objective_world("purge_corruption")).get(
             "objective_id", "") == "purge_corruption", "RAM purge")
+    var false_slot: int = (world.region_session.real_slot + 1) % 3
+    var decoy: Vector3 = world.region_session.pads[false_slot]["position"]
+    check(not bool(_activate(world, decoy).get("authentic", true)),
+        "RAM decoy requires deliberate F press")
     for i in range(2):
         var correct: int = world.region_session.real_slot
         var pad: Vector3 = world.region_session.pads[correct]["position"]
@@ -71,9 +80,15 @@ func _complete_storage(world: Variant, id: String) -> void:
     for target in world.region_session.targets:
         check(_activate(world, target["position"]).get("type", "") == "storage_node_activated",
             id + " physical storage objective")
+        if id == "HDD" and int(target["index"]) == 0 and str(target["id"]) == "repair_platter":
+            var next_at: Vector3 = world.region_session.targets[1]["position"]
+            for tick in range(210):
+                world.hazard_pulses.tick_player(next_at + Vector3.UP * 0.5)
     if id == "SSD":
         var seal: Vector3 = world.hardware.objective_world("seal_transfer")
         check(_activate(world, seal).get("objective_id", "") == "seal_transfer", "SSD seal")
+        for pulse_tick in range(150):
+            world.hazard_pulses.tick_player(seal + Vector3.UP * 0.5)
         for frame in range(1800):
             world.region_session.tick_player(seal + Vector3.UP * 0.5)
     var count: int = world.region_session.known_hostiles.size()
@@ -84,6 +99,8 @@ func _complete_storage(world: Variant, id: String) -> void:
 func _complete_cpu(world: Variant) -> void:
     var core: Vector3 = world.hardware.objective_world("secure_core")
     check(_activate(world, core).get("objective_id", "") == "secure_core", "CPU core")
+    for pulse_tick in range(180):
+        world.hazard_pulses.tick_player(core + Vector3.UP * 0.5)
     for frame in range(2400):
         world.cpu_session.tick_player(core + Vector3.UP * 0.5)
     check(_activate(world, world.hardware.objective_world("stop_intruders")).get(
@@ -102,7 +119,10 @@ func _run() -> void:
     var sequence: Array[String] = ["GPU", "RAM", "HDD", "SSD", "CPU"]
     var actual: Array[String] = []
     var facts: Array = []
+    var contacts: Array[Dictionary] = []
     game.mission_returned.connect(func(fact: Dictionary) -> void: facts.append(fact))
+    game.environment_contact_requested.connect(func(fact: Dictionary) -> void:
+        contacts.append(fact.duplicate(true)))
     for id in sequence:
         if game.current_mode != "motherboard":
             check(false, id + " not on motherboard")
@@ -116,6 +136,7 @@ func _run() -> void:
         actual.append(id)
         check(Maps.all_floor_reachable(game.hardware.map_plan), "reachable " + id + " map")
         check(not game.world_state.is_extraction_open(id), "exit locked before boss " + id)
+        var contacts_before: int = contacts.size()
         match id:
             "GPU":
                 _complete_gpu(game)
@@ -125,6 +146,21 @@ func _run() -> void:
                 _complete_storage(game, id)
             "CPU":
                 _complete_cpu(game)
+        check(contacts.size() > contacts_before,
+            id + ": physical trap emitted a real D contact")
+        for contact_index in range(contacts_before, contacts.size()):
+            var fact: Dictionary = contacts[contact_index]
+            check(str(fact.get("region_id", "")) == id,
+                id + ": contacts scoped to current hardware only")
+            var b_spec: Dictionary = HazardContract.to_b_spec(
+                fact, game.current_run_id, id)
+            check(not b_spec.is_empty() and b_spec.get("target_id", "") == "VACCINE"
+                and float(b_spec.get("base_damage", 0.0)) > 0.0
+                and b_spec.get("repeat_ticks", -1) == 0,
+                id + ": B API receives valid stable environmental descriptor")
+            check(HazardContract.to_b_spec(
+                fact, "wrong-stale-run", id).is_empty(),
+                id + ": stale run hazards rejected before B")
         check(game.world_state.is_extraction_open(id), "boss-cleared region " + id)
         check(game.hardware.extraction_open, "physical extraction marker for " + id)
         if id != "CPU":
