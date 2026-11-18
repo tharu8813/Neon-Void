@@ -36,6 +36,8 @@ var settings: Dictionary = {
 }
 var counters: Dictionary = {}
 var plugin_hit_counts: Dictionary = {}
+## Encounter-local environmental contact ledger. Never persisted; E owns world facts.
+var environmental_hit_ticks: Dictionary = {}
 ## Optional injected world/C boundaries; absent in standalone B regression.
 var stat_provider: Callable = Callable()
 var attack_provider: Callable = Callable()
@@ -72,6 +74,7 @@ func begin(seed_value: int, config: Dictionary = {}) -> void:
     rng.seed = seed_value
     status_rng.seed = seed_value ^ 0x4354524c
     plugin_hit_counts.clear()
+    environmental_hit_ticks.clear()
     counters = {"shots": 0, "collisions": 0, "damage_events": 0,
         "killed": 0, "projectiles_reused": 0, "broadphase_candidates": 0,
         "projectiles_blocked": 0, "fire_backpressured": 0}
@@ -112,6 +115,59 @@ func register_actor(actor_id: String, team: String, position: Vector3,
     skills.configure(stats)
     actor["skills"] = skills
     return true
+
+func queue_environment_hit(spec: Dictionary) -> Dictionary:
+    ## B-authoritative D/A contract (BALANCE_DRAFT damage values).
+    ## Required: source_id, region_id, event_id, target_id, base_damage,
+    ## damage_type physical|magic|true, repeat_ticks >= 0.
+    ## event_id is stable for one hazard contact; repeat_ticks=0 means one shot.
+    ## No E/world-state write, actor ownership, vamp or attacker-side procs.
+    var source_id: String = str(spec.get("source_id", ""))
+    var region_id: String = str(spec.get("region_id", ""))
+    var event_id: String = str(spec.get("event_id", ""))
+    var target_id: String = str(spec.get("target_id", ""))
+    var damage_type: String = str(spec.get("damage_type", ""))
+    var repeat_ticks: int = int(spec.get("repeat_ticks", -1))
+    var raw_damage: float = float(spec.get("base_damage", -1.0))
+    if source_id.is_empty() or region_id.is_empty() or event_id.is_empty():
+        return {"ok": false, "reason": "invalid_environment_identity"}
+    if not actors.has(target_id) or not bool(actors[target_id]["alive"]):
+        return {"ok": false, "reason": "invalid_environment_target"}
+    if not damage_type in ["physical", "magic", "true"]:
+        return {"ok": false, "reason": "invalid_damage_type"}
+    if repeat_ticks < 0 or is_nan(raw_damage) or is_inf(raw_damage) or raw_damage <= 0.0:
+        return {"ok": false, "reason": "invalid_environment_damage"}
+    var ledger_key: String = "%s|%s|%s|%s" % [
+        region_id, source_id, event_id, target_id]
+    if environmental_hit_ticks.has(ledger_key):
+        var last_tick: int = int(environmental_hit_ticks[ledger_key])
+        if repeat_ticks == 0 or fixed_tick - last_tick < repeat_ticks:
+            return {"ok": false, "reason": "environment_contact_cooldown"}
+    var attack: Dictionary = {
+        "damage_type": damage_type, "base_damage": raw_damage,
+        "ad_ratio": 0.0, "ap_ratio": 0.0, "can_crit": false,
+        "is_dot": bool(spec.get("is_dot", false)),
+        "is_area": bool(spec.get("is_area", false)),
+        "is_on_hit": false
+    }
+    var statuses: Variant = spec.get("status_effects", [])
+    if not statuses is Array:
+        return {"ok": false, "reason": "invalid_environment_statuses"}
+    attack["status_effects"] = (statuses as Array).duplicate(true)
+    var queued: Dictionary = bus.submit_root({
+        "kind": "damage", "trigger_kind": "environment",
+        "actor_id": "environment:" + source_id, "target_id": target_id,
+        "environment_source": true, "region_id": region_id,
+        "external_event_id": event_id, "attack_id": "environment:" + source_id,
+        "attack": attack, "source_tags": ["environment"],
+        "allowed_proc_triggers": []
+    })
+    if queued.is_empty():
+        return {"ok": false, "reason": "environment_queue_full"}
+    environmental_hit_ticks[ledger_key] = fixed_tick
+    return {"ok": true, "event_id": str(queued["event_id"]),
+        "accepted_tick": fixed_tick, "target_id": target_id}
+
 
 func remove_actor(actor_id: String) -> void:
     actors.erase(actor_id)
@@ -595,12 +651,14 @@ func _resolve_event(event: Dictionary) -> Array:
             status["source_id"] = actor_id
             Statuses.apply(actors[target_id]["status_state"], status)
         return []
-    if kind != "damage" or not actors.has(actor_id) or not actors.has(target_id):
+    var is_environment: bool = bool(event.get("environment_source", false))
+    if kind != "damage" or not actors.has(target_id) or (
+            not is_environment and not actors.has(actor_id)):
         return []
-    var attacker: Dictionary = actors[actor_id]
+    var attacker: Dictionary = {} if is_environment else actors[actor_id]
     var defender: Dictionary = actors[target_id]
     if not bool(defender["alive"]) or (
-            attacker["team"] == defender["team"] and
+            not is_environment and attacker["team"] == defender["team"] and
             not bool(event.get("attack", {}).get("is_dot", false))):
         return []
     var attack: Dictionary = event.get("attack", {})
@@ -613,12 +671,15 @@ func _resolve_event(event: Dictionary) -> Array:
         attack = command.get("attack", {})
         if not bool(defender["alive"]) or attacker["team"] == defender["team"]:
             return []
-    if attack_provider.is_valid():
+    if not is_environment and attack_provider.is_valid():
         var transformed: Variant = attack_provider.call(
             actor_id, target_id, attack.duplicate(true), event.duplicate(true))
         if transformed is Dictionary:
             attack = transformed
-    var source: Dictionary = _effective_stats(attacker)
+    var source: Dictionary = Stats.make({
+        "attack_damage": 0.0, "ability_power": 0.0,
+        "crit_chance": 0.0, "omni_vamp": 0.0, "on_hit_vamp": 0.0
+    }) if is_environment else _effective_stats(attacker)
     var target: Dictionary = _effective_stats(defender)
     var crit: bool = bool(attack.get("can_crit", false)) and Damage.roll_critical(
         rng, float(source.get("crit_chance", 0.0)))
@@ -650,15 +711,18 @@ func _resolve_event(event: Dictionary) -> Array:
     event["is_area"] = bool(attack.get("is_area", false))
     presentation.append({"kind": "hit", "actor_id": actor_id, "target_id": target_id,
         "amount": actual, "damage_type": str(attack.get("damage_type", "physical")),
-        "critical": crit, "event_id": event["event_id"]})
+        "critical": crit, "event_id": event["event_id"],
+        "environment_source": is_environment,
+        "region_id": str(event.get("region_id", "")),
+        "external_event_id": str(event.get("external_event_id", ""))})
     if not str(event.get("skill_id", "")).is_empty():
         presentation.append({"kind": "skill_impact", "actor_id": actor_id,
             "skill_id": str(event["skill_id"]), "target_id": target_id,
             "actual_damage": actual, "critical": crit,
             "event_id": event["event_id"]})
     var vamp: Dictionary = Damage.vamp_components(source, attack, actual)
-    var omni: float = float(vamp["omni_vamp_heal"])
-    var on_hit: float = float(vamp["on_hit_vamp_heal"])
+    var omni: float = 0.0 if is_environment else float(vamp["omni_vamp_heal"])
+    var on_hit: float = 0.0 if is_environment else float(vamp["on_hit_vamp_heal"])
     if omni > 0.0 and on_hit > 0.0:
         var policy: String = str(settings.get("vamp_overlap_policy", "unresolved"))
         if policy == "sum":
@@ -692,7 +756,8 @@ func _resolve_event(event: Dictionary) -> Array:
         "health_fraction": float(defender["stats"]["health"]) /
             maxf(0.00001, float(defender["stats"]["max_health"])),
         "allowed_proc_triggers": ["damage_taken"]})
-    commands.append_array(_plugin_requests(event))
+    if not is_environment:
+        commands.append_array(_plugin_requests(event))
     return commands
 
 func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
@@ -722,10 +787,12 @@ func step_fixed(inputs: Dictionary = {}) -> Array[Dictionary]:
         _heal(str(actor_id), float(status_result["healing_request"]))
         for dot in status_result["damage_requests"]:
             var attacker_id: String = str(dot.get("source_id", ""))
-            if not actors.has(attacker_id):
+            var environmental_dot: bool = attacker_id.begins_with("environment:")
+            if not actors.has(attacker_id) and not environmental_dot:
                 attacker_id = str(actor_id)
             bus.submit_root({"kind": "damage", "trigger_kind": "on_hit",
                 "actor_id": attacker_id, "target_id": str(actor_id),
+                "environment_source": environmental_dot,
                 "attack_id": "status:" + str(dot["status_id"]),
                 "attack": dot, "source_tags": ["dot_damage"],
                 "allowed_proc_triggers": []})
