@@ -3,6 +3,7 @@ extends Node3D
 signal interaction_requested(fact: Dictionary)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
+const AccessAudit = preload("res://scripts/rework/world/hardware_access_audit.gd")
 var run_id: String = ""
 var region_id: String = ""
 var map_plan: Dictionary = {}
@@ -14,7 +15,10 @@ var extraction_open: bool = false
 func configure(new_run_id: String, new_region: String, planned_map: Dictionary) -> bool:
     if new_run_id.is_empty() or not Catalog.has_hardware(new_region):
         return false
-    if str(planned_map.get("region_id", "")) != new_region or not Maps.all_floor_reachable(planned_map):
+    # S01: Reject malformed/unreachable ACKed maps; never silently regenerate
+    # the saved D-procedural-v1 seed or fake a reachable F interaction.
+    if str(planned_map.get("region_id", "")) != new_region \
+            or not bool(AccessAudit.inspect(planned_map).get("ok", false)):
         return false
     var objectives: Array = planned_map.get("objectives", [])
     if objectives.size() != Catalog.objectives(new_region).size():
@@ -187,6 +191,8 @@ func _build() -> void:
             continue
         _marker(holder, goal_id, objective["world"], Color(1.0, 0.8, 0.25))
     _marker(holder, "BOSS", boss_world(), Color(1.0, 0.25, 0.3))
+    _boss_signature(holder)
+
     # Distinct return path allows clearing the next hardware without ending the
     # mission; this pad is not interactive until this hardware is cleansed.
     _marker(holder, "BOARD RETURN AFTER CLEAR", spawn_world(), Color(0.26, 0.65, 1.0))
@@ -227,3 +233,64 @@ func _marker(parent: Node3D, label: String, position: Vector3, color: Color) -> 
     sign.rotation_degrees = Vector3(-90, 0, 0)
     sign.position = position + Vector3.UP * 0.7
     parent.add_child(sign)
+
+## World-facing B notice renderer. B alone chooses exact attack hitboxes and
+## actual hit timestamps; this text ONLY responds to its verified event.
+const BOSS_PATTERN := {
+    "CPU": "radial_ring", "GPU": "line_sweep", "RAM": "homing_echoes",
+    "SSD": "rail_volley", "HDD": "quake"
+}
+
+func on_b_combat_notice(notice: Dictionary) -> void:
+    if not boss_available or not ["boss_pattern_telegraph", "boss_pattern"].has(
+            str(notice.get("kind", ""))):
+        return
+    if str(notice.get("actor_id", "")) != region_id + "-BOSS" \
+            or str(notice.get("pattern", "")) != str(BOSS_PATTERN.get(region_id, "")):
+        return
+    var label: Label3D = get_node_or_null("Geometry/Label_BOSS") as Label3D
+    if label == null:
+        return
+    if str(notice["kind"]) == "boss_pattern_telegraph":
+        label.text = "WARNING: " + str(notice["pattern"]).to_upper()
+        label.modulate = Color(1.0, 0.48, 0.2)
+    else:
+        label.text = "BOSS"
+        label.modulate = Color.WHITE
+
+func _boss_signature(holder: Node3D) -> void:
+    # Purely symbolic local motif, NOT a damage zone or physics collider.
+    # The five boss projectile patterns/real telegraphs stay B-authoritative.
+    var parent := Node3D.new()
+    parent.name = "BossSignature_" + region_id
+    parent.position = boss_world() + Vector3.UP * 0.015
+    holder.add_child(parent)
+    var accent := StandardMaterial3D.new()
+    accent.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    accent.albedo_color = Color(0.95, 0.45, 0.25)
+    var offsets: Array[Vector3] = []
+    match region_id:
+        "CPU":
+            offsets = [Vector3(-0.34, 0, 0), Vector3(0, 0, 0),
+                Vector3(0.34, 0, 0)]
+        "GPU":
+            offsets = [Vector3(-0.36, 0, -0.36), Vector3(0, 0, 0),
+                Vector3(0.36, 0, 0.36)]
+        "RAM":
+            offsets = [Vector3(-0.3, 0, 0.3), Vector3(0.3, 0, 0.3),
+                Vector3(0, 0, -0.3)]
+        "SSD":
+            offsets = [Vector3(-0.42, 0, 0), Vector3(-0.14, 0, 0),
+                Vector3(0.14, 0, 0), Vector3(0.42, 0, 0)]
+        "HDD":
+            offsets = [Vector3(-0.34, 0, -0.34), Vector3(0.34, 0, -0.34),
+                Vector3(-0.34, 0, 0.34), Vector3(0.34, 0, 0.34)]
+    for index in range(offsets.size()):
+        var tile := MeshInstance3D.new()
+        tile.name = "Signature_%02d" % index
+        var mesh := BoxMesh.new()
+        mesh.size = Vector3(0.14, 0.02, 0.14)
+        tile.mesh = mesh
+        tile.material_override = accent
+        tile.position = offsets[index]
+        parent.add_child(tile)

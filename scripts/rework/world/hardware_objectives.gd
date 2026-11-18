@@ -77,3 +77,15 @@ func snapshot() -> Dictionary:
         "schema": 1, "run_id": run_id, "region_id": region_id,
         "progress": progress.duplicate(true), "boss_unlocked": all_objectives_completed()
     }
+
+## SSD timeout reverts only incomplete transient channel ticks. No committed
+## progress, receipt, XP or boss state is ever changed by a retry.
+func reset_incomplete_ssd_transfer() -> bool:
+    if region_id != "SSD" or run_id.is_empty() or not progress.has("seal_transfer"):
+        return false
+    var state: Dictionary = progress["seal_transfer"]
+    if bool(state["completed"]) or str(state["kind"]) != "transfer_ticks":
+        return false
+    state["current"] = 0
+    progress_changed.emit(snapshot())
+    return true

@@ -52,6 +52,16 @@ func _run() -> void:
     game.player.global_position = seal + Vector3.UP * 0.5
     check(game.interact().get("objective_id", "") == "seal_transfer",
         "data transfer terminal activated physically")
+    # A deadline expiry never commits progress; the player can re-press F.
+    for tick in range(game.region_session.SSD_TRANSFER_WINDOW + 1):
+        game.region_session.tick_player(Vector3(-100.0, 0.0, -100.0))
+    check(not game.region_session.transfer_started
+        and int(game.region_session.objectives.progress["seal_transfer"]["current"]) == 0,
+        "SSD timeout resets only uncommitted progress")
+    check(not game.world_state.is_extraction_open("SSD"), "timeout never fabricates cleanse")
+    game.player.global_position = seal + Vector3.UP * 0.5
+    check(game.interact().get("objective_id", "") == "seal_transfer",
+        "physical F restarts expired transfer")
     for tick in range(1800):
         game.region_session.tick_player(seal + Vector3.UP * 0.5)
     check(bool(game.region_session.objectives.progress["seal_transfer"]["completed"]),

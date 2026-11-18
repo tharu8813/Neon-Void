@@ -5,6 +5,8 @@ signal enemy_spawn_requested(spawn: Dictionary)
 signal objective_updated(snapshot: Dictionary)
 signal extraction_interaction_requested(fact: Dictionary)
 signal boss_spawned(actor_id: String)
+## An intentionally chosen corrupt checksum is a physical trap, not free HP loss.
+signal environment_contact_requested(fact: Dictionary)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
@@ -134,6 +136,18 @@ func try_verify(player_world: Vector3) -> Dictionary:
                 _change_real_slot()
         elif not wrong_choices.has(i):
             wrong_choices[i] = true
+            # This actual on-foot F interaction on a visibly corrupt pad
+            # emits one stable contact; repeat F never reapplies damage.
+            environment_contact_requested.emit({
+                "schema": 1, "type": "world_hazard_contact",
+                "run_id": run_id, "region_id": "RAM", "actor_id": "VACCINE",
+                "hazard_kind": "checksum_decoy_shock",
+                "hazard_id": "RAM:checksum_decoy_shock:%d:%d" % [verification_round, i],
+                "cycle": verification_round + 1,
+                "tick": verification_round + 1,
+                "player_world": player_world, "source_world": position,
+                "contact_radius": 0.75
+            })
             _spawn_decoy(i)
         return {
             "schema": 1, "type": "ram_checksum_tested", "run_id": run_id,

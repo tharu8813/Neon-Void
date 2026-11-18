@@ -25,6 +25,10 @@ var wave_started: bool = false
 var boss_spawned_once: bool = false
 var transfer_started: bool = false
 var physics_tick: int = 0
+# BALANCE_DRAFT: 30 seconds of verified 60Hz channeling inside 40 seconds.
+const SSD_TRANSFER_WINDOW: int = 2400
+var transfer_ticks_left: int = 0
+var transfer_clock: Label3D
 
 func configure(new_run_id: String, planned: Dictionary, new_state: RefCounted,
         new_geometry: Node3D) -> bool:
@@ -113,6 +117,15 @@ func _build_targets() -> bool:
             "mesh": marker, "label": label, "done": false
         })
     _refresh_markers()
+    if region_id == "SSD":
+        transfer_clock = Label3D.new()
+        transfer_clock.name = "SSDTransferDeadline"
+        transfer_clock.font_size = 36
+        transfer_clock.pixel_size = 0.006
+        transfer_clock.rotation_degrees = Vector3(-90, 0, 0)
+        transfer_clock.position = geometry.objective_world("seal_transfer") + Vector3.UP * 0.72
+        add_child(transfer_clock)
+        _refresh_transfer_clock()
     return true
 
 func _unlocked(objective_id: String) -> bool:
@@ -161,7 +174,10 @@ func on_world_interaction(fact: Dictionary) -> void:
     match str(fact.get("type", "")):
         "hardware_objective_activated":
             if region_id == "SSD" and str(fact.get("objective_id", "")) == "seal_transfer"                     and bool(objectives.progress["capture_node"]["completed"]):
-                transfer_started = true
+                if not transfer_started and not bool(objectives.progress["seal_transfer"]["completed"]):
+                    transfer_started = true
+                    transfer_ticks_left = SSD_TRANSFER_WINDOW
+                    _refresh_transfer_clock()
         "hardware_extraction_requested":
             if world_state.is_extraction_open(region_id):
                 extraction_interaction_requested.emit(fact.duplicate(true))
@@ -170,6 +186,15 @@ func tick_player(player_world: Vector3) -> void:
     if region_id != "SSD" or not transfer_started             or bool(objectives.progress["seal_transfer"]["completed"]):
         return
     physics_tick += 1
+    transfer_ticks_left -= 1
+    if transfer_ticks_left < 0:
+        objectives.reset_incomplete_ssd_transfer()
+        transfer_started = false
+        transfer_ticks_left = 0
+        _refresh_transfer_clock()
+        return
+    if physics_tick % 60 == 0:
+        _refresh_transfer_clock()
     var anchor: Vector3 = geometry.objective_world("seal_transfer")
     if Vector2(anchor.x - player_world.x, anchor.z - player_world.z).length() <= 1.8:
         objectives.apply_verified_event("seal_transfer", "transfer_ticks",
@@ -235,6 +260,7 @@ func _on_objective_completed(fact: Dictionary) -> void:
     if world_state.confirm_objective(region_id, goal_id, str(fact.get("receipt_id", ""))):
         geometry.set_objective_complete(goal_id)
     _refresh_markers()
+    _refresh_transfer_clock()
     _maybe_spawn_boss()
 
 func _on_progress_changed(snapshot: Dictionary) -> void:
@@ -252,3 +278,13 @@ func acknowledge_cleansed() -> bool:
     if geometry == null or not world_state.is_extraction_open(region_id):
         return false
     return geometry.set_extraction_open()
+
+func _refresh_transfer_clock() -> void:
+    if transfer_clock == null:
+        return
+    if objectives != null and bool(objectives.progress.get("seal_transfer", {}).get("completed", false)):
+        transfer_clock.text = "TRANSFER COMPLETE"
+    elif not transfer_started:
+        transfer_clock.text = "SSD: F TO START TIMED TRANSFER"
+    else:
+        transfer_clock.text = "DATA LINK: %ds LEFT" % ceili(float(transfer_ticks_left) / 60.0)

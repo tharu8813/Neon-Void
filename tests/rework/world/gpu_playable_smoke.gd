@@ -68,6 +68,21 @@ func _run() -> void:
     game.player.global_position = coolant + Vector3.UP * 0.5
     check(game.interact().get("objective_id", "") == "stabilize_coolant",
         "coolant console activated")
+    # Intentionally remain in the visual beam once: D may only report contact,
+    # never fake HP loss. A/B must wire this to the fixed-tick damage API.
+    var contacts: Array[Dictionary] = []
+    game.region_session.environment_contact_requested.connect(
+        func(fact: Dictionary) -> void: contacts.append(fact.duplicate(true)))
+    for hit_tick in range(90):
+        game.region_session.tick_player(coolant + Vector3.UP * 0.5)
+    check(contacts.size() == 1, "one physical GPU beam contact per strike")
+    if contacts.size() == 1:
+        check(contacts[0].get("hazard_kind", "") == "coolant_overload_beam"
+            and contacts[0].get("actor_id", "") == "VACCINE"
+            and int(contacts[0].get("tick", -1)) == 90,
+            "typed B-bound GPU contact includes true fixed tick and actor")
+        check(contacts[0].get("run_id", "") == game.current_run_id,
+            "B contact is scoped to this approved run")
     var near_horizontal: Vector3 = _dodge_tile(plan, coolant, true)
     var near_vertical: Vector3 = _dodge_tile(plan, coolant, false)
     check(near_horizontal.is_finite() and near_vertical.is_finite(),
