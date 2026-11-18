@@ -72,6 +72,9 @@ static func describe(confirmed_E_levels: Dictionary, deployed_B_levels: Dictiona
 			elif kind == "grant_rare":
 				status = "E_receipt_only_no_combat_proc"
 		var level_effects: Array = entry.get("level_effects",[])
+		var cd_raw: Variant = entry.get("internal_cooldown_seconds", null)
+		var cd_defined: bool = typeof(cd_raw) in [TYPE_INT, TYPE_FLOAT]
+		var cd_value: float = float(cd_raw) if cd_defined else 0.0
 		var current_text: String = ""
 		var next_text: String = ""
 		if e_level > 0 and e_level <= level_effects.size():
@@ -84,7 +87,7 @@ static func describe(confirmed_E_levels: Dictionary, deployed_B_levels: Dictiona
 			"description":str(entry.get("description_ko","")),
 			"trigger":entry.get("trigger",{}).duplicate(true),
 			"cooldown_scope":str(entry.get("cooldown_scope","")),
-			"cooldown_seconds":float(entry.get("internal_cooldown_seconds",0.0)),
+			"cooldown_seconds":cd_value, "cooldown_defined":cd_defined,
 			"confirmed_level":e_level, "deployed_level":b_level,
 			"max_level":int(entry.get("max_level",0)),
 			"next_level":e_level+1 if e_level < int(entry.get("max_level",0)) else 0,
