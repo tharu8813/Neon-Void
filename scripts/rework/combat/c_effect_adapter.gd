@@ -442,6 +442,9 @@ func _authoritative_sink(commands: Array, world: Dictionary) -> Dictionary:
             if str(changed.get("shape", "")) == shape:
                 _transform_basic_projectile(changed, source_event)
     for knock in next.get("knockbacks", []):
+        # C and A consumers still observe the intent; B separately confirms
+        # actual movement, so old event contracts remain backward compatible.
+        notices.append({"kind": "knockback_requested", "command": knock.duplicate(true)})
         var applied_knock: Dictionary = combat.apply_radial_knockback(
             str(knock.get("actor_id", "")), float(knock.get("force", 0.0)),
             float(combat.settings.get("knockback_radius", 5.0)))
