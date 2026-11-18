@@ -94,24 +94,12 @@ func _run() -> void:
     if ident is Label:
         _check(ident.text.contains("REWORK QA") and ident.text.contains("Tab:"),
             "build cannot be mistaken for legacy main")
-    pilot.call("_on_mission_requested", {"seed": 42})
-    var world: Node3D = pilot.get_node("World") as Node3D
-    var combat: Variant = world.get("combat")
-    var state: Dictionary = combat.actor_snapshot("VACCINE")
-    var skills: Array = state.get("skill_state", {}).get("slots", [])
-    _check(str(world.get("current_mode")) == "motherboard"
-        and not bool(pilot.get("frozen")) and skills.size() == 3,
-        "real A→E→B pilot mission boot and 3 B skill slots")
-    if skills.size() == 3:
-        _check(str(skills[0].get("skill_id", "")) == "nv_skill_arc_pulse"
-            and str(skills[2].get("skill_id", "")) == "nv_skill_root_packet",
-            "B sees actual E-authorized Q/E/C skill IDs, not placeholder UI")
+    # A clean hub restart must not overwrite or regrant the E QA starter pack.
+    var pre_restart: Dictionary = Gateway.snapshot(path)
     paused = false
     root.remove_child(qa)
     qa.queue_free()
     await process_frame
-    # A restart must not overwrite prior E snapshot or regrant fragments.
-    var pre_restart: Dictionary = Gateway.snapshot(path)
     var other: Node3D = Boot.instantiate()
     var other_pilot: Node3D = _configure_qa_scene(other, id)
     root.add_child(other)
@@ -121,7 +109,19 @@ func _run() -> void:
         and int(after_restart.get("revision", -1)) ==
             int(pre_restart.get("revision", -2))
         and not bool(other_pilot.get("frozen")),
-        "relaunch never resets E slot or grants QA start pack twice")
+        "clean-hub relaunch never resets E slot or grants QA start pack twice")
+    other_pilot.call("_on_mission_requested", {"seed": 42})
+    var world: Node3D = other_pilot.get_node("World") as Node3D
+    var combat: Variant = world.get("combat")
+    var state: Dictionary = combat.actor_snapshot("VACCINE")
+    var skills: Array = state.get("skill_state", {}).get("slots", [])
+    _check(str(world.get("current_mode")) == "motherboard"
+        and not bool(other_pilot.get("frozen")) and skills.size() == 3,
+        "real A→E→B pilot mission boot and 3 B skill slots")
+    if skills.size() == 3:
+        _check(str(skills[0].get("skill_id", "")) == "nv_skill_arc_pulse"
+            and str(skills[2].get("skill_id", "")) == "nv_skill_root_packet",
+            "B sees actual E-authorized Q/E/C skill IDs, not placeholder UI")
     paused = false
     root.remove_child(other)
     other.queue_free()
