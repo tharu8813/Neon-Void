@@ -126,8 +126,8 @@ static func run(check: Callable) -> void:
             prev[str(p["id"])] = p.duplicate(true)
         var notes: Array[Dictionary] = combo.step_fixed({"P": {"fire": false}})
         for note in notes:
-            if str(note.get("kind", "")) == "projectile_retire" and
-                    prev.has(str(note.get("id", ""))):
+            if (str(note.get("kind", "")) == "projectile_retire"
+                    and prev.has(str(note.get("id", "")))):
                 effects.handle_boomerang_return(prev[str(note["id"])])
         effects.after_fixed_step(combo.last_processed_events)
     check.call(float(combo.snapshot("E1")["stats"]["health"]) < 100.0 and
