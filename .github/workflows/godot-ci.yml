@@ -121,6 +121,7 @@ jobs:
             tests/rework/integration/pilot_responsive_ui_smoke.gd
             tests/rework/integration/a_verified_growth_skill_world_smoke.gd
             tests/rework/integration/one_run_five_zone_cleansing_smoke.gd
+            tests/rework/integration/rework_qa_boot_smoke.gd
           )
           count=0
           failures=0
@@ -174,7 +175,8 @@ jobs:
             'tests/rework/integration/pilot_status_effects_smoke.gd',
             'tests/rework/integration/pilot_responsive_ui_smoke.gd',
             'tests/rework/integration/a_verified_growth_skill_world_smoke.gd',
-            'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd'
+            'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd',
+            'tests/rework/integration/rework_qa_boot_smoke.gd'
           )
           $count = 0
           $failures = 0
@@ -261,7 +263,55 @@ jobs:
           "Windows x64 export and headless boot passed. SHA256: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - uses: actions/upload-artifact@v4
         with:
-          name: NeonVoid3D-windows-export-smoke
+          name: NeonVoid3D-legacy-windows-export-smoke
           path: build/NeonVoid3D.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Export the separate REWORK QA executable and prove its actual starting scene
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "Process failed (exit $($p.ExitCode)): $binary $arguments" }
+          }
+          # We NEVER flip the repository's legacy default project.godot.
+          # Only this second QA export temporarily selects its distinct
+          # A/B/C/D/E scene. Both artifacts are named for what they launch.
+          $config = (Resolve-Path 'project.godot').Path
+          $original = [System.IO.File]::ReadAllText($config)
+          $legacy = 'run/main_scene="res://scenes/main.tscn"'
+          $qa = 'run/main_scene="res://scenes/rework/integration/rework_qa_boot.tscn"'
+          if (-not $original.Contains($legacy)) { throw 'Unsafe QA export: legacy main_scene marker not found' }
+          $source = $original.Replace($legacy, $qa).Replace(
+            'config/name="Neon Void 3D"', 'config/name="Neon Void REWORK QA"')
+          try {
+            [System.IO.File]::WriteAllText($config, $source)
+            if (-not (Select-String -LiteralPath $config -Pattern ([regex]::Escape($qa)) -Quiet)) {
+              throw 'QA project main_scene not selected'
+            }
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
+            # This test checks ProjectSettings against the exact REWORK QA
+            # scene, instantiates it, and verifies 3 skills/22 stats/27 C pool.
+            $env:NEON_REQUIRE_QA_MAIN_SCENE = '1'
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --script res://tests/rework/integration/rework_qa_boot_smoke.gd'
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoid-Rework-QA.exe'
+            $exe = (Resolve-Path 'build/NeonVoid-Rework-QA.exe').Path
+            if ((Get-Item $exe).Length -le 0) { throw 'REWORK QA executable empty' }
+            Invoke-CheckedProcess $exe '--headless --quit-after 3'
+            # The EXPORTED binary itself must pass the identity check, not
+            # merely the editor's project with all rework files present.
+            Invoke-CheckedProcess $exe '--headless --script res://tests/rework/integration/rework_qa_boot_smoke.gd'
+            $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
+            "REWORK QA export startup asserted; unique executable: NeonVoid-Rework-QA.exe. SHA256: $hash" |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } finally {
+            Remove-Item Env:\NEON_REQUIRE_QA_MAIN_SCENE -ErrorAction SilentlyContinue
+            [System.IO.File]::WriteAllText($config, $original)
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeonVoid-REWORK-QA-windows
+          path: build/NeonVoid-Rework-QA.exe
           if-no-files-found: error
           retention-days: 7
