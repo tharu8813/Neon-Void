@@ -4,6 +4,7 @@ const Model = preload("res://scripts/rework/progression/state_model.gd")
 const Store = preload("res://scripts/rework/persistence/rework_save_store.gd")
 const Gateway = preload("res://scripts/rework/persistence/progression_gateway.gd")
 const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
+const CommitBridge = preload("res://scripts/rework/integration/mission_commit_bridge.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -406,6 +407,7 @@ func _run() -> void:
     _test_combat_observation(root_dir)
     _test_s01_diagnostics(root_dir)
     _test_s01_durable_normal_flow(root_dir)
+    _test_s01_e_ack_death_reward_gate(root_dir)
 
     # All files cleaned are in this uniquely named synthetic root only.
     _remove_tree(root_dir)
@@ -551,6 +553,80 @@ func _test_s01_durable_normal_flow(root_dir: String) -> void:
     saved = Store.read(path)
     check(saved.ok and saved.state.vaccine.mission.mission_level == 1         and saved.state.vaccine.mission.mission_xp == 0         and saved.state.vaccine.total_xp == 120         and saved.state.vaccine.archive.has("nv_c_move_speed"),
         "new mission resets temporary XP while preserving vaccine growth and DB")
+
+func _test_s01_e_ack_death_reward_gate(root_dir: String) -> void:
+    # Real A mission-commit bridge, synthetic E slot: B/D have no right to
+    # award XP, consume clones or close a run on their own.
+    var path: String = root_dir.path_join("rework-slot-s01-ack-gate")
+    check(Store.initialize(path, Model.new_slot("s01-ack-gate", "ack-vaccine")).ok,
+        "E ACK-gated death/reward fixture initialized")
+    var bridge: RefCounted = CommitBridge.new(path, "ack-run-1", "ack-vaccine", 1)
+    var started: Dictionary = bridge.begin_mission(20261118)
+    check(started.get("ok", false), "A bridge first commits mission start via E")
+    var initial: Dictionary = Store.read(path)
+    check(initial.ok and initial.state.vaccine.mission != null         and initial.state.vaccine.copies_remaining == 3         and initial.state.vaccine.total_xp == 0,
+        "starting game cannot fake preexisting reward or spent clone")
+    var xp_ack: Dictionary = bridge.record_mission_xp("enemy-kill:1", 100)
+    check(xp_ack.get("ok", false) and int(xp_ack.get("revision", -1)) > 1,
+        "B kill XP is displayed only after E commit ACK")
+    var pending: Dictionary = Store.read(path)
+    check(pending.ok and pending.state.vaccine.mission.mission_level == 2         and pending.state.vaccine.mission.pending_plugin_offers == 1         and pending.state.vaccine.level == 1,
+        "combat XP updates mission-only level, not permanent vaccine XP")
+    var clean_fact: Dictionary = {"schema": 1, "type": "hardware_cleansed",
+        "run_id": "ack-run-1", "region_id": "CPU",
+        "receipt_id": "world:ack-run-1:CPU:clean"}
+    var clean_ack: Dictionary = bridge.handle_world_fact(clean_fact)
+    check(clean_ack.get("ok", false),
+        "D cleanse must pass A bridge and E hardware reward receipt")
+    pending = Store.read(path)
+    check(pending.ok and pending.state.vaccine.mission.hardware_cleaned_ids.has("CPU")         and pending.state.vaccine.mission.uncommitted_vaccine_xp == 120         and pending.state.vaccine.total_xp == 0,
+        "cleansing is pending until E-authorized terminal settlement")
+    var fact: Dictionary = {"schema": 1, "type": "mission_failed",
+        "run_id": "ack-run-1", "receipt_id": "world:ack-run-1:death",
+        "outcome": "death"}
+    var ack: Dictionary = bridge.commit_terminal_fact(fact)
+    check(ack.get("ok", false) and ack.get("receipt_id", "") == fact.receipt_id,
+        "real death result is acknowledged only by E committed receipt")
+    var after: Dictionary = Store.read(path)
+    check(after.ok and after.state.vaccine.copies_remaining == 2         and after.state.vaccine.mission == null         and after.state.vaccine.closed_runs.get("ack-run-1", "") == "dead"         and after.state.vaccine.total_xp == 36,
+        "death consumes exactly one clone and retains 30 percent of 120 pending XP")
+    var confirmed: Dictionary = Gateway.reconcile_receipt(path,
+        "ack-vaccine", 1, "ack-run-1", fact.receipt_id)
+    check(confirmed.get("receipt_committed", false)         and confirmed.get("reconciliation_complete", false),
+        "closed-run death receipt reconciles from E without replaying death")
+    var revision_before_retry: int = int(after.get("revision", -1))
+    var retry: Dictionary = Gateway.transact_command(path, {
+        "action": "die", "vaccine_id": "ack-vaccine", "generation": 1,
+        "run_id": "ack-run-1", "receipt_id": fact.receipt_id
+    })
+    check(not retry.get("applied", false)         and int(Store.read(path).get("revision", -2)) == revision_before_retry,
+        "death retry cannot consume another clone or increment revision")
+    var second_start: Dictionary = Gateway.transact_command(path, {
+        "action": "start_mission", "vaccine_id": "ack-vaccine",
+        "generation": 1, "run_id": "ack-run-2", "seed": 404
+    })
+    check(second_start.get("applied", false), "another run starts after E-approved death")
+    var before_failure: Dictionary = Store.read(path)
+    var fail_death: Dictionary = Gateway.transact_command(path, {
+        "action": "die", "vaccine_id": "ack-vaccine",
+        "generation": 1, "run_id": "ack-run-2",
+        "receipt_id": "world:ack-run-2:death"
+    }, -1, "before_backup")
+    check(not fail_death.get("applied", false)         and int(Store.read(path).revision) == int(before_failure.revision)         and Store.read(path).state.vaccine.copies_remaining == 2,
+        "write refusal before E commit does not spend a clone")
+    var uncertain: Dictionary = Gateway.transact_command(path, {
+        "action": "die", "vaccine_id": "ack-vaccine",
+        "generation": 1, "run_id": "ack-run-2",
+        "receipt_id": "world:ack-run-2:death"
+    }, -1, "after_primary")
+    check(not uncertain.get("applied", false)         and uncertain.get("reason", "") == "simulated_ack_lost",
+        "lost death ACK never licenses world to assume success")
+    var proof: Dictionary = Gateway.reconcile_receipt(path,
+        "ack-vaccine", 1, "ack-run-2", "world:ack-run-2:death")
+    var latest: Dictionary = Store.read(path)
+    check(proof.get("receipt_committed", false)         and latest.ok and latest.state.vaccine.copies_remaining == 1         and latest.state.vaccine.closed_runs.get("ack-run-2", "") == "dead",
+        "lost ACK is read-only reconcilable and E committed death exactly once")
+
 
 func _test_mission_checkpoint(root_dir: String) -> void:
     # Real C/A can use the same command shape; everything below is synthetic.
