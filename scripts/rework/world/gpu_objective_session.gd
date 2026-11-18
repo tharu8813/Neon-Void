@@ -5,6 +5,8 @@ signal enemy_spawn_requested(spawn: Dictionary)
 signal objective_updated(snapshot: Dictionary)
 signal extraction_interaction_requested(fact: Dictionary)
 signal boss_spawned(actor_id: String)
+## Requests B authority; a contact is NOT an applied hit or status.
+signal environment_contact_requested(fact: Dictionary)
 const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const Objectives = preload("res://scripts/rework/world/hardware_objectives.gd")
 const Catalog = preload("res://scripts/rework/world/hardware_catalog.gd")
@@ -95,12 +97,25 @@ func tick_player(player_world: Vector3) -> void:
     var offset: Vector2 = Vector2(player_world.x - center.x, player_world.z - center.z)
     # Standing too far away is NOT a dodge; the player has to engage the device.
     var in_arena: bool = offset.length() <= 3.8
-    var in_beam: bool = absf(offset.y if horizontal else offset.x) <= 0.52
+    # BoxMesh half-width 0.35m + 0.30m player capsule radius.
+    # Both the visual and reported contact use the same physical threshold.
+    var in_beam: bool = absf(offset.y if horizontal else offset.x) <= 0.65
+    if in_arena and in_beam and geometry.can_walk(player_world):
+        var cycle: int = floori(float(physics_tick - 1) / 90.0)
+        environment_contact_requested.emit({
+            "schema": 1, "type": "world_hazard_contact",
+            "run_id": run_id, "region_id": "GPU", "actor_id": "VACCINE",
+            "hazard_kind": "coolant_overload_beam", "hazard_id": "GPU:beam:%d" % cycle,
+            "cycle": cycle, "tick": physics_tick,
+            "player_world": player_world, "source_world": center,
+            "orientation": "horizontal" if horizontal else "vertical",
+            "contact_radius": 0.65, "damage_type": "magic"
+        })
     if in_arena and not in_beam:
         objectives.apply_verified_event("stabilize_coolant", "dodge_hazard",
             "%s:GPU:dodge:%d" % [run_id, physics_tick])
-    # A hit does not fabricate B HP damage; the next hazard cycle retries.
-    # B must supply an authoritative environmental-hit entrypoint to damage HP.
+    # Do NOT alter HP here. A/B must acknowledge via B fixed-tick world-hazard
+    # entrypoint; no UI or reward may call this event a successful damage hit.
 
 func _spawn_overload_wave() -> void:
     if wave_started:

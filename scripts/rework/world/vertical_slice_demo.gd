@@ -11,6 +11,8 @@ signal death_commit_requested(fact: Dictionary)
 signal mission_returned(fact: Dictionary)
 signal unavailable_hardware_requested(region_id: String)
 signal integration_error(reason: String)
+## Forward D physical contacts to A/B without ever applying damage in D.
+signal environment_contact_requested(fact: Dictionary)
 const HubScene = preload("res://scenes/rework/world/defender_hub.tscn")
 const BoardScene = preload("res://scenes/rework/world/motherboard.tscn")
 const HubLayout = preload("res://scripts/rework/world/hub_layout.gd")
@@ -69,6 +71,7 @@ func _ready() -> void:
     combat.enemy_defeated.connect(_on_enemy_defeated)
     combat.player_died.connect(_on_player_died)
     combat.integration_failed.connect(_freeze_with_error)
+    combat.combat_notice.connect(_on_b_combat_notice)
     enter_hub()
 
 func _build_player() -> void:
@@ -411,6 +414,7 @@ func _enter_gpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
     hardware.interaction_requested.connect(region_session.on_world_interaction)
     hardware.interaction_requested.connect(_on_board_return_interacted)
     region_session.enemy_spawn_requested.connect(combat.spawn_hostile)
+    region_session.environment_contact_requested.connect(_on_environment_contact)
     region_session.extraction_interaction_requested.connect(_on_gpu_exit_interacted)
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
     camera.world_bounds = planned_map["world_bounds"]
@@ -657,3 +661,11 @@ func _freeze_with_error(reason: String) -> void:
     last_error = reason
     player.movement_enabled = false
     integration_error.emit(reason)
+
+func _on_environment_contact(fact: Dictionary) -> void:
+    if current_mode == "gpu" and str(fact.get("run_id", "")) == current_run_id:
+        environment_contact_requested.emit(fact.duplicate(true))
+
+func _on_b_combat_notice(notice: Dictionary) -> void:
+    if hardware != null and is_instance_valid(hardware) and hardware.has_method("on_b_combat_notice"):
+        hardware.on_b_combat_notice(notice)
