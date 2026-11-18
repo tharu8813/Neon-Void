@@ -272,7 +272,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
-            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru -Wait
+            Write-Host "REWORK QA process: $binary $arguments"
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru
+            if (-not $p.WaitForExit(150000)) {
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "REWORK QA process timed out after 150 seconds: $binary $arguments"
+            }
             if ($p.ExitCode -ne 0) { throw "Process failed (exit $($p.ExitCode)): $binary $arguments" }
           }
           # We NEVER flip the repository's legacy default project.godot.
