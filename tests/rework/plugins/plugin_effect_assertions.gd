@@ -214,6 +214,33 @@ func _run() -> void:
 		var snapshot: Dictionary = b_world.duplicate(true)
 		var bad: Dictionary = Sink.apply([b_command,{"type":"bogus"}],b_world)
 		check(not bad.get("ok",false) and b_world==snapshot,"all-or-none world publication on multi-command failure")
+		# Last enemy / solo boss is a legal zero-target lightning chain.
+		var solo_world: Dictionary = sample.duplicate(true)
+		solo_world["targets"].erase("virus-2")
+		solo_world["target_positions"].erase("virus-2")
+		var solo_before: Dictionary = solo_world.duplicate(true)
+		var solo: Dictionary = Sink.apply([b_command], solo_world)
+		check(bool(solo.get("ok",false)) and solo_world["targets"] == solo_before["targets"]
+			and is_zero_approx(float(solo.get("damage_done",-1.0))),
+			"solo boss does not trigger an imaginary chain target or sink failure")
+		# A stale legacy C request must NEVER cross the E grant boundary.
+		var rewards_world: Dictionary = sample.duplicate(true)
+		var rewards_before: Dictionary = rewards_world.duplicate(true)
+		var forged: Dictionary = Sink.apply([
+			{"type":"rare_reward_request","plugin_id":"nv_c_random_rare",
+			"actor_id":"vaccine-1","count":999}
+		], rewards_world)
+		check(not bool(forged.get("ok",false))
+			and str(forged.get("reason",""))=="rare_grant_owned_by_E_source_transaction"
+			and rewards_world==rewards_before,
+			"legacy C rare grant fails closed without pending E requests")
+		var notice: Dictionary = Sink.apply([
+			{"type":"rare_reward_notice","plugin_id":"nv_c_random_rare",
+			"actor_id":"vaccine-1","requires_E_receipt":true}
+		], rewards_world)
+		check(bool(notice.get("ok",false))
+			and rewards_world.get("pending_progression_requests",[]).is_empty(),
+			"source notice cannot issue a standalone rare award")
 	else:
 		print("B not installed on C-only stacked branch; real B damage/status path awaits A combined runner.")
 
