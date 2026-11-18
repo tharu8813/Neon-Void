@@ -3,6 +3,7 @@ extends SceneTree
 const State = preload("res://scripts/rework/progression/state_model.gd")
 const Rules = preload("res://scripts/rework/progression/progression_rules.gd")
 const Balance = preload("res://scripts/rework/progression/balance_config.gd")
+const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
 var failures: int = 0
 
 func _initialize() -> void:
@@ -99,10 +100,12 @@ func _run() -> void:
         "deployed plugin removes archive original")
     s = accepted(s, Rules.archive_plugin(s, "vaccine-A", 1, "plugin_alpha",
         "re-deposit-alpha"), "manual re-deposit")
+    check(not Rules.learn_skill(s, "vaccine-A", 1, "forge-skill",
+        "pulse").ok, "invalid unregistered active skill cannot be minted")
     s = accepted(s, Rules.learn_skill(s, "vaccine-A", 1, "learn-skill",
-        "pulse"), "learn persistent skill")
+        "nv_skill_arc_pulse"), "learn persistent skill")
     s = accepted(s, Rules.equip_skills(s, "vaccine-A", 1, "equip-skill",
-        ["pulse"]), "equip known skill")
+        ["nv_skill_arc_pulse"]), "equip known skill")
 
     # Deaths 1-3 preserve banked XP and archived plugins, but erase carried.
     s = accepted(s, Rules.start_mission(s, "vaccine-A", 1, "run-2", 222),
@@ -110,11 +113,24 @@ func _run() -> void:
     check(s.vaccine.mission.mission_level == 1 and s.vaccine.mission.seed != 111,
         "fresh mission level and seed")
     check(not Rules.equip_skills(s, "vaccine-A", 1, "illegal-midmission-equip",
-        ["pulse"]).ok, "ordinary skill swap blocked during mission")
-    s = accepted(s, Rules.learn_skill(s, "vaccine-A", 1, "new-skill-mission",
-        "barrier", ["pulse", "barrier"]), "discovered skill may equip immediately")
-    check(s.vaccine.equipped_skills.has("barrier"),
+        ["nv_skill_arc_pulse"]).ok, "ordinary skill swap blocked during mission")
+    var picks: Array[Dictionary] = SkillOffer.candidates(222, "CPU", s.vaccine.known_skills)
+    check(not picks.is_empty(), "durable seed produces draft skills")
+    var next_skill: String = str(picks[0].id)
+    check(not Rules.learn_skill(s, "vaccine-A", 1, "bad-proof", next_skill,
+        ["nv_skill_arc_pulse", next_skill], "run-2").ok,
+        "unbound skill receipt cannot be committed")
+    s = accepted(s, Rules.checkpoint_region(s, "vaccine-A", 1, "run-2",
+        "map-run2-cpu", "CPU", 722, "d-cpu-v1"), "save region before discovery")
+    var claim: String = "skill:run-2:CPU:" + next_skill
+    s = accepted(s, Rules.learn_skill(s, "vaccine-A", 1, claim,
+        next_skill, ["nv_skill_arc_pulse", next_skill], "run-2"),
+        "discovered skill may equip immediately")
+    check(s.vaccine.equipped_skills.has(next_skill),
         "first discovery equips new skill in same atomic transition")
+    check(not Rules.learn_skill(s, "vaccine-A", 1,
+        "skill:run-2:CPU:nv_skill_penetrator", "nv_skill_penetrator",
+        [], "run-2").ok, "different receipt cannot grant second skill in same region")
     s = accepted(s, Rules.add_pending_reward(s, "vaccine-A", 1, "run-2",
         "cache-1", 100, 100), "uncommitted point cache")
     s = accepted(s, Rules.die(s, "vaccine-A", 1, "run-2", "death-1"), "first clone")
@@ -122,7 +138,7 @@ func _run() -> void:
         "first death retains 20 XP and uses one copy")
     check(s.vaccine.unspent_fragments == 20 and s.vaccine.archive.has("plugin_alpha"),
         "death retains fraction of pending points and stored plugin")
-    check(s.vaccine.carried.is_empty() and s.vaccine.known_skills.has("pulse"),
+    check(s.vaccine.carried.is_empty() and s.vaccine.known_skills.has("nv_skill_arc_pulse"),
         "death loses carried plugin, preserves skill")
     check(not Rules.start_mission(s, "vaccine-A", 1, "run-2", 333).ok,
         "closed run ID cannot be replayed")
