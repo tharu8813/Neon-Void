@@ -84,7 +84,8 @@ func run() -> bool:
 		if not bool(xp.get("applied",false)):
 			_check(false,label+" E authorized a card")
 			continue
-		var offers = Offers.new([entry])
+		var single_entry: Array[Dictionary] = [entry]
+		var offers = Offers.new(single_entry)
 		if not offers.begin_mission(seed,{},run_id):
 			_check(false,label+" C initial RNG")
 			continue
