@@ -6,6 +6,7 @@ const Maps = preload("res://scripts/rework/world/procedural_map.gd")
 const AccessAudit = preload("res://scripts/rework/world/hardware_access_audit.gd")
 const Extraction = preload("res://scripts/rework/world/extraction_state.gd")
 const Preview = preload("res://scenes/rework/world/procedural_preview.tscn")
+const HazardInterop = preload("res://tests/rework/world/s01_real_b_hazards_cases.gd")
 var failures: int = 0
 
 func check(ok: bool, message: String) -> void:
@@ -106,6 +107,7 @@ func _run() -> void:
     root.add_child(scene)
     check(scene.get_node_or_null("TileContainer") != null, "procedural preview generated")
     scene.queue_free()
+    HazardInterop.run(root, Callable(self, "check"))
     if failures == 0:
         print("REWORK WORLD FOUNDATION PASS (5 hardware, 125 seed accessibility audit, extraction)")
     quit(0 if failures == 0 else 1)
