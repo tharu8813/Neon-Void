@@ -64,7 +64,7 @@ func run() -> bool:
 		var uid: String = str(entry["plugin_id"])
 		var label: String = uid + " E->B"
 		var seed: int = 1800+index
-		var slot_path: String = test_root.path_join("slot-"+str(index))
+		var slot_path: String = test_root.path_join("rework-slot-s01-"+str(index))
 		var run_id: String = "run-c-s01-"+str(index)
 		var vaccine_id: String = "vaccine-c-s01"
 		var created: Dictionary = Store.initialize(slot_path,
