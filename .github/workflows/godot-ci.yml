@@ -123,6 +123,7 @@ jobs:
             tests/rework/integration/one_run_five_zone_cleansing_smoke.gd
             tests/rework/integration/rework_qa_boot_smoke.gd
             tests/rework/integration/hub_terminal_access_smoke.gd
+            tests/rework/integration/main_launcher_smoke.gd
           )
           count=0
           failures=0
@@ -178,7 +179,8 @@ jobs:
             'tests/rework/integration/a_verified_growth_skill_world_smoke.gd',
             'tests/rework/integration/one_run_five_zone_cleansing_smoke.gd',
             'tests/rework/integration/rework_qa_boot_smoke.gd',
-            'tests/rework/integration/hub_terminal_access_smoke.gd'
+            'tests/rework/integration/hub_terminal_access_smoke.gd',
+            'tests/rework/integration/main_launcher_smoke.gd'
           )
           $count = 0
           $failures = 0
@@ -255,18 +257,78 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "Process failed with exit code $($p.ExitCode): $binary $arguments" }
           }
           Invoke-CheckedProcess $env:NEON_GODOT '--version'
-          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
-          New-Item -ItemType Directory -Path 'build' -Force | Out-Null
-          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoid3D.exe'
-          $exe = (Resolve-Path 'build/NeonVoid3D.exe').Path
-          if ((Get-Item $exe).Length -le 0) { throw 'Empty Windows export' }
-          Invoke-CheckedProcess $exe '--headless --quit-after 3'
-          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
-          "Windows x64 export and headless boot passed. SHA256: $hash" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          # Preserve the old Godot game as a separate exported binary.
+          # The actual project default is the latest version selection menu.
+          $config = (Resolve-Path 'project.godot').Path
+          $original = [System.IO.File]::ReadAllText($config)
+          $launcher = 'run/main_scene="res://scenes/launcher.tscn"'
+          $classic = 'run/main_scene="res://scenes/main.tscn"'
+          if (-not $original.Contains($launcher)) { throw 'Expected launcher default, refusing legacy export' }
+          try {
+            [System.IO.File]::WriteAllText($config, $original.Replace($launcher, $classic))
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
+            New-Item -ItemType Directory -Path 'build' -Force | Out-Null
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoid3D.exe'
+            $exe = (Resolve-Path 'build/NeonVoid3D.exe').Path
+            if ((Get-Item $exe).Length -le 0) { throw 'Empty classic Windows export' }
+            Invoke-CheckedProcess $exe '--headless --quit-after 3'
+            $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
+            "Classic Windows x64 export and headless boot passed. SHA256: $hash" |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } finally {
+            [System.IO.File]::WriteAllText($config, $original)
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: NeonVoid3D-legacy-windows-export-smoke
           path: build/NeonVoid3D.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Export default main mode launcher and verify packed executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedProcess([string]$binary, [string]$arguments) {
+            $p = Start-Process -FilePath $binary -ArgumentList $arguments -NoNewWindow -PassThru
+            if (-not $p.WaitForExit(120000)) {
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "Main launcher process timed out: $binary $arguments"
+            }
+            if ($p.ExitCode -ne 0) { throw "Main launcher process failed ($($p.ExitCode)): $binary $arguments" }
+          }
+          $config = (Resolve-Path 'project.godot').Path
+          $settings = [System.IO.File]::ReadAllText($config)
+          $launcher = 'run/main_scene="res://scenes/launcher.tscn"'
+          if (-not $settings.Contains($launcher)) { throw 'Default main is not the launcher' }
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --editor --import --quit'
+          $env:NEON_REQUIRE_LAUNCHER_MAIN_SCENE = '1'
+          try {
+            Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --script res://tests/rework/integration/main_launcher_smoke.gd'
+          } finally {
+            Remove-Item Env:\NEON_REQUIRE_LAUNCHER_MAIN_SCENE -ErrorAction SilentlyContinue
+          }
+          Invoke-CheckedProcess $env:NEON_GODOT '--headless --path . --export-release "Windows Desktop" build/NeonVoid-Main.exe'
+          $exe = (Resolve-Path 'build/NeonVoid-Main.exe').Path
+          if ((Get-Item $exe).Length -le 0) { throw 'Missing default launcher export' }
+          $stdout = Join-Path $env:RUNNER_TEMP 'neon-main.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'neon-main.stderr.log'
+          $boot = Start-Process -FilePath $exe -ArgumentList '--headless --quit-after 3' -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $boot.WaitForExit(30000)) {
+            Stop-Process -Id $boot.Id -Force -ErrorAction SilentlyContinue
+            throw 'Packed main launcher did not exit'
+          }
+          $actual = Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue
+          Write-Host $actual
+          if ($boot.ExitCode -ne 0 -or -not $actual.Contains('NEON_MAIN_LAUNCHER_ACTIVE main=res://scenes/launcher.tscn')) {
+            throw "Packed main launches stale/unknown scene: $actual"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
+          "Main launcher packed EXE uses latest rework/classic selection; SHA256: $hash" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeonVoid-MAIN-launcher-windows
+          path: build/NeonVoid-Main.exe
           if-no-files-found: error
           retention-days: 7
       - name: Export the separate REWORK QA executable and prove its actual starting scene
@@ -282,15 +344,14 @@ jobs:
             }
             if ($p.ExitCode -ne 0) { throw "Process failed (exit $($p.ExitCode)): $binary $arguments" }
           }
-          # We NEVER flip the repository's legacy default project.godot.
-          # Only this second QA export temporarily selects its distinct
-          # A/B/C/D/E scene. Both artifacts are named for what they launch.
+          # Main's default now presents the mode picker. Only this QA export
+          # temporarily chooses the seeded A/B/C/D/E test fixture.
           $config = (Resolve-Path 'project.godot').Path
           $original = [System.IO.File]::ReadAllText($config)
-          $legacy = 'run/main_scene="res://scenes/main.tscn"'
+          $launcher = 'run/main_scene="res://scenes/launcher.tscn"'
           $qa = 'run/main_scene="res://scenes/rework/integration/rework_qa_boot.tscn"'
-          if (-not $original.Contains($legacy)) { throw 'Unsafe QA export: legacy main_scene marker not found' }
-          $source = $original.Replace($legacy, $qa).Replace(
+          if (-not $original.Contains($launcher)) { throw 'Unsafe QA export: launcher marker not found' }
+          $source = $original.Replace($launcher, $qa).Replace(
             'config/name="Neon Void 3D"', 'config/name="Neon Void REWORK QA"')
           try {
             [System.IO.File]::WriteAllText($config, $source)
