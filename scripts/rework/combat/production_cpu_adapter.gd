@@ -523,6 +523,27 @@ func recover_player(health_ratio: float, mana_ratio: float) -> Dictionary:
     return {"ok": true, "health_before": hp_before,
         "health_restored": healed, "mana_restored": float(skills.mana) - mana_before}
 
+func queue_environment_hit(spec: Dictionary) -> Dictionary:
+    ## D reports hazard contacts through A's world-facing facade/router.
+    ## Do not apply HP/shields directly in D; B resolves on the NEXT 60Hz step.
+    if not running or game_over or not simulation.actors.has(PLAYER_ID):
+        return {"ok": false, "reason": "encounter_not_running"}
+    if spec.has("run_id") and str(spec["run_id"]) != run_id:
+        return {"ok": false, "reason": "stale_environment_run"}
+    return simulation.queue_environment_hit(spec)
+
+
+func combat_hud_snapshot() -> Dictionary:
+    ## Read-only projection for A. Never mutate B actor dictionaries from UI.
+    if not running or not simulation.actors.has(PLAYER_ID):
+        return {}
+    return {"tick": simulation.fixed_tick, "run_id": run_id,
+        "player": actor_snapshot(), "skills": skill_snapshot(),
+        "boss_pressure": boss_pressure_snapshot(),
+        "enemy_count": enemies.size(), "game_over": game_over,
+        "queue_overflow": int(simulation.bus.metrics.get("overflow_rejected", 0))}
+
+
 func actor_snapshot(actor_id: String = PLAYER_ID) -> Dictionary:
     var state: Dictionary = simulation.snapshot(actor_id)
     if state.is_empty():
@@ -817,6 +838,18 @@ func _run_boss_patterns() -> void:
                 "actor_id": str(id), "pattern": pattern,
                 "ticks": maxi(0, timer), "tick": simulation.fixed_tick})
         if timer > 0:
+            continue
+        # Bosses obey the same control/malfunction attack gate as regular AI.
+        # A blocked pattern is deferred with a fresh telegraph, never spawned
+        # from a stopped boss or bypassing combat status RNG.
+        if not Statuses.action_allowed(simulation.actors[id]["status_state"],
+                "attack", simulation.status_rng):
+            entity["pattern_timer"] = PATTERN_TELEGRAPH_TICKS + 1
+            entity["telegraph_sent"] = false
+            _clear_telegraph(str(id))
+            combat_notice.emit({"kind": "boss_pattern_cancelled",
+                "actor_id": str(id), "pattern": pattern,
+                "reason": "attack_control_blocked", "tick": simulation.fixed_tick})
             continue
         var fired: int = _fire_boss_pattern(str(id), pattern)
         var interval: int = maxi(PATTERN_TELEGRAPH_TICKS + 30,
