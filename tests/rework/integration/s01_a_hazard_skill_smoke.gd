@@ -112,13 +112,14 @@ func _run() -> void:
                     + Vector3.RIGHT, "fire": false}})
                 var after: float = float(b.actor_snapshot("VACCINE")["stats"]["health"])
                 _check(after < before, "B real HP lost after GPU contact at 60 Hz")
+                var accepted_contacts: int = b.simulation.environmental_hit_ticks.size()
                 if world.has_signal("environment_contact_requested"):
                     world.call("_on_environment_contact", fact)
                 router.live.advance_test_tick({"VACCINE": {
                     "move": Vector2.ZERO, "fire": false}})
-                var duplicate: float = float(b.actor_snapshot("VACCINE")["stats"]["health"])
-                _check(is_equal_approx(duplicate, after),
-                    "same GPU contact cannot damage twice")
+                _check(b.simulation.environmental_hit_ticks.size() == accepted_contacts
+                    and not bool(pilot.get("frozen")),
+                    "same GPU contact is deduplicated; its ongoing burn DoT may still tick")
                 fact["run_id"] = "old-run"
                 if world.has_signal("environment_contact_requested"):
                     world.call("_on_environment_contact", fact)
