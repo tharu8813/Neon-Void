@@ -24,6 +24,8 @@ const ObjectiveSession = preload("res://scripts/rework/world/cpu_objective_sessi
 const GPUSession = preload("res://scripts/rework/world/gpu_objective_session.gd")
 const RAMSession = preload("res://scripts/rework/world/ram_objective_session.gd")
 const StorageSession = preload("res://scripts/rework/world/storage_objective_session.gd")
+const HazardPulses = preload("res://scripts/rework/world/hardware_hazard_pulses.gd")
+const HazardContract = preload("res://scripts/rework/world/environment_hit_contract.gd")
 const PlayerMotor = preload("res://scripts/rework/world/preview_player_motor.gd")
 const CombatRouter = preload("res://scripts/rework/world/world_combat_router.gd")
 const CameraRig = preload("res://scripts/rework/camera/look_ahead_camera.gd")
@@ -46,6 +48,7 @@ var board: Variant
 var hardware: Variant
 var cpu_session: Variant
 var region_session: Variant
+var hazard_pulses: Variant
 var intro_receipts: Dictionary = {}
 var combat: Variant
 var player: Variant
@@ -134,8 +137,10 @@ func _physics_process(delta: float) -> void:
     camera.call("follow", player.global_position, pointer, delta)
     if current_mode == "cpu" and cpu_session != null:
         cpu_session.tick_player(player.global_position)
-    elif ["gpu", "ssd"].has(current_mode) and region_session != null:
+    elif ["gpu", "ssd", "hdd"].has(current_mode) and region_session != null:
         region_session.tick_player(player.global_position)
+    if hazard_pulses != null and is_instance_valid(hazard_pulses):
+        hazard_pulses.tick_player(player.global_position)
 
 const CameraRigMath = preload("res://scripts/rework/camera/look_ahead_math.gd")
 
@@ -375,6 +380,7 @@ func _enter_cpu(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
     hardware.interaction_requested.connect(_on_board_return_interacted)
     cpu_session.enemy_spawn_requested.connect(combat.spawn_hostile)
     cpu_session.extraction_interaction_requested.connect(_on_cpu_exit_interacted)
+    _install_hazard_pulses("CPU", cpu_session)
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
     camera.world_bounds = planned_map["world_bounds"]
     camera.global_position = Vector3(player.position.x, 14, player.position.z)
@@ -455,6 +461,7 @@ func _enter_ram(region_plan: Dictionary, E_checkpoint_verified: bool = false) ->
     hardware.interaction_requested.connect(region_session.on_world_interaction)
     hardware.interaction_requested.connect(_on_board_return_interacted)
     region_session.enemy_spawn_requested.connect(combat.spawn_hostile)
+    region_session.environment_contact_requested.connect(_on_environment_contact)
     region_session.extraction_interaction_requested.connect(_on_ram_exit_interacted)
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
     camera.world_bounds = planned_map["world_bounds"]
@@ -499,6 +506,8 @@ func _enter_storage(region_plan: Dictionary, E_checkpoint_verified: bool = false
     hardware.interaction_requested.connect(_on_board_return_interacted)
     region_session.enemy_spawn_requested.connect(combat.spawn_hostile)
     region_session.extraction_interaction_requested.connect(_on_storage_exit_interacted)
+    if id == "SSD" or id == "HDD":
+        _install_hazard_pulses(id, region_session)
     player.global_position = hardware.spawn_world() + Vector3.UP * 0.5
     camera.world_bounds = planned_map["world_bounds"]
     camera.global_position = Vector3(player.position.x, 14, player.position.z)
@@ -644,6 +653,10 @@ func acknowledge_death(ack: Dictionary) -> bool:
     return true
 
 func _remove_active_level() -> void:
+    if hazard_pulses != null:
+        remove_child(hazard_pulses)
+        hazard_pulses.queue_free()
+        hazard_pulses = null
     if active_level != null:
         remove_child(active_level)
         active_level.queue_free()
@@ -662,9 +675,36 @@ func _freeze_with_error(reason: String) -> void:
     player.movement_enabled = false
     integration_error.emit(reason)
 
+func _install_hazard_pulses(id: String, controller: Node) -> void:
+    var session := HazardPulses.new()
+    session.name = id + "WorldHazardPulses"
+    add_child(session)
+    if not session.configure(current_run_id, id, hardware, controller):
+        session.queue_free()
+        _freeze_with_error(id + "_hazard_geometry_failed")
+        return
+    hazard_pulses = session
+    session.environment_contact_requested.connect(_on_environment_contact)
+
 func _on_environment_contact(fact: Dictionary) -> void:
-    if current_mode == "gpu" and str(fact.get("run_id", "")) == current_run_id:
-        environment_contact_requested.emit(fact.duplicate(true))
+    # Reject late and foreign scene events before calling B's public API.
+    var region_id: String = current_mode.to_upper()
+    if not ["CPU", "GPU", "RAM", "SSD", "HDD"].has(region_id)             or str(fact.get("run_id", "")) != current_run_id             or str(fact.get("region_id", "")) != region_id:
+        return
+    var spec: Dictionary = HazardContract.to_b_spec(fact, current_run_id, region_id)
+    if spec.is_empty():
+        _freeze_with_error("D_invalid_world_hazard_contact:" + region_id)
+        return
+    environment_contact_requested.emit(fact.duplicate(true))
+    if demo_mode:
+        return # Preview is explicitly NON-authoritative, no fake damage.
+    var answer: Dictionary = combat.queue_environment_hit(spec)
+    if bool(answer.get("ok", false)):
+        return # Accepted to B queue only; not yet an HP hit.
+    var reason: String = str(answer.get("reason", "unknown"))
+    if reason in ["environment_contact_cooldown", "invalid_environment_target"]:
+        return
+    _freeze_with_error("B_environment_hit_rejected:" + reason)
 
 func _on_b_combat_notice(notice: Dictionary) -> void:
     if hardware != null and is_instance_valid(hardware) and hardware.has_method("on_b_combat_notice"):

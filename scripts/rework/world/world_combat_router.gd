@@ -79,6 +79,20 @@ func upgrade_plugin_after_ack(plugin_id: String, level: int) -> bool:
         and live.has_method("upgrade_plugin_after_ack") \
         and bool(live.upgrade_plugin_after_ack(plugin_id, level))
 
+## D never alters HP/defence/CC. B alone queues/validates damage.
+## A's public facade is preferred; temporary public B endpoint fallback
+## supports staged parallel PR review without changing A-owned source.
+func queue_environment_hit(spec: Dictionary) -> Dictionary:
+    if mode != "formal" or live == null or not is_instance_valid(live):
+        return {"ok": false, "reason": "not_formal_combat"}
+    if live.has_method("queue_environment_hit"):
+        return live.queue_environment_hit(spec)
+    # B owns this public method. Never touch B's internal simulation or bus.
+    var b_public: Variant = live.get("bridge")
+    if b_public != null and is_instance_valid(b_public)             and b_public.has_method("queue_environment_hit"):
+        return b_public.queue_environment_hit(spec)
+    return {"ok": false, "reason": "B_environment_api_not_integrated"}
+
 func actor_snapshot(actor_id: String) -> Dictionary:
     return live.actor_snapshot(actor_id) if mode == "formal" else {}
 

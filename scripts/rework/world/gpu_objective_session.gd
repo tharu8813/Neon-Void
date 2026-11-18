@@ -107,7 +107,7 @@ func tick_player(player_world: Vector3) -> void:
     # BoxMesh half-width 0.35m + 0.30m player capsule radius.
     # Both the visual and reported contact use the same physical threshold.
     var in_beam: bool = absf(offset.y if horizontal else offset.x) <= 0.65
-    if in_arena and in_beam and geometry.can_walk(player_world):
+    if in_arena and in_beam and geometry.can_walk(player_world)             and _beam_line_is_floor(center, player_world):
         var cycle: int = floori(float(physics_tick - 1) / 90.0)
         environment_contact_requested.emit({
             "schema": 1, "type": "world_hazard_contact",
@@ -209,3 +209,16 @@ func acknowledge_cleansed() -> bool:
     if geometry == null or not world_state.is_extraction_open("GPU"):
         return false
     return geometry.set_extraction_open()
+
+func _beam_line_is_floor(from_world: Vector3, to_world: Vector3) -> bool:
+    # The glowing beam may cross mesh walls. B is notified only when its
+    # trace through the actual seeded tile map is unobstructed.
+    var a := Vector2(from_world.x, from_world.z)
+    var b := Vector2(to_world.x, to_world.z)
+    var steps: int = maxi(1, ceili(a.distance_to(b) / (Maps.TILE_SIZE * 0.25)))
+    for i in range(steps + 1):
+        var at: Vector2 = a.lerp(b, float(i) / float(steps))
+        if not Maps.is_floor(geometry.map_plan, Vector2i(
+                floori(at.x / Maps.TILE_SIZE), floori(at.y / Maps.TILE_SIZE))):
+            return false
+    return true
