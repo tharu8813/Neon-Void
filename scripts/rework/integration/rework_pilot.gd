@@ -21,6 +21,7 @@ const StatusHUD = preload("res://scripts/rework/ui/pilot_status_effects.gd")
 const SkillBar = preload("res://scripts/rework/ui/pilot_skill_bar.gd")
 const SkillDraft = preload("res://scripts/rework/ui/pilot_skill_draft.gd")
 const SkillOffer = preload("res://scripts/rework/skills/skill_offer.gd")
+const PluginLiveView = preload("res://scripts/rework/plugins/plugin_live_view.gd")
 const SkillRegistry = preload("res://scripts/rework/skills/skill_registry.gd")
 const Audio = preload("res://scripts/rework/audio/rework_audio.gd")
 
@@ -340,6 +341,43 @@ func _accept_saved_state(loaded: Dictionary) -> void:
             return
     _refresh()
 
+## Build the display only from the SAME E validated save and B production
+## adapter. Never infer ownership from a visible offer or grant missing items.
+func _render_verified_plugins(loaded: Dictionary) -> void:
+    if tactical_hud == null:
+        return
+    var saved: Dictionary = loaded.get("snapshot", {})
+    var vaccine_value: Variant = saved.get("vaccine", null)
+    var router: Variant = world.get("combat")
+    if not (vaccine_value is Dictionary) or router == null \
+            or str(router.get("mode")) != "formal":
+        tactical_hud.render_plugin_view({})
+        return
+    var live: Variant = router.get("live")
+    if live == null or live.bridge == null or not live.bridge.running:
+        tactical_hud.render_plugin_view({})
+        return
+    var vaccine: Dictionary = vaccine_value
+    var mission_value: Variant = vaccine.get("mission", null)
+    if not (mission_value is Dictionary) \
+            or str(mission_value.get("run_id", "")) != current_run_id:
+        tactical_hud.render_plugin_view({})
+        return
+    var authorized_levels: Dictionary = {}
+    var carried: Dictionary = vaccine.get("carried", {})
+    for uid in carried:
+        authorized_levels[str(uid)] = int(carried[uid].get("level", 0))
+    var obtained: Dictionary = mission_value.get("obtained_plugins", {})
+    for uid in obtained:
+        authorized_levels[str(uid)] = int(obtained[uid].get("level", 0))
+    var verified: Dictionary = PluginLiveView.describe(authorized_levels,
+        live.bridge.effects.active_levels(), {},
+        int(live.bridge.simulation.fixed_tick))
+    tactical_hud.render_plugin_view(verified)
+    if not bool(verified.get("ok", false)) \
+            and str(verified.get("reason", "")).begins_with("B_exceeds_E:"):
+        _halt("C_B_plugin_level_exceeds_E_record")
+
 func _refresh() -> void:
     if slot_path.is_empty():
         return
@@ -350,6 +388,7 @@ func _refresh() -> void:
     var saved: Dictionary = loaded.get("snapshot", {})
     if tactical_hud != null:
         tactical_hud.render_saved_snapshot(loaded)
+        _render_verified_plugins(loaded)
         if frozen:
             tactical_hud.show_blocked()
     if mission_tracker != null:
