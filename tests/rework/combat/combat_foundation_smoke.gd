@@ -136,6 +136,15 @@ func _run() -> void:
     check(bus.submit_proc(forbidden, "on_hit_plugin", {"trigger_kind": "on_hit", "target_id": "B"}).is_empty(), "proc trigger permission")
     RuntimeCases.run(Callable(self, "check"))
     QueueShieldCases.run(Callable(self, "check"))
+    for case_path in [
+        "res://tests/rework/combat/environment_hit_cases.gd",
+        "res://tests/rework/skills/skill_s01_cases.gd"
+    ]:
+        var case_script: Variant = load(case_path)
+        check(case_script is Script and case_script.can_instantiate(),
+            "S01 B parse/load failure: " + case_path)
+        if case_script is Script and case_script.can_instantiate():
+            case_script.run(Callable(self, "check"))
     var modules: Array[String] = [
         "res://scripts/rework/combat/permanent_growth.gd",
         "res://scripts/rework/skills/skill_registry.gd",

@@ -37,6 +37,7 @@ static func run(check: Callable, scene_root: Node) -> void:
     var deaths: Array = []
     var hp: Array[float] = []
     var spawn_notices: Array = []
+    var hazard_notices: Array = []
     battle.enemy_defeated.connect(func(id: String, receipt: String) -> void:
         kills.append(id)
         receipts.append(receipt))
@@ -45,10 +46,28 @@ static func run(check: Callable, scene_root: Node) -> void:
         hp.append(current))
     battle.combat_notice.connect(func(e: Dictionary) -> void:
         if str(e.get("kind", "")) == "projectile_spawn":
-            spawn_notices.append(e))
+            spawn_notices.append(e)
+        if str(e.get("kind", "")) == "hit" and bool(e.get("environment_source", false)):
+            hazard_notices.append(e))
     battle.begin_encounter(player, camera, {}, "B-proof-1")
     check.call(battle.running and battle.simulation.actors.has("VACCINE"),
         "D drop-in begins real B live simulation and registers player")
+    var environment: Dictionary = {"run_id": "B-proof-1", "source_id": "floor-heat",
+        "region_id": "CPU", "event_id": "touch-1", "target_id": "VACCINE",
+        "damage_type": "magic", "base_damage": 7.0, "repeat_ticks": 0}
+    check.call(bool(battle.queue_environment_hit(environment).get("ok", false)),
+        "production B accepts D environment descriptor without direct HP edit")
+    battle.set_combat_input({"fire": false, "move": Vector2.ZERO})
+    battle.advance_production_tick()
+    check.call(close_to(float(battle.actor_snapshot()["stats"]["health"]), 93.0) and
+        hazard_notices.size() == 1, "real B/C facade resolves hazard and publishes hit")
+    check.call(str(battle.queue_environment_hit(environment).get("reason", "")) ==
+        "environment_contact_cooldown", "D contact replay cannot double damage")
+    environment["run_id"] = "stale-run"
+    check.call(str(battle.queue_environment_hit(environment).get("reason", "")) ==
+        "stale_environment_run", "stale world hazard fails closed")
+    check.call(battle.combat_hud_snapshot().get("player", {}).has("skill_state"),
+        "A HUD receives a defensive read-only combat snapshot")
     check.call(battle.spawn_hostile({"actor_id": "E1", "position": Vector3(2,0,0)}),
         "spawn register live hostile")
     check.call(not battle.spawn_hostile({"actor_id": "E1", "position": Vector3(2,0,0)}),
@@ -67,13 +86,24 @@ static func run(check: Callable, scene_root: Node) -> void:
     check.call(not battle.enemies.has("E1"),
         "defeated actor removed from D-facing enemy table")
 
-    battle.spawn_hostile({"actor_id": "BOSS", "position": Vector3(4,0,0), "boss": true})
+    battle.spawn_hostile({"actor_id": "BOSS", "position": Vector3(4,0,0),
+        "boss": true, "role": "kernel_overseer"})
     var control: Dictionary = Statuses.apply(
         battle.simulation.actors["BOSS"]["status_state"],
         {"id":"root", "control":true, "duration_ticks":120,
          "stack_mode":"refresh", "flags":["rooted"]})
     check.call(int(control.get("duration_ticks", -1)) == 60,
         "live boss control resistance applied in B status engine")
+    Statuses.apply(battle.simulation.actors["BOSS"]["status_state"],
+        {"id": "boss_stop", "duration_ticks": 90, "stack_mode": "refresh",
+         "control": true, "flags": ["stopped"]})
+    battle.enemies["BOSS"]["pattern_timer"] = 1
+    var boss_shots_before: int = battle.simulation.projectiles.size()
+    battle._run_boss_patterns()
+    check.call(battle.simulation.projectiles.size() == boss_shots_before and
+        int(battle.enemies["BOSS"]["pattern_timer"]) ==
+        battle.PATTERN_TELEGRAPH_TICKS + 1,
+        "controlled boss cannot bypass B attack gate with scripted volleys")
     var movement_buff: Dictionary = Statuses.apply(
         battle.simulation.actors["VACCINE"]["status_state"],
         {"id":"temporary_slow", "duration_ticks":120,
