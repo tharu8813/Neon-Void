@@ -138,7 +138,8 @@ func _run() -> void:
     QueueShieldCases.run(Callable(self, "check"))
     for case_path in [
         "res://tests/rework/combat/environment_hit_cases.gd",
-        "res://tests/rework/skills/skill_s01_cases.gd"
+        "res://tests/rework/skills/skill_s01_cases.gd",
+        "res://tests/rework/combat/s01_shield_combo_knockback_cases.gd"
     ]:
         var case_script: Variant = load(case_path)
         check(case_script is Script and case_script.can_instantiate(),
