@@ -5,6 +5,7 @@ const Sink = preload("res://scripts/rework/plugins/plugin_b_combat_sink.gd")
 const Catalog = preload("res://scripts/rework/plugins/plugin_catalog.gd")
 const Offers = preload("res://scripts/rework/plugins/plugin_offer_engine.gd")
 const View = preload("res://scripts/rework/plugins/plugin_offer_view.gd")
+const LiveView = preload("res://scripts/rework/plugins/plugin_live_view.gd")
 const Coordinator = preload("res://scripts/rework/plugins/plugin_reward_coordinator.gd")
 
 var failures: Array[String] = []
@@ -176,6 +177,35 @@ func _run() -> void:
 		and not offers.offer_snapshot()["active"],"persisted E ack finalizes exactly once")
 	check(not offers.confirm_card(str(prepared["receipt_id"]),{"applied":true,"receipt_id":prepared["receipt_id"]}).get("ok",false),"double E ack never levels twice")
 	check(opened["offer_id"]==prepared["offer_id"],"stable offer receipt")
+
+	# Read-only C HUD descriptor never promotes an unconfirmed E card to B.
+	var before_E: Dictionary = LiveView.describe({}, {})
+	check(bool(before_E.get("ok",false)) and before_E.get("total_catalog",0)==27
+		and int(before_E.get("equipped",-1))==0,"27 catalog cards stay unowned before E")
+	for entry in full:
+		var uid: String = str(entry["plugin_id"])
+		var waiting: Dictionary = LiveView.describe({uid:1},{})
+		check(bool(waiting.get("ok",false)) and int(waiting.get("awaiting_sync",-1))==1,
+			"E-owned plugin cannot claim B application before combat sync: "+uid)
+		var equipped_view: Dictionary = LiveView.describe({uid:1},{uid:1})
+		check(bool(equipped_view.get("ok",false)) and int(equipped_view.get("equipped",-1))==1,
+			"all 27 IDs have E/B matching read-only HUD detail: "+uid)
+		var unauthorized: Dictionary = LiveView.describe({}, {uid:1})
+		check(not bool(unauthorized.get("ok",true)) and unauthorized.get("plugins",[]).is_empty(),
+			"B level never overrides missing E approval: "+uid)
+	var fever_view: Dictionary = LiveView.describe({"nv_l_fever":1},{"nv_l_fever":1},
+		{"fever_until":200},100)
+	var fever_status: String = ""
+	for row in fever_view.get("plugins",[]):
+		if str(row.get("plugin_id",""))=="nv_l_fever":
+			fever_status=str(row.get("status",""))
+	check(fever_status=="timed_buff_active","HUD distinguishes active fever from simply owned")
+	var stale_level: Dictionary = LiveView.describe({"nv_c_move_speed":2},{"nv_c_move_speed":1})
+	check(stale_level.get("awaiting_sync",-1)==1,
+		"Higher E level is pending B sync, never described as already active")
+	check(not LiveView.describe({"nv_c_move_speed":1},{"nv_c_move_speed":2}).get("ok",true)
+		and not LiveView.describe({"nv_m_unapproved":1},{}).get("ok",true),
+		"unapproved level and invented mythic fail closed")
 
 	# A's aggregate #107 contains B. Exercise its real math/status functions
 	# when this C smoke is mounted there; own stacked branch has no B files.
