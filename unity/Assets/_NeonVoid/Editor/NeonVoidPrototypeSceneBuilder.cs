@@ -1,7 +1,9 @@
 #if UNITY_EDITOR
 using System.IO;
+using NeonVoid.Combat;
+using NeonVoid.Combat.Projectiles;
+using NeonVoid.Core;
 using NeonVoid.Player;
-using NeonVoid.Prototype;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -62,15 +64,20 @@ namespace NeonVoid.EditorTools
             character.center = Vector3.zero;
             character.height = 2f;
             character.radius = 0.45f;
-            // P0-02: movement, dash and aim now run on the deterministic 60 Hz simulation.
-            // PrototypePlayerController moved the capsule straight from Update and is gone.
+            // Every tick in the scene comes from this one clock. Two accumulators would drift.
+            var simulation = new GameObject("Simulation Runner");
+            simulation.AddComponent<SimulationRunner>();
+
+            // P0-02: movement, dash and aim run on the deterministic 60 Hz simulation.
             PlayerInputRouter router = player.AddComponent<PlayerInputRouter>();
             PlayerSimulationDriver driver = player.AddComponent<PlayerSimulationDriver>();
             AssignInputAsset(router);
             AssignSerialized(driver, "inputRouter", router);
 
-            // Still a prototype: auto-fire belongs to the P1 combat engine, not here.
-            player.AddComponent<PrototypeAutoShooter>();
+            // P1: the player is a real combat actor and shoots through the damage pipeline.
+            player.AddComponent<CombatActor>();
+            AutoAttacker attacker = player.AddComponent<AutoAttacker>();
+            AssignSerialized(attacker, "projectileMaterial", playerMat);
 
             CreateDummy("Dummy A", new Vector3(6f, 0.7f, 5f), enemyMat);
             CreateDummy("Dummy B", new Vector3(-7f, 0.7f, -5f), enemyMat);
@@ -151,6 +158,33 @@ namespace NeonVoid.EditorTools
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        private static void AssignSerializedInt(Object target, string fieldName, int value)
+        {
+            SerializedProperty property = FindField(target, fieldName);
+            if (property == null)
+                return;
+            property.intValue = value;
+            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AssignSerializedFloat(Object target, string fieldName, float value)
+        {
+            SerializedProperty property = FindField(target, fieldName);
+            if (property == null)
+                return;
+            property.floatValue = value;
+            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static SerializedProperty FindField(Object target, string fieldName)
+        {
+            var serialized = new SerializedObject(target);
+            SerializedProperty property = serialized.FindProperty(fieldName);
+            if (property == null)
+                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
+            return property;
+        }
+
         private static Material GetOrCreateMaterial(string name, Color color)
         {
             string path = MaterialDirectory + "/" + name + ".mat";
@@ -189,7 +223,11 @@ namespace NeonVoid.EditorTools
             dummy.transform.position = position;
             dummy.transform.localScale = Vector3.one * 1.4f;
             SetMaterial(dummy, material);
-            dummy.AddComponent<PrototypeDummyTarget>();
+
+            // A real combat actor on the hostile team, so the damage pipeline applies to it.
+            CombatActor actor = dummy.AddComponent<CombatActor>();
+            AssignSerializedInt(actor, "teamId", 1);
+            AssignSerializedFloat(actor, "maxHealth", 40f);
             return dummy;
         }
 

@@ -4,29 +4,28 @@ using UnityEngine;
 namespace NeonVoid.Player
 {
     /// <summary>
-    /// Runs the player's 60 Hz simulation and reconciles it with Unity's collider.
+    /// Runs the player's movement rules and reconciles them with Unity's collider.
     /// <para>
-    /// This is the replacement for <c>PrototypePlayerController</c>, which moved the character
-    /// straight from <c>Update</c> with <c>Time.deltaTime</c> and therefore produced a
-    /// different result at every frame rate.
+    /// This replaced <c>PrototypePlayerController</c>, which moved the character straight from
+    /// Update with Time.deltaTime and therefore produced a different result at every frame rate.
     /// </para>
     /// <para>
-    /// <b>Why ticks run from Update and not FixedUpdate.</b> FixedUpdate's rate is a project
-    /// setting; binding gameplay to it would let that setting change combat results.
-    /// <see cref="SimulationClock"/> owns the cadence instead, so the tick length is a constant
-    /// no scene or settings file can alter.
+    /// <b>Why there is no clock here any more.</b> This component used to own a private
+    /// SimulationClock. That was fine while movement was the only thing simulated, but combat
+    /// ticks too, and two private accumulators drift apart: each carries its own rounding, so
+    /// movement and status durations stop agreeing about what tick it is. Ticks now arrive from
+    /// the single <see cref="SimulationRunner"/> that docs/06 section 4 calls for.
     /// </para>
     /// <para>
     /// <b>The one place determinism stops.</b> The rules compute a desired displacement; the
-    /// CharacterController resolves it against geometry and may return something else when the
-    /// player hits a wall. The achieved position is written back into the simulation state, so
-    /// the rules and the transform never drift apart — but position after a collision is
-    /// Unity's answer, not a reproducible one. docs/02 section 1 requires stating this rather
-    /// than claiming full determinism.
+    /// CharacterController resolves it against geometry and may return something else at a wall.
+    /// The achieved position is written back into the state, so the rules and the transform
+    /// never drift apart, but a position after collision is Unity's answer rather than a
+    /// reproducible one. docs/02 section 1 requires stating that rather than assuming it away.
     /// </para>
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
-    public sealed class PlayerSimulationDriver : MonoBehaviour
+    public sealed class PlayerSimulationDriver : MonoBehaviour, ISimulationTickReceiver
     {
         [SerializeField] private PlayerInputRouter inputRouter;
 
@@ -39,26 +38,18 @@ namespace NeonVoid.Player
             DashCooldownTicks = 45,
         };
 
-        [Tooltip("Ticks a single frame may run while catching up after a stall.")]
-        [SerializeField, Min(1)] private int maxTicksPerFrame = 8;
-
         private CharacterController _character;
-        private SimulationClock _clock;
         private PlayerMotionState _state;
+        private SimulationRunner _runner;
 
         /// <summary>Authoritative movement state as of the last completed tick.</summary>
         public PlayerMotionState State => _state;
 
-        /// <summary>Logic ticks run so far. The simulation's only time axis.</summary>
-        public long TickIndex => _clock?.TickIndex ?? 0L;
-
-        /// <summary>Ticks abandoned because a frame exceeded the catch-up budget.</summary>
-        public long DroppedTicks => _clock?.DroppedTicks ?? 0L;
+        int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Player;
 
         private void Awake()
         {
             _character = GetComponent<CharacterController>();
-            _clock = new SimulationClock(maxTicksPerFrame);
 
             try
             {
@@ -72,27 +63,42 @@ namespace NeonVoid.Player
 
             Vector3 p = transform.position;
             Vector3 forward = transform.forward;
-            _state = PlayerMotionState.Spawn(
-                new Vector2(p.x, p.z),
-                new Vector2(forward.x, forward.z));
+            _state = PlayerMotionState.Spawn(new Vector2(p.x, p.z), new Vector2(forward.x, forward.z));
 
             if (inputRouter == null)
                 inputRouter = GetComponent<PlayerInputRouter>();
         }
 
+        private void OnEnable()
+        {
+            _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
+            if (_runner == null)
+            {
+                Debug.LogError($"{name}: no SimulationRunner in the scene; the player will not move.", this);
+                return;
+            }
+            _runner.Register(this);
+        }
+
+        private void OnDisable()
+        {
+            if (_runner != null)
+                _runner.Unregister(this);
+        }
+
+        /// <summary>
+        /// Devices are polled once per render frame, which is the only thing that still belongs
+        /// in Update: a press must be latched before the ticks of this frame consume it.
+        /// </summary>
         private void Update()
         {
             if (inputRouter != null)
                 inputRouter.SampleFrame();
 
-            int ticks = _clock.Advance(Time.deltaTime);
-            for (int i = 0; i < ticks; ++i)
-                RunOneTick();
-
             ApplyFacingToTransform();
         }
 
-        private void RunOneTick()
+        void ISimulationTickReceiver.OnSimulationTick(long tickIndex)
         {
             PlayerInputCommand command = inputRouter != null
                 ? inputRouter.ConsumeCommandForTick(_state.PositionXZ)
@@ -109,8 +115,8 @@ namespace NeonVoid.Player
         }
 
         /// <summary>
-        /// Facing is presentation applied once per frame, not once per tick: rotating the
-        /// transform several times in one frame would cost work nobody can see.
+        /// Facing is presentation, applied once per frame rather than once per tick: rotating
+        /// the transform several times in one frame costs work nobody can see.
         /// </summary>
         private void ApplyFacingToTransform()
         {
@@ -118,8 +124,7 @@ namespace NeonVoid.Player
             if (facing.sqrMagnitude <= PlayerMotionSimulation.MovementDeadZoneSqr)
                 return;
 
-            transform.rotation = Quaternion.LookRotation(
-                new Vector3(facing.x, 0f, facing.y), Vector3.up);
+            transform.rotation = Quaternion.LookRotation(new Vector3(facing.x, 0f, facing.y), Vector3.up);
         }
     }
 }
