@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "planning-v2",
+  "designStatus": "names-core-mechanics-confirmed; area-boss-objective-details-draft",
+  "hardwareCount": 5,
+  "minEasyAreasPerRun": 1,
+  "targetMinutesPerArea": {"min": 8, "max": 12, "status": "confirmed design target, not measured"},
+  "hardware": [
+    {"id": "cpu", "displayName": "CPU", "draftPlayerVerb": "defend", "draftBoss": "코어 워처", "draftMechanic": "core defense and overload"},
+    {"id": "gpu", "displayName": "GPU", "draftPlayerVerb": "dodge", "draftBoss": "렌더 옵저버", "draftMechanic": "laser telegraphs and rendering hazards"},
+    {"id": "ram", "displayName": "RAM", "draftPlayerVerb": "identify", "draftBoss": "메모리 리치", "draftMechanic": "clones and shifting memory"},
+    {"id": "ssd", "displayName": "SSD", "draftPlayerVerb": "traverse", "draftBoss": "스트림 인터셉터", "draftMechanic": "high-speed rails and node objectives"},
+    {"id": "hdd", "displayName": "HDD", "draftPlayerVerb": "endure", "draftBoss": "섹터 콜로서스", "draftMechanic": "rotating sections and attrition"}
+  ],
+  "environmentIds": ["none", "mutation_1", "mutation_2", "mutation_3", "mutation_4", "mutation_5", "stack_overflow", "tunnel_infection", "spread", "initial_state"],
+  "unresolved": ["difficulty probability distribution", "environment overlap/exclusion", "re-entry", "cross-area extraction", "boss and objective final rules"]
+}

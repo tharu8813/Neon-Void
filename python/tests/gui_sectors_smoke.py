@@ -1,0 +1,177 @@
+"""Live Tk integration across all sectors, boss confirmation and infection."""
+from __future__ import annotations
+
+import tkinter as tk
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from neonvoid.constants import DT
+from neonvoid.content.virus_catalog import ENCRYPTION_PULSE_RADIUS
+from neonvoid.content.sectors import select_boss_signature
+from neonvoid.game import Game
+from neonvoid.world.session import CPU_EXIT
+
+
+GATES = {"cpu": (1200, 270), "memory": (1960, 780),
+         "storage": (1200, 1320), "network": (440, 780)}
+
+
+def main():
+    root = tk.Tk()
+    opts = SimpleNamespace(selftest=1, fps=False, seed=71,
+                           no_sound=True, god=True, volume=None)
+    try:
+        game = Game(root, opts)
+        game.state = "hub"
+        game.c.delete("scr")
+        game.p.x, game.p.y = 1580, 780
+        game.interact_hub()
+        assert game.world.room == "os"
+        game.render()
+        assert "자유 진입" in game.c.itemcget(game.hub_prompt, "text")
+        assert "위험 2/5" in game.c.itemcget(game.hub_nodes["cpu"]["caption"], "text")
+        game.p.x, game.p.y = 1200, 1050
+        game.interact_hub()
+        assert game.purify_uses == 3
+        game.infection.apply_infection(40)
+        game.infection.os_integrity = 95
+        game.interact_hub()
+        assert game.purify_uses == 2
+        assert game.infection.infection == 8 and game.infection.os_integrity == 100
+        game.infection.player_infection = 100
+        game.infection.os_integrity = 20
+        game.render()
+        preview = game.c.itemcget(game.hub_prompt, "text")
+        assert "정화 후 68%" in preview and "확산" in preview
+        assert "0.3%/s" in preview
+        game.infection.player_infection = 8
+        game.infection.os_integrity = 100
+        game.settings.bindings["interact"] = "g"
+        cleared = []
+        game.events.subscribe("os_cleaned", lambda e: cleared.append(e))
+
+        # Clear in a non-scripted order. Every entry requires proximity to a gate.
+        for sector in ("storage", "network", "memory", "cpu"):
+            game.p.x, game.p.y = GATES[sector]
+            game.interact_hub()
+            assert game.state == "play"
+            assert game.world.active_sector == sector
+            game.render()
+            if sector == "storage":
+                assert "자동 사격" in game.c.itemcget(game.banner_item2, "text")
+                assert game.banner_t == 3.2
+            else:
+                assert "자동 사격" not in game.c.itemcget(game.banner_item2, "text")
+            if sector == "cpu":
+                infection_before = game.infection.infection
+                game.infection.player_infection = 55
+                game.render()
+                assert "무결성 감소 중" in game.c.itemcget(game.infection_hint, "text")
+                assert "−0.3%/s" in game.c.itemcget(game.infection_detail, "text")
+                assert "주의" in game.c.itemcget(game.infection_text, "text")
+                assert game.c.itemcget(game.infection_fill, "fill") == "#e5a34e"
+                game.infection.player_infection = 75
+                game.settings.reduced_effects = True
+                game.render()
+                assert "[G]" in game.c.itemcget(game.infection_hint, "text")
+                assert game.c.itemcget(game.infection_bg, "outline") == "#ff7082"
+                assert "위험" in game.c.itemcget(game.infection_text, "text")
+                previous_integrity = game.infection.os_integrity
+                game.infection.player_infection = 8
+                game.infection.os_integrity = 20
+                game.render()
+                assert "위험" in game.c.itemcget(game.infection_text, "text")
+                assert game.c.itemcget(game.infection_fill, "fill") == "#ff5872"
+                game.infection.os_integrity = previous_integrity
+                game.infection.player_infection = infection_before
+                game.settings.reduced_effects = False
+            for wave in range(1, 6):
+                game.spawn_queue.clear()
+                game.enemies.clear()
+                assert game.current_encounter is not None
+                assert game.current_encounter.wave_index == wave
+                if wave == 1:
+                    before = game.infection.infection
+                    game.step(DT)
+                    assert game.infection.infection > before
+                    game.spawn_queue.clear()
+                    game.enemies.clear()
+                if wave == 5:
+                    boss = game.make_enemy(game.current_encounter.boss_kind)
+                    if sector == "storage":
+                        boss.x, boss.y = 640, 360
+                        game.step_virus_patterns(3.0)
+                        _, source, action = game.virus_pending[0]
+                        assert source is boss and action.behavior == "encryption_pulse"
+                        game.settings.reduced_effects = True
+                        game.render()
+                        warning = game.pool_warning.items[0]
+                        assert game.c.itemcget(warning, "state") == "normal"
+                        radius = ENCRYPTION_PULSE_RADIUS
+                        assert game.c.coords(warning) == [640 - radius, 360 - radius,
+                                                          640 + radius, 360 + radius]
+                        assert "원 밖으로 이동" in game.c.itemcget(game.boss_warning_txt, "text")
+                        with patch.object(game, "hurt_player") as hurt:
+                            game.p.x, game.p.y = boss.x + radius, boss.y
+                            game._execute_virus_action(boss, action)
+                            hurt.assert_not_called()
+                            game.p.x -= 1
+                            game._execute_virus_action(boss, action)
+                            hurt.assert_called_once()
+                        assert boss.vulnerable_t > 0
+                        game.settings.reduced_effects = False
+                    game.damage_enemy(boss, boss.hp * 4 + 1)
+                    assert game.boss_defeated
+                    game.p.hp = game.p.maxhp * 0.4
+                before_software = dict(game.levels)
+                signature = (select_boss_signature(sector, before_software)
+                             if wave == 5 else None)
+                game.check_wave(0.8)
+                assert game.world.sector_waves[sector] == wave
+                assert game.campaign.progress[sector.upper()].completed_waves == wave
+                if wave < 5:
+                    assert game.state == "upgrade"
+                    game.pick_upgrade(0)
+                else:
+                    assert sector in game.world.sector_clean
+                    assert game.state == "play"
+                    assert abs(game.p.hp - game.p.maxhp * 0.55) < 1e-9
+                    if signature is not None:
+                        assert game.levels[signature] == before_software.get(signature, 0) + 1
+                        assert "획득" in game.sector_clear_reward
+            game.render()
+            assert "[G]" in game.c.itemcget(game.banner_item2, "text")
+            assert "감염 압력 없음" in game.c.itemcget(game.infection_hint, "text")
+            assert game.pool_warning.n == 0
+            game.p.st["hp_regen"] = 0.5
+            game.p.mana = 20
+            before_hp = game.p.hp
+            assert not game.try_cast_skill("guard")
+            for _ in range(60):
+                game.step(DT)
+            assert game.p.hp == before_hp and game.p.mana == 20
+            game.p.x, game.p.y = CPU_EXIT
+            game.leave_sector()
+            assert game.state == "hub"
+            if sector == "cpu":
+                game.p.x, game.p.y = 1200, 780
+                game.render()
+                assert "OS 철수" in game.c.itemcget(game.hub_prompt, "text")
+                game.p.x, game.p.y = GATES[sector]
+            software_at_clear = dict(game.levels)
+            game.interact_hub()
+            assert game.p.hp == before_hp
+            assert game.levels == software_at_clear  # CLEAN re-entry not farmable
+            game.leave_sector()
+        assert game.world.os_clean and game.campaign.os_clean
+        assert len(cleared) == 1
+        game.render()
+        assert game.c.find_withtag("hub-world")
+        assert not game.current_encounter
+        print("[gui-sectors] 4 zones, 20 waves, 4 real boss kills, infection, OS CLEAN passed")
+    finally:
+        root.destroy()
+
+
+if __name__ == "__main__":
+    main()

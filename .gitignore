@@ -1,0 +1,39 @@
+# Unity
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Logs/
+unity/UserSettings/
+unity/Build/
+unity/Builds/
+unity/MemoryCaptures/
+unity/Recordings/
+unity/.vs/
+unity/*.sln
+unity/*.csproj
+unity/*.slnx
+unity/*.user
+unity/.idea/
+unity/.vscode/
+unity/Assets/**/*.tmp
+# Python reference runtime
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+python/build/
+python/dist/
+# Never track user saves
+save.json
+settings.json
+profile.json
+antivirus_db.json
+os_checkpoint.json
+*.bak
+*.tmp
+# General
+.DS_Store
+Thumbs.db
+*.log
+.env

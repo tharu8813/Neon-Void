@@ -1,0 +1,251 @@
+{
+  "catalogVersion": "planning-v2",
+  "generatedFrom": "docs/03_PLUGINS_AND_SKILLS.md",
+  "warning": "Draft IDs and Korean display names are NOT approved immutable save IDs. No mythic content is approved.",
+  "pluginCountExistingConcepts": 27,
+  "plugins": [
+    {
+      "draftId": "G01",
+      "rarity": "common",
+      "draftDisplayNameKo": "랜덤 패치",
+      "originalEffectDirection": "무작위 능력치 **3개 증가**",
+      "unresolvedDesign": "유효 후보 부족·같은 스탯 2회 선택 여부 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G02",
+      "rarity": "common",
+      "draftDisplayNameKo": "경량화",
+      "originalEffectDirection": "이동속도 증가",
+      "unresolvedDesign": "가산/배수/상한 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G03",
+      "rarity": "common",
+      "draftDisplayNameKo": "확장 탄두",
+      "originalEffectDirection": "탄환 크기 증가",
+      "unresolvedDesign": "유효 충돌크기·VFX 크기 분리",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G04",
+      "rarity": "common",
+      "draftDisplayNameKo": "취약점 분석",
+      "originalEffectDirection": "물리·마법 **비율 관통** 증가",
+      "unresolvedDesign": "두 종류 동시 또는 개별 증가 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G05",
+      "rarity": "common",
+      "draftDisplayNameKo": "주기 차폐막",
+      "originalEffectDirection": "**30초마다 보호막** 생성",
+      "unresolvedDesign": "중첩·갱신·만료 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G06",
+      "rarity": "common",
+      "draftDisplayNameKo": "스로틀 증폭",
+      "originalEffectDirection": "공격속도 + 탄환속도 증가",
+      "unresolvedDesign": "공격속도 상한 검사",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G07",
+      "rarity": "common",
+      "draftDisplayNameKo": "실행 차폐",
+      "originalEffectDirection": "스킬 사용 시 보호막 생성",
+      "unresolvedDesign": "스킬 실패 시 발동하지 않음",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G08",
+      "rarity": "common",
+      "draftDisplayNameKo": "이동 버퍼",
+      "originalEffectDirection": "돌진/도약/점멸/순간이동 또는 투명 해제 후 **2초 이동속도 증가**",
+      "unresolvedDesign": "스킬 분류 태그 필요",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G09",
+      "rarity": "common",
+      "draftDisplayNameKo": "비상 복구",
+      "originalEffectDirection": "체력 임계 아래에서 최대 체력 **50%에 해당하는 회복 또는 방어 효과 [미확정]** + 이동속도, **CD 60초**",
+      "unresolvedDesign": "회복/실드 여부 먼저 확인 필요",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G10",
+      "rarity": "common",
+      "draftDisplayNameKo": "전위 연쇄",
+      "originalEffectDirection": "탄환 적중 시 근처 적에게 번개, **대상별 내부 CD 3초**",
+      "unresolvedDesign": "발사체당/대상당 중복·다단 연쇄",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G11",
+      "rarity": "common",
+      "draftDisplayNameKo": "무피격 가속",
+      "originalEffectDirection": "이동속도 **100% 증가**, 피해를 받으면 비활성화",
+      "unresolvedDesign": "재활성화 시점 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G12",
+      "rarity": "common",
+      "draftDisplayNameKo": "부식 표식",
+      "originalEffectDirection": "타격 시 적에게 물리·마법 방어 감소 중첩 **4초**",
+      "unresolvedDesign": "중첩 상한·재적용 규칙 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G13",
+      "rarity": "common",
+      "draftDisplayNameKo": "4중 캐시",
+      "originalEffectDirection": "적중 효과 **4회** 후 탄환 **4발** 추가 연사, 추가탄 적중 효과 피해 **70%**",
+      "unresolvedDesign": "원거리·레이저·부메랑과 합성",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G14",
+      "rarity": "common",
+      "draftDisplayNameKo": "추적 응답",
+      "originalEffectDirection": "스킬 피해 적중 시 자동발사 탄환 **1개**",
+      "unresolvedDesign": "스킬의 자기 발동/루프 방지",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G15",
+      "rarity": "common",
+      "draftDisplayNameKo": "희귀 획득",
+      "originalEffectDirection": "**무작위 레어 플러그인 획득**",
+      "unresolvedDesign": "레벨2 추가 수량·후보 고갈 [미확정], 단일 저장 트랜잭션",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G16",
+      "rarity": "common",
+      "draftDisplayNameKo": "대시 폭발",
+      "originalEffectDirection": "대시 경로 폭발 피해",
+      "unresolvedDesign": "한 대시에서 중복 접촉·환경 영향",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "G17",
+      "rarity": "common",
+      "draftDisplayNameKo": "폭발 각인",
+      "originalEffectDirection": "탄환 적중 시 대상 폭발, **대상별 내부 CD 3초**",
+      "unresolvedDesign": "광역+DoT 플래그/연쇄 허용 정책",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R01",
+      "rarity": "rare",
+      "draftDisplayNameKo": "처형 알고리즘",
+      "originalEffectDirection": "체력 **50% 미만** 적에게 피해 **15% 증가**",
+      "unresolvedDesign": "피해 확정 시 체력 기준 스냅샷",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R02",
+      "rarity": "rare",
+      "draftDisplayNameKo": "킬 스택",
+      "originalEffectDirection": "적 처치 시 AD 소폭 증가",
+      "unresolvedDesign": "누적 상한/임무 종료 해제 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R03",
+      "rarity": "rare",
+      "draftDisplayNameKo": "위기 반발",
+      "originalEffectDirection": "플레이어 HP **30% 이하**일 때 주변 적 넉백",
+      "unresolvedDesign": "내부 CD·보스 저항 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R04",
+      "rarity": "rare",
+      "draftDisplayNameKo": "해체 프로토콜",
+      "originalEffectDirection": "적중 효과 발생 때마다 **상한 없는 스택**의 지속 마법 피해",
+      "unresolvedDesign": "시간·성능은 집약형 데이터, 스택 캡 임의 추가 금지",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R05",
+      "rarity": "rare",
+      "draftDisplayNameKo": "돌진 차폐",
+      "originalEffectDirection": "돌진 또는 점멸 뒤 보호막 생성",
+      "unresolvedDesign": "분류 태그·중첩 순서",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R06",
+      "rarity": "rare",
+      "draftDisplayNameKo": "보조 탄환",
+      "originalEffectDirection": "발사 탄환 **1개 추가**, 추가탄 적중 효과 피해 **80%**",
+      "unresolvedDesign": "multi-shot/레이저와 합성",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "R07",
+      "rarity": "rare",
+      "draftDisplayNameKo": "자동 추적탄",
+      "originalEffectDirection": "유도탄 발사",
+      "unresolvedDesign": "타깃 소실·벽·관통/연쇄 정책",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": true
+    },
+    {
+      "draftId": "L01",
+      "rarity": "legendary",
+      "draftDisplayNameKo": "레이저 코어",
+      "originalEffectDirection": "탄환을 **레이저**로 변환, 적중 효과 효율 **70%**",
+      "unresolvedDesign": "L02·R06·관통과 동시 장착 정책 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": false
+    },
+    {
+      "draftId": "L02",
+      "rarity": "legendary",
+      "draftDisplayNameKo": "부메랑 프로토콜",
+      "originalEffectDirection": "부메랑 범위 피해 + 귀환, 귀환 전 추가 기본공격 불가, 레벨 상승 시 부메랑 수 증가",
+      "unresolvedDesign": "L01과 동시 적용 시 여러 발사체 정의",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": false
+    },
+    {
+      "draftId": "L03",
+      "rarity": "legendary",
+      "draftDisplayNameKo": "피버타임",
+      "originalEffectDirection": "적중 또는 처치로 게이지, 충전 완료 후 일정시간 **전체 능력치 증가**",
+      "unresolvedDesign": "버프 스택/충전 단위·계수 미확정",
+      "designStatus": "concept-confirmed | balance-and-final-ids-draft",
+      "learnableAfterExtraction": false
+    }
+  ]
+}
