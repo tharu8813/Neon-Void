@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.IO;
 using NeonVoid.Combat;
+using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Projectiles;
 using NeonVoid.Core;
 using NeonVoid.Player;
@@ -224,10 +225,22 @@ namespace NeonVoid.EditorTools
             dummy.transform.localScale = Vector3.one * 1.4f;
             SetMaterial(dummy, material);
 
+            // Swap the primitive's SphereCollider for a CharacterController: the agent moves
+            // through one, and it is still a collider, so projectile sweeps hit it as before.
+            Object.DestroyImmediate(dummy.GetComponent<SphereCollider>());
+            CharacterController body = dummy.AddComponent<CharacterController>();
+            body.center = Vector3.zero;
+            body.height = 1f;
+            body.radius = 0.5f;
+
             // A real combat actor on the hostile team, so the damage pipeline applies to it.
             CombatActor actor = dummy.AddComponent<CombatActor>();
             AssignSerializedInt(actor, "teamId", 1);
             AssignSerializedFloat(actor, "maxHealth", 40f);
+
+            // P2: it chases and attacks. The brain only forms intent; the hit itself goes
+            // through CombatActor.ReceiveDamage, the same entry point the player's shots use.
+            dummy.AddComponent<EnemyAgent>();
             return dummy;
         }
 
