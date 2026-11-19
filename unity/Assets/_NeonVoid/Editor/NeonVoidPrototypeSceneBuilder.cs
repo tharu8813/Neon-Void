@@ -1,9 +1,13 @@
 #if UNITY_EDITOR
 using System.IO;
-using NeonVoid.Prototype;
+using NeonVoid.Combat;
+using NeonVoid.Combat.Projectiles;
+using NeonVoid.Core;
+using NeonVoid.Player;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 namespace NeonVoid.EditorTools
@@ -20,7 +24,12 @@ namespace NeonVoid.EditorTools
         [MenuItem("Tools/Neon Void/Generate Prototype Scene")]
         public static void CreateScene()
         {
-            if (File.Exists(ScenePath) && !EditorUtility.DisplayDialog(
+            // EditorUtility.DisplayDialog returns false in batch mode, so asking there would
+            // silently cancel the regeneration and leave the old scene in place while the
+            // command still reported success. Only a human gets asked.
+            if (!Application.isBatchMode
+                && File.Exists(ScenePath)
+                && !EditorUtility.DisplayDialog(
                     "Neon Void prototype exists",
                     "This will overwrite the existing PROTOTYPE scene. Continue?",
                     "Overwrite prototype", "Cancel"))
@@ -55,8 +64,20 @@ namespace NeonVoid.EditorTools
             character.center = Vector3.zero;
             character.height = 2f;
             character.radius = 0.45f;
-            player.AddComponent<PrototypePlayerController>();
-            player.AddComponent<PrototypeAutoShooter>();
+            // Every tick in the scene comes from this one clock. Two accumulators would drift.
+            var simulation = new GameObject("Simulation Runner");
+            simulation.AddComponent<SimulationRunner>();
+
+            // P0-02: movement, dash and aim run on the deterministic 60 Hz simulation.
+            PlayerInputRouter router = player.AddComponent<PlayerInputRouter>();
+            PlayerSimulationDriver driver = player.AddComponent<PlayerSimulationDriver>();
+            AssignInputAsset(router);
+            AssignSerialized(driver, "inputRouter", router);
+
+            // P1: the player is a real combat actor and shoots through the damage pipeline.
+            player.AddComponent<CombatActor>();
+            AutoAttacker attacker = player.AddComponent<AutoAttacker>();
+            AssignSerialized(attacker, "projectileMaterial", playerMat);
 
             CreateDummy("Dummy A", new Vector3(6f, 0.7f, 5f), enemyMat);
             CreateDummy("Dummy B", new Vector3(-7f, 0.7f, -5f), enemyMat);
@@ -73,8 +94,11 @@ namespace NeonVoid.EditorTools
             camera.backgroundColor = new Color(0.015f, 0.02f, 0.045f);
             camera.nearClipPlane = 0.1f;
             camera.farClipPlane = 200f;
-            PrototypeCameraFollow follow = cameraObject.AddComponent<PrototypeCameraFollow>();
-            follow.player = player.transform;
+            TopDownLookaheadCamera follow = cameraObject.AddComponent<TopDownLookaheadCamera>();
+            follow.SetTarget(player.transform);
+            // The arena is 34 x 24 with walls at +/-17 and +/-12; keep the focus inside it.
+            follow.SetBounds(new Vector2(-16f, -10f), new Vector2(16f, 10f));
+            AssignSerialized(router, "aimCamera", camera);
             cameraObject.AddComponent<AudioListener>();
 
             GameObject lightObject = new GameObject("Directional Light");
@@ -96,6 +120,69 @@ namespace NeonVoid.EditorTools
                 "Graybox scene saved. This proves only the bootstrap. " +
                 "P0 must verify input, URP, 60 Hz game architecture and Windows play.", "OK");
             Debug.Log("Neon Void prototype generated: " + ScenePath);
+        }
+
+        private const string InputAssetPath = "Assets/_NeonVoid/Content/Input/NeonVoidControls.inputactions";
+
+        /// <summary>
+        /// Wires the generated action asset into the router. A missing asset is reported
+        /// loudly: the scene would still open and still look correct, but nothing would
+        /// respond to the keyboard, which is the exact failure this build step exists to
+        /// prevent.
+        /// </summary>
+        private static void AssignInputAsset(PlayerInputRouter router)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
+            if (asset == null)
+            {
+                Debug.LogError($"Input actions not found at {InputAssetPath}; the player will not respond to input.");
+                return;
+            }
+            AssignSerialized(router, "actions", asset);
+        }
+
+        /// <summary>
+        /// Sets a private [SerializeField] through SerializedObject so the value is written
+        /// into the scene file. Assigning a backing field directly would not survive the save.
+        /// </summary>
+        private static void AssignSerialized(Object target, string fieldName, Object value)
+        {
+            var serialized = new SerializedObject(target);
+            SerializedProperty property = serialized.FindProperty(fieldName);
+            if (property == null)
+            {
+                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
+                return;
+            }
+            property.objectReferenceValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AssignSerializedInt(Object target, string fieldName, int value)
+        {
+            SerializedProperty property = FindField(target, fieldName);
+            if (property == null)
+                return;
+            property.intValue = value;
+            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AssignSerializedFloat(Object target, string fieldName, float value)
+        {
+            SerializedProperty property = FindField(target, fieldName);
+            if (property == null)
+                return;
+            property.floatValue = value;
+            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static SerializedProperty FindField(Object target, string fieldName)
+        {
+            var serialized = new SerializedObject(target);
+            SerializedProperty property = serialized.FindProperty(fieldName);
+            if (property == null)
+                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
+            return property;
         }
 
         private static Material GetOrCreateMaterial(string name, Color color)
@@ -136,7 +223,11 @@ namespace NeonVoid.EditorTools
             dummy.transform.position = position;
             dummy.transform.localScale = Vector3.one * 1.4f;
             SetMaterial(dummy, material);
-            dummy.AddComponent<PrototypeDummyTarget>();
+
+            // A real combat actor on the hostile team, so the damage pipeline applies to it.
+            CombatActor actor = dummy.AddComponent<CombatActor>();
+            AssignSerializedInt(actor, "teamId", 1);
+            AssignSerializedFloat(actor, "maxHealth", 40f);
             return dummy;
         }
 
