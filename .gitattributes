@@ -1,0 +1,35 @@
+# Normalize to LF in the repository. Unity reads LF fine on Windows, and this
+# keeps .meta/.unity/.asset diffs identical across machines.
+* text=auto eol=lf
+
+# Unity YAML: text, but never auto-merged by the line-based merge driver.
+*.unity    text eol=lf merge=binary
+*.prefab   text eol=lf merge=binary
+*.asset    text eol=lf merge=binary
+*.mat      text eol=lf merge=binary
+*.anim     text eol=lf merge=binary
+*.controller text eol=lf merge=binary
+*.physicMaterial text eol=lf merge=binary
+*.meta     text eol=lf
+
+# Scripts and data
+*.cs       text eol=lf diff=csharp
+*.asmdef   text eol=lf
+*.shader   text eol=lf
+*.hlsl     text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.csv      text eol=lf
+*.py       text eol=lf
+
+# Binary assets
+*.png      binary
+*.jpg      binary
+*.psd      binary
+*.fbx      binary
+*.wav      binary
+*.ogg      binary
+*.mp3      binary
+*.dll      binary
+*.ttf      binary
+*.otf      binary
