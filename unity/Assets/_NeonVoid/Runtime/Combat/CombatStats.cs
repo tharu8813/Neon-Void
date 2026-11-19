@@ -40,6 +40,19 @@ namespace NeonVoid.Combat
         public float OnHitLifestealPercent;     // [확정] start 0
         public float OmnivampPercent;           // [확정] start 0
 
+        // --- Skills and control ---------------------------------------------------------
+        /// <summary>
+        /// [초안] start 0. Haste points, not a percentage: the cooldown formula is
+        /// base / (1 + H/100), so 100 haste halves a cooldown rather than removing it.
+        /// </summary>
+        public float SkillHaste;
+
+        /// <summary>
+        /// [초안] start 0. Shortens CONTROL status effects only; see TenacityMath, which
+        /// refuses to apply it to damage over time or stat reductions.
+        /// </summary>
+        public float TenacityPercent;
+
         /// <summary>
         /// The documented starting block. Offence values carry their [확정] status; the rest
         /// are [초안] and exist so tests have something concrete to run against.
@@ -59,6 +72,8 @@ namespace NeonVoid.Combat
             MaxHealth = 100f,
             OnHitLifestealPercent = 0f,
             OmnivampPercent = 0f,
+            SkillHaste = 0f,
+            TenacityPercent = 0f,
         };
 
         /// <summary>Resistance consulted for the given damage type. True damage reads none.</summary>
@@ -101,6 +116,8 @@ namespace NeonVoid.Combat
             RequireFinite(MaxHealth, nameof(MaxHealth));
             RequireFinite(OnHitLifestealPercent, nameof(OnHitLifestealPercent));
             RequireFinite(OmnivampPercent, nameof(OmnivampPercent));
+            RequireFinite(SkillHaste, nameof(SkillHaste));
+            RequireFinite(TenacityPercent, nameof(TenacityPercent));
             RequireFinite(PhysicalPenFlat, nameof(PhysicalPenFlat));
             RequireFinite(MagicPenFlat, nameof(MagicPenFlat));
             RequireFraction(PhysicalPenPercent, nameof(PhysicalPenPercent));
