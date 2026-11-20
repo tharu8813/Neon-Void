@@ -398,6 +398,67 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+        // --- the charger -------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator AChargerStandsStillToWarnAndThenCoversGround()
+        {
+            // 경고 프레임과 판정 동기, in the scene rather than in the pure function: the
+            // wind-up has to be visibly motionless, and the dash has to move further than
+            // walking could, or neither reads as a charge.
+            //
+            // Measured by watching the phase rather than by counting ticks. The first version
+            // counted them from the moment it noticed the wind-up, which was already two ticks
+            // in, so its last "wind-up" tick was really the first dash tick - and the test
+            // failed on a charge that was behaving correctly.
+            _arena = PrototypeArena.Build(new Vector3(7f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            EnemyAgent agent = PrototypeArena.MakeCharger(enemy);
+            yield return _arena.Tick(2);
+
+            int guard = 0;
+            while (agent.LastIntent.ChargePhase != EnemyChargePhase.Telegraph && guard++ < 900)
+                yield return _arena.Tick(1);
+            Assert.AreEqual(EnemyChargePhase.Telegraph, agent.LastIntent.ChargePhase, "It never wound up.");
+
+            Vector3 windUpStart = enemy.transform.position;
+            int windUpTicks = 0;
+            while (agent.LastIntent.ChargePhase == EnemyChargePhase.Telegraph && windUpTicks++ < 900)
+            {
+                Assert.Less(
+                    Vector3.Distance(windUpStart, enemy.transform.position), 0.05f,
+                    $"It moved during its own warning, on wind-up tick {windUpTicks}.");
+                yield return _arena.Tick(1);
+            }
+
+            Assert.AreEqual(EnemyChargePhase.Dashing, agent.LastIntent.ChargePhase,
+                "The wind-up did not lead into a dash.");
+
+            Vector3 dashStart = enemy.transform.position;
+            int dashTicks = 0;
+            while (agent.LastIntent.ChargePhase == EnemyChargePhase.Dashing && dashTicks++ < 900)
+                yield return _arena.Tick(1);
+
+            float dashed = Vector3.Distance(dashStart, enemy.transform.position);
+            float walkable = agent.Archetype.MoveSpeedUnitsPerSecond * dashTicks * PrototypeArena.TickSeconds;
+
+            Assert.Greater(dashed, walkable * 1.5f,
+                $"The dash covered {dashed:0.00} units in {dashTicks} ticks, barely more than walking ({walkable:0.00}).");
+        }
+
+        [UnityTest]
+        public IEnumerator AChargerHitsThePlayerOnceWhenItConnects()
+        {
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f));
+            PrototypeArena.MakeCharger(_arena.Enemies[0]);
+
+            float before = _arena.Player.Health.Current;
+            yield return _arena.Tick(300);
+
+            Assert.Less(_arena.Player.Health.Current, before, "The charge never connected at all.");
+        }
+
         // --- the ranged archetype ----------------------------------------------------------
 
         [UnityTest]

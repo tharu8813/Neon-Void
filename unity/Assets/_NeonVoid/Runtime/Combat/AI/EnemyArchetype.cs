@@ -17,6 +17,7 @@ namespace NeonVoid.Combat.AI
     {
         Chaser = 0,
         Ranged = 1,
+        Charger = 2,
     }
 
     /// <summary>
@@ -118,6 +119,7 @@ namespace NeonVoid.Combat.AI
         public static EnemyArchetype Of(EnemyArchetypeId id) => id switch
         {
             EnemyArchetypeId.Ranged => Ranged(),
+            EnemyArchetypeId.Charger => Charger(),
             _ => Chaser(),
         };
 
@@ -153,6 +155,23 @@ namespace NeonVoid.Combat.AI
             AttackDamage = 4f,
             PhysicalArmor = 4f,
             MagicResistance = 4f,
+        };
+
+        /// <summary>
+        /// `enemy.charger` - 경고 뒤 돌진. It hits hard because it announces itself and can be
+        /// dodged; a charge that hurt no more than a touch would be a worse chaser.
+        /// </summary>
+        public static EnemyArchetype Charger() => new EnemyArchetype
+        {
+            DocumentId = "enemy.charger",
+            Brain = EnemyBrainConfig.Charger(),
+            MoveSpeedUnitsPerSecond = 2.3f,
+            AttackMode = EnemyAttackMode.Contact,
+            AdRatio = 1.6f,
+            MaxHealth = 46f,
+            AttackDamage = 6f,
+            PhysicalArmor = 8f,
+            MagicResistance = 2f,
         };
     }
 }

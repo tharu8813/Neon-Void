@@ -78,6 +78,14 @@ namespace NeonVoid.Tests.PlayModeTests
             return agent;
         }
 
+        /// <summary>Gives an enemy the charging archetype, stats included.</summary>
+        public static EnemyAgent MakeCharger(CombatActor enemy)
+        {
+            EnemyAgent agent = enemy.gameObject.AddComponent<EnemyAgent>();
+            agent.ApplyArchetype(EnemyArchetypeCatalog.Charger());
+            return agent;
+        }
+
         /// <summary>Drops a solid wall into the arena, tracked so teardown removes it.</summary>
         public GameObject Wall(Vector3 center, Vector3 size)
         {
