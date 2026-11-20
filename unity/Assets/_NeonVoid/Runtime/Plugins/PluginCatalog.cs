@@ -285,19 +285,26 @@ namespace NeonVoid.Plugins
         /// mark, which removes no health, so a hit trigger could never see it.
         /// </para>
         /// <para>
-        /// <b>One stack per causal chain, which is an interpretation [미확정, D-018].</b> The
-        /// card says 적중 효과 발생 때마다. Taken as "per effect resolution" it would include
-        /// R04's own resolution - a 적중 효과 like any other - and the card would feed itself
-        /// for free, bounded only by whatever chain depth was allowed. There is no hit in that
-        /// loop and no way to read it off the card, so the chain rule allows this effect once
-        /// per chain and the ancestry the queue already carries does the refusing. A shot that
-        /// sets off two separate effects is two chains and therefore two stacks; a three-deep
-        /// chain is one. Recorded in docs/08 rather than settled here.
+        /// <b>One stack per resolved effect [D-018, approved].</b> 적중 효과 발생 때마다 taken
+        /// literally: every effect that resolves adds a stack, however deep the chain that
+        /// produced it. The first version of this allowed the effect once per ancestry path,
+        /// which made a three-deep chain worth the same as a one-deep one on that branch - and
+        /// dampened the one thing the card is about.
         /// </para>
         /// <para>
-        /// <b>No internal cooldown.</b> The card's text is 때마다, and a cooldown would silently
-        /// turn "every time" into "sometimes". The stack count is the thing allowed to grow
-        /// without limit, and it does.
+        /// The loop that reading invites is closed where it cannot be forgotten rather than
+        /// here: R04's own resolution is a 적중 효과 like any other, so a reactor reacting to
+        /// itself would feed the card with no hit involved, and
+        /// <see cref="ProcTriggerRouter.Drain"/> refuses to offer a reactor its own resolution.
+        /// That is the 원형 참조 금지 of docs/03 section 2, stated once.
+        /// </para>
+        /// <para>
+        /// <b>Nothing here caps the stacks.</b> Repeats on one target are allowed, because
+        /// inside a lineage two effects really do resolve on the same enemy. The occurrence
+        /// bound is the chain depth limit every effect already shares, so it never binds
+        /// before the chain itself ends - it exists because the validator requires a number,
+        /// not to limit this card. And there is no internal cooldown: the text is 때마다, and a
+        /// cooldown would silently turn "every time" into "sometimes".
         /// </para>
         /// </summary>
         public static PluginDefinition DismantleProtocol() => new PluginDefinition
@@ -307,9 +314,26 @@ namespace NeonVoid.Plugins
             Trigger = PluginTriggerKind.OnHitEffectResolved,
             Effect = PluginEffectKind.MarkTarget,
             Damage = default,
-            // SingleUse, and that is a reading of the card rather than a transcription of it.
-            // See the remarks: one stack per causal chain, no internal cooldown.
-            Rule = ProcEffectRule.SingleUse(4),
+            Rule = new ProcEffectRule
+            {
+                EffectId = 4,
+
+                // May appear many times along one lineage, because every resolved effect in it
+                // is its own 적중 효과. The router, not this rule, is what stops it reacting to
+                // itself.
+                CanRetriggerItself = true,
+
+                // Tied to the chain depth limit rather than chosen: a path cannot be longer
+                // than that, so this never refuses a stack the chain would have produced. A
+                // smaller number here would be the 스택 캡 임의 추가 docs/03 forbids.
+                MaxOccurrencesPerChain = ProcChainGuard.DefaultMaxChainDepth,
+
+                // Two effects resolving on the same enemy inside one lineage is the normal
+                // case, not a loop. See ProcEffectRule.AllowRepeatOnSameTarget.
+                AllowRepeatOnSameTarget = true,
+
+                InternalCooldownTicks = 0,
+            },
             AppliedStatus = StatusEffectId.Dismantle,
             StatusMagnitude = DraftDismantleMagnitudePerStack,
             StatusDurationTicksOverride = -1,

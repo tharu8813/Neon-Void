@@ -43,6 +43,25 @@ namespace NeonVoid.Combat.Proc
         public int InternalCooldownTicks;
 
         /// <summary>
+        /// Whether this effect may reach the same target more than once along one ancestry
+        /// path. False by default, and false is right for anything that hops.
+        /// <para>
+        /// The same-target rule exists because a <b>damaging hop</b> returning to an enemy it
+        /// just struck is the A-&gt;B-&gt;A loop docs/02 section 6 blocks by another name. An
+        /// effect that adds a STACK to a target is not that: docs/03 R04 해체 프로토콜 is
+        /// 적중 효과 발생 때마다, and inside one lineage two effects really do resolve on the
+        /// same enemy - an explosion hits A, the hit it lands triggers a mark on A - so
+        /// refusing the second would quietly make the card "once per target per branch".
+        /// </para>
+        /// <para>
+        /// Opt-in, so nothing that hops is affected by a card that stacks. It is not a licence
+        /// to loop: <see cref="MaxOccurrencesPerChain"/> and the chain depth still bound the
+        /// path, and whoever sets this is responsible for the effect not re-triggering itself.
+        /// </para>
+        /// </summary>
+        public bool AllowRepeatOnSameTarget;
+
+        /// <summary>
         /// Even a self-chaining effect must not hit the same target twice in one chain. Chain
         /// lightning hops onward; bouncing back is the A-&gt;B-&gt;A case the document blocks.
         /// </summary>

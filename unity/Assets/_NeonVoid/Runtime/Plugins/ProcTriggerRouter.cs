@@ -183,6 +183,17 @@ namespace NeonVoid.Plugins
                 try
                 {
                     resolve(evt, plugin);
+
+                    // 적중 효과 발생: offered here, after the effect has actually resolved, and
+                    // never for a reactor's own resolution. Doing it inside the drain rather
+                    // than asking the caller to is what makes the second half structural - a
+                    // caller that forgot the gate would let R04 feed itself with no hit
+                    // involved, which is the loop docs/03 section 2 forbids outright.
+                    if (plugin.Trigger != PluginTriggerKind.OnHitEffectResolved)
+                    {
+                        OnHitEffectResolved(
+                            evt.SourceActorId, evt.TargetActorId, evt.Tick, evt.RunId, evt.AttackId);
+                    }
                 }
                 finally
                 {

@@ -223,10 +223,9 @@ namespace NeonVoid.Tests
             var resolved = new List<int>();
             router.Drain((evt, _) =>
             {
+                // No manual offer: Drain makes it, and refuses to make it for a reactor's
+                // own resolution. That gate is the thing under test.
                 resolved.Add(evt.EffectId);
-
-                // Exactly what the director does on every resolution.
-                router.OnHitEffectResolved(evt.SourceActorId, evt.TargetActorId, evt.Tick);
             });
 
             int dismantles = 0;
@@ -255,6 +254,81 @@ namespace NeonVoid.Tests
         }
 
         [Test]
+        public void TwoEffectsResolvingOnOneEnemyGiveTwoStacks()
+        {
+            // [D-018, approved] 적중 효과 발생 때마다, taken literally. Inside one lineage an
+            // explosion resolves on A and the hit it lands marks A, which is two 적중 효과 on
+            // the same enemy. The same-target rule used to refuse the second and quietly make
+            // this card "once per target per branch".
+            var guard = new ProcChainGuard();
+            var queue = new ProcQueue(guard);
+            var router = new ProcTriggerRouter(new PluginLoadout(), guard, queue);
+            router.TryGrant(PluginCatalog.DetonationGlyph(), out _);
+            router.TryGrant(PluginCatalog.CorrosionMark(), out _);
+            router.TryGrant(PluginCatalog.DismantleProtocol(), out _);
+
+            router.OnHitLanded(
+                new HitReport(1, 2, HitOrigin.Projectile, DamageType.Physical, healthRemoved: 10f),
+                tick: 0L);
+
+            int dismantleEffectId = PluginCatalog.DismantleProtocol().EffectId;
+            int stacks = 0;
+            router.Drain((evt, plugin) =>
+            {
+                if (evt.EffectId == dismantleEffectId)
+                {
+                    stacks++;
+                    return;
+                }
+
+                // The effect's own damage landing on the same enemy, which is what carries the
+                // lineage onward.
+                router.OnHitLanded(
+                    new HitReport(1, 2, HitOrigin.Skill, DamageType.Magic, healthRemoved: 5f),
+                    tick: 0L);
+            });
+
+            Assert.GreaterOrEqual(stacks, 2, "Only one stack landed on the enemy; 때마다 was lost.");
+        }
+
+        [Test]
+        public void ADefaultRuleStillRefusesARepeatOnTheSameTarget()
+        {
+            // The opt-out is opt-in. Chain lightning bouncing back onto an enemy it just struck
+            // is still the A->B->A loop docs/02 section 6 blocks.
+            var guard = new ProcChainGuard();
+            guard.Register(ProcEffectRule.SelfChaining(10, maxOccurrences: 3));
+
+            ProcChainPath path = ProcChainPath.Root.Append(10, targetActorId: 7);
+            ProcDecision decision = guard.Evaluate(10, targetActorId: 7, path, tick: 0L);
+
+            Assert.AreEqual(ProcVerdict.BlockedByRepeatOnSameTarget, decision.Verdict);
+        }
+
+        [Test]
+        public void TheOptInLetsTheSameEffectReachOneTargetAgain()
+        {
+            var guard = new ProcChainGuard();
+            guard.Register(PluginCatalog.DismantleProtocol().Rule);
+
+            int effectId = PluginCatalog.DismantleProtocol().EffectId;
+            ProcChainPath path = ProcChainPath.Root.Append(effectId, targetActorId: 7);
+
+            Assert.AreEqual(
+                ProcVerdict.Allowed, guard.Evaluate(effectId, 7, path, tick: 0L).Verdict);
+        }
+
+        [Test]
+        public void TheOccurrenceBoundNeverBindsBeforeTheChainEnds()
+        {
+            // It is the chain depth limit, not a number chosen for this card. A smaller one
+            // would be the 스택 캡 임의 추가 docs/03 forbids.
+            Assert.AreEqual(
+                ProcChainGuard.DefaultMaxChainDepth,
+                PluginCatalog.DismantleProtocol().Rule.MaxOccurrencesPerChain);
+        }
+
+        [Test]
         public void TheDocumentsRequiredChainIsNotBlocked()
         {
             // docs/03 section 7, first required integration: G10 번개 → G17 폭발 → R04 해체
@@ -275,7 +349,6 @@ namespace NeonVoid.Tests
             ProcDrainReport report = router.Drain((evt, plugin) =>
             {
                 fired.Add(plugin.ProposalId);
-                router.OnHitEffectResolved(evt.SourceActorId, evt.TargetActorId, evt.Tick);
             });
 
             Assert.Contains("G10", new List<string>(fired));

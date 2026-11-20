@@ -61,9 +61,17 @@ namespace NeonVoid.Tests.PlayModeTests
 
             yield return LandOneShotOn(target);
 
+            int stacks = target.Status.StacksOf(StatusEffectId.Dismantle);
+            Debug.Log($"[D-018] one shot produced {stacks} 해체 stack(s) on the target.");
+
+            Assert.GreaterOrEqual(stacks, 1, "No 적중 효과 resolved into a 해체 stack.");
+
+            // [D-018, approved] 적중 효과 발생 때마다 taken literally. Several effects resolve on
+            // the enemy a shot lands on, and before the decision the same-target rule allowed
+            // only the first - so anything above one is the decision showing up in play.
             Assert.GreaterOrEqual(
-                target.Status.StacksOf(StatusEffectId.Dismantle), 1,
-                "No 적중 효과 resolved into a 해체 stack.");
+                stacks, 2,
+                "Only one stack on the target the shot hit; the per-resolution reading was lost.");
         }
 
         [UnityTest]

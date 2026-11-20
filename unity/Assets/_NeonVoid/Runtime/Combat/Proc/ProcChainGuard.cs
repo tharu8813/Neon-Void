@@ -74,7 +74,11 @@ namespace NeonVoid.Combat.Proc
             // 2. A self-chaining effect bouncing back onto a target it already struck in this
             //    chain. Chain lightning hops onward to new enemies; returning to one it just
             //    hit is the same loop by another name, so the opt-in does not cover it.
-            if (path.ContainsEffectOnTarget(effectId, targetActorId))
+            //
+            //    An effect that ADDS A STACK rather than hopping opts out separately: inside
+            //    one lineage two effects genuinely resolve on the same enemy, and refusing the
+            //    second would turn 적중 효과 발생 때마다 into once per target per branch.
+            if (!rule.AllowRepeatOnSameTarget && path.ContainsEffectOnTarget(effectId, targetActorId))
                 return new ProcDecision(ProcVerdict.BlockedByRepeatOnSameTarget, effectId, targetActorId, pathText);
 
             // 3. A self-chaining effect that reached its bound.

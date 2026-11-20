@@ -300,13 +300,14 @@ namespace NeonVoid.Plugins
             _resolvedByEffectId.TryGetValue(evt.EffectId, out int resolved);
             _resolvedByEffectId[evt.EffectId] = resolved + 1;
 
-            // 적중 효과 발생: counted for G13's burst and offered to R04, both from the one
-            // place an effect is known to have been allowed through rather than from where
-            // effects are merely offered to the queue. An effect the rules refused did nothing,
-            // and letting it charge a burst or add a 해체 stack would turn refusals into damage.
+            // 적중 효과 발생 for G13's counter, from the one place an effect is known to have
+            // been allowed through rather than from where effects are merely offered to the
+            // queue. An effect the rules refused did nothing, and letting it charge a burst
+            // would turn refusals into damage.
+            //
+            // R04 is NOT offered from here. The router does that itself once this returns, so
+            // the rule that a reactor never reacts to itself cannot be lost by a caller.
             CountHitEffectTowardsBursts();
-            _router.OnHitEffectResolved(
-                evt.SourceActorId, evt.TargetActorId, evt.Tick, evt.RunId, evt.AttackId);
 
             switch (plugin.Effect)
             {
