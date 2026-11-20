@@ -1,4 +1,5 @@
 using System;
+using NeonVoid.Progression;
 
 namespace NeonVoid.Missions
 {
@@ -36,6 +37,32 @@ namespace NeonVoid.Missions
     /// </summary>
     public sealed class MissionRunState
     {
+        /// <summary>
+        /// [확정] docs/04 section 1 and C09 in docs/08: 새 의뢰 Lv.1. The mission level is a
+        /// different quantity from the vaccine's permanent level and the two must never be
+        /// mixed into one variable, so this one restarts here on every <see cref="TryBegin"/>.
+        /// </summary>
+        public const int DesignStartingMissionLevel = 1;
+
+        private readonly LevelCurve _missionLevels;
+
+        public MissionRunState()
+            : this(ProgressionCurves.DraftMissionLevels)
+        {
+        }
+
+        /// <summary>
+        /// Takes its curve, so the [초안] numbers of docs/04 section 1 can be retuned - or a
+        /// test can use a curve it can state in one line - without this type knowing any of them.
+        /// </summary>
+        public MissionRunState(LevelCurve missionLevels)
+        {
+            if (!missionLevels.IsValid)
+                throw new ArgumentException("A mission needs a constructed level curve.", nameof(missionLevels));
+
+            _missionLevels = missionLevels;
+        }
+
         public RunIdentity Identity { get; private set; }
 
         public MissionPhase Phase { get; private set; } = MissionPhase.None;
@@ -45,6 +72,19 @@ namespace NeonVoid.Missions
 
         /// <summary>Simulation tick the mission began on, for elapsed time and for logs.</summary>
         public long StartedOnTick { get; private set; }
+
+        /// <summary>
+        /// 의뢰 레벨. [확정] starts at <see cref="DesignStartingMissionLevel"/> every mission and
+        /// buys nothing permanent: docs/04 section 1 makes RunXP 임시 카드 지급 and VaccineXP the
+        /// permanent score.
+        /// </summary>
+        public int MissionLevel { get; private set; } = DesignStartingMissionLevel;
+
+        /// <summary>Cumulative mission XP in this mission. Dies with it.</summary>
+        public long MissionXp { get; private set; }
+
+        /// <summary>The curve this mission's levels are read off.</summary>
+        public LevelCurve MissionLevels => _missionLevels;
 
         public bool IsRunning => Phase == MissionPhase.InProgress;
 
@@ -61,6 +101,13 @@ namespace NeonVoid.Missions
             Phase = MissionPhase.InProgress;
             PurificationsCompleted = 0;
             StartedOnTick = onTick;
+
+            // [확정] 새 의뢰 Lv.1. Reset here rather than only in the constructor, because this
+            // object outlives one mission: a second TryBegin that kept the previous mission's
+            // level would carry temporary progress into a run that is supposed to start over,
+            // and carrying it is precisely what C09 separates the two levels to prevent.
+            MissionLevel = DesignStartingMissionLevel;
+            MissionXp = 0L;
             return true;
         }
 
@@ -73,6 +120,35 @@ namespace NeonVoid.Missions
             PurificationsCompleted++;
             return true;
         }
+
+        /// <summary>
+        /// Awards mission XP (RunXP) and levels the mission up as far as it reaches.
+        /// <para>
+        /// Refused unless a mission is running: XP arriving after a death would raise the level
+        /// of a mission that has already failed, and <see cref="MissionPhase.Failed"/> is
+        /// one-way for the same reason.
+        /// </para>
+        /// <para>
+        /// Several levels at once is normal, not an edge case - the [초안] numbers of docs/04
+        /// section 1 put one cleared area at 720 XP against a first level costing 100 - so this
+        /// reports how many were gained rather than assuming one.
+        /// </para>
+        /// </summary>
+        public bool TryAwardMissionXp(long amount, out int levelsGained)
+        {
+            levelsGained = 0;
+            if (!IsRunning || amount < 0L)
+                return false;
+
+            MissionXp += amount;
+            int reached = _missionLevels.AdvanceFrom(MissionLevel, MissionXp);
+            levelsGained = reached - MissionLevel;
+            MissionLevel = reached;
+            return true;
+        }
+
+        /// <summary>Awards mission XP without asking how many levels it produced.</summary>
+        public bool TryAwardMissionXp(long amount) => TryAwardMissionXp(amount, out _);
 
         /// <summary>
         /// Marks the mission failed, which is what a player death means. Idempotent: a second
@@ -96,6 +172,7 @@ namespace NeonVoid.Missions
             Identity.IsValid ? Identity.SeedFor(stream) : 0u;
 
         public override string ToString() =>
-            $"{Identity} {Phase} purified={PurificationsCompleted} startedTick={StartedOnTick}";
+            $"{Identity} {Phase} Lv.{MissionLevel} xp={MissionXp} purified={PurificationsCompleted} " +
+            $"startedTick={StartedOnTick}";
     }
 }

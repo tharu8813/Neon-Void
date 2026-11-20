@@ -37,6 +37,17 @@ namespace NeonVoid.Tests
         private SaveCommitResult Die(int sequence, DeathSettlement settlement = default) =>
             _store.Commit(new RegisterDeathCommand(DeathId.For(1L, 1, sequence), settlement));
 
+        /// <summary>
+        /// A level policy whose arithmetic is readable here: every level costs 100 XP and pays
+        /// one point. The shipping curve is [초안] (D-011), so a test that wants to say
+        /// something about levelling says it against a curve it states itself.
+        /// </summary>
+        private static VaccineLevelPolicy FlatLevels =>
+            new VaccineLevelPolicy(new LevelCurve(100L, 0L), pointsPerLevel: 1);
+
+        private SaveCommitResult DieWithLevels(int sequence, DeathSettlement settlement, VaccineLevelPolicy levels) =>
+            _store.Commit(new RegisterDeathCommand(DeathId.For(1L, 1, sequence), settlement, levels));
+
         private VaccineSaveState Vaccine => _store.Snapshot.vaccine;
 
         /// <summary>
@@ -160,11 +171,17 @@ namespace NeonVoid.Tests
         {
             Vaccine.permanentXp = 1000L;
 
-            Die(1, new DeathSettlement(300L, 2, 3));
+            // 100 XP per level here, so 1300 XP has paid for 13 steps and the vaccine is level
+            // 14 - up from the level 1 it was stuck at. The 2 settled points are on top of the
+            // 13 the levels paid.
+            DieWithLevels(1, new DeathSettlement(300L, 2, 3), FlatLevels);
 
             Assert.AreEqual(1300L, Vaccine.permanentXp);
-            Assert.AreEqual(2, Vaccine.unusedStatPoints);
+            Assert.AreEqual(14, Vaccine.permanentLevel);
+            Assert.AreEqual(15, Vaccine.unusedStatPoints, "13 from levels + 2 settled");
             StringAssert.Contains("settledXp=300", ReceiptFor(1));
+            StringAssert.Contains("settledPoints=2", ReceiptFor(1));
+            StringAssert.Contains("levelPoints=13", ReceiptFor(1));
             StringAssert.Contains("purifications=3", ReceiptFor(1));
         }
 
@@ -197,6 +214,101 @@ namespace NeonVoid.Tests
 
             Assert.IsFalse(outcome.Accepted);
             StringAssert.Contains("inconsistent state", outcome.RejectionReason);
+        }
+
+        // --- 백신 레벨 ---------------------------------------------------------------------
+
+        [Test]
+        public void SettledXpBecomesALevelInTheSameCommit()
+        {
+            // The hole this closes: permanentXp was written by every settled death and
+            // permanentLevel was never touched, so the level sat at 1 for the life of a vaccine
+            // and 백신 레벨 1당 영구 포인트 1 (docs/04 section 1) paid nothing at all.
+            DieWithLevels(1, new DeathSettlement(250L, 0, 2), FlatLevels);
+
+            Assert.AreEqual(250L, Vaccine.permanentXp);
+            Assert.AreEqual(3, Vaccine.permanentLevel, "250 XP at 100 a level is level 3");
+            Assert.AreEqual(2, Vaccine.unusedStatPoints, "two levels, two points");
+            StringAssert.Contains("level=3", ReceiptFor(1));
+            StringAssert.Contains("levelsGained=2", ReceiptFor(1));
+        }
+
+        [Test]
+        public void XpShortOfALevelIsKeptWithoutLevellingUp()
+        {
+            DieWithLevels(1, new DeathSettlement(99L, 0, 0), FlatLevels);
+
+            Assert.AreEqual(99L, Vaccine.permanentXp);
+            Assert.AreEqual(1, Vaccine.permanentLevel);
+            Assert.AreEqual(0, Vaccine.unusedStatPoints);
+        }
+
+        [Test]
+        public void TheLevelSurvivesARelaunchBecauseItWasCommittedWithTheXp()
+        {
+            // A level granted outside the save transaction would be a number held only in
+            // memory: the XP would come back from disk and the level it bought would not.
+            DieWithLevels(1, new DeathSettlement(250L, 0, 0), FlatLevels);
+
+            var relaunched = new SaveStore(_files, _layout);
+            relaunched.Open();
+
+            Assert.AreEqual(3, relaunched.Snapshot.vaccine.permanentLevel);
+            Assert.AreEqual(250L, relaunched.Snapshot.vaccine.permanentXp);
+            Assert.AreEqual(2, relaunched.Snapshot.vaccine.unusedStatPoints);
+        }
+
+        [Test]
+        public void AReplayedDeathDoesNotLevelUpASecondTime()
+        {
+            // docs/04 section 7: 저장 성공 ACK 유실 → 기존 영수증 조회. 금지: 포인트 재발급.
+            // Levels are points, so a replay that levelled again would be a point reissue.
+            DieWithLevels(1, new DeathSettlement(250L, 0, 0), FlatLevels);
+            string first = ReceiptFor(1);
+
+            SaveCommitResult replay = DieWithLevels(1, new DeathSettlement(250L, 0, 0), FlatLevels);
+
+            Assert.AreEqual(SaveCommitVerdict.AlreadyApplied, replay.Verdict);
+            Assert.AreEqual(3, Vaccine.permanentLevel);
+            Assert.AreEqual(2, Vaccine.unusedStatPoints);
+            Assert.AreEqual(first, replay.Result, "The replay answered with a different result.");
+        }
+
+        [Test]
+        public void FinalDestructionTakesTheLevelAndItsPointsWithIt()
+        {
+            // [확정] docs/04 section 2: 4번째 사망 → 해당 백신 영구/의뢰 성장 파기.
+            DieWithLevels(1, new DeathSettlement(250L, 0, 0), FlatLevels);
+            Assert.AreEqual(3, Vaccine.permanentLevel);
+
+            Die(2);
+            Die(3);
+            SaveCommitResult fourth = Die(4, new DeathSettlement(900L, 5, 2));
+
+            Assert.AreEqual(1, Vaccine.permanentLevel);
+            Assert.AreEqual(0, Vaccine.unusedStatPoints);
+            Assert.AreEqual(0L, Vaccine.permanentXp);
+            StringAssert.Contains("level=1", fourth.Result);
+            StringAssert.Contains("levelsGained=0", fourth.Result);
+        }
+
+        [Test]
+        public void ADeathCommandWithoutALevelPolicyIsRefused()
+        {
+            // A defaulted policy has a free curve, so the first settled XP would run the level
+            // to the arithmetic ceiling and hand over that many points.
+            Assert.Throws<ArgumentException>(
+                () => new RegisterDeathCommand(DeathId.For(1L, 1, 1), DeathSettlement.None, default));
+        }
+
+        [Test]
+        public void TheDefaultLevelPolicyIsTheDraftOne()
+        {
+            // 180 XP is exactly level 2 on the draft vaccine curve of docs/04 section 1.
+            Die(1, new DeathSettlement(ProgressionCurves.DraftVaccineFirstStepXp, 0, 0));
+
+            Assert.AreEqual(2, Vaccine.permanentLevel);
+            Assert.AreEqual(ProgressionCurves.DraftPointsPerVaccineLevel, Vaccine.unusedStatPoints);
         }
 
         // --- duplicates --------------------------------------------------------------------

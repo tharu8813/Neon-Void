@@ -122,14 +122,28 @@ namespace NeonVoid.Progression.Save
     {
         private readonly DeathId _deathId;
         private readonly DeathSettlement _settlement;
+        private readonly VaccineLevelPolicy _levels;
 
         public RegisterDeathCommand(DeathId deathId, DeathSettlement settlement)
+            : this(deathId, settlement, VaccineLevelPolicy.Draft)
+        {
+        }
+
+        /// <summary>
+        /// Takes the level policy so the [초안] curve of docs/04 section 1 is an argument of the
+        /// command rather than a number the save transaction reaches for. A test can then state
+        /// a curve in one line instead of arithmetic against the shipping draft.
+        /// </summary>
+        public RegisterDeathCommand(DeathId deathId, DeathSettlement settlement, VaccineLevelPolicy levels)
         {
             if (!deathId.IsValid)
                 throw new ArgumentException("A death needs a valid id to be deduped by.", nameof(deathId));
+            if (!levels.IsValid)
+                throw new ArgumentException("A death that settles XP needs a level policy.", nameof(levels));
 
             _deathId = deathId;
             _settlement = settlement;
+            _levels = levels;
         }
 
         /// <summary>
@@ -192,13 +206,33 @@ namespace NeonVoid.Progression.Save
             vaccine.copiesRemaining = VaccineSaveState.DesignStartingCopies - deaths;
 
             // [확정] 이미 승인된 영구 XP/포인트는 빼앗지 않는다: this only ever adds.
-            vaccine.permanentXp += _settlement.PermanentXp;
-            vaccine.unusedStatPoints += _settlement.StatPoints;
+            //
+            // The level-up happens here, inside the transaction that writes the XP, so a
+            // committed total and the level read off it are one atomic change. Granting XP in
+            // the save and levelling up somewhere else afterwards would leave a window - a crash
+            // in it, or a lost ack - where the player has the XP and not the level, and the
+            // level is where 영구 포인트 come from.
+            VaccineGrowth growth = _levels.Grant(
+                vaccine.permanentLevel,
+                vaccine.permanentXp,
+                vaccine.unusedStatPoints,
+                _settlement.PermanentXp);
+
+            vaccine.permanentLevel = growth.Level;
+            vaccine.permanentXp = growth.TotalXp;
+
+            // Two sources, deliberately kept apart on the receipt. Points from levels are
+            // 백신 레벨 1당 영구 포인트 1 (docs/04 section 1); settled points are the share of the
+            // failed mission's unbanked 성장 포인트 (section 2). A reader of the receipt can see
+            // which was which, and a change to either curve does not make the other unreadable.
+            vaccine.unusedStatPoints = growth.UnusedStatPoints + _settlement.StatPoints;
 
             return SaveCommandOutcome.Accept(
                 $"deaths={deaths};copiesRemaining={vaccine.copiesRemaining};destroyed=false;" +
                 $"settledXp={_settlement.PermanentXp};settledPoints={_settlement.StatPoints};" +
-                $"purifications={_settlement.Purifications}");
+                $"purifications={_settlement.Purifications};" +
+                $"level={growth.Level};levelsGained={growth.LevelsGained};" +
+                $"levelPoints={growth.PointsGained};points={vaccine.unusedStatPoints}");
         }
 
         /// <summary>
@@ -218,7 +252,8 @@ namespace NeonVoid.Progression.Save
 
             return SaveCommandOutcome.Accept(
                 $"deaths={deaths};copiesRemaining=0;destroyed=true;settledXp=0;settledPoints=0;" +
-                $"purifications={_settlement.Purifications};note=settlement-moot-on-destruction");
+                $"purifications={_settlement.Purifications};level=1;levelsGained=0;levelPoints=0;points=0;" +
+                $"note=settlement-moot-on-destruction");
         }
     }
 }

@@ -41,9 +41,25 @@ namespace NeonVoid.Progression.Save
         /// <summary>Cumulative deaths. The table in docs/04 section 2 is read off this.</summary>
         public int deathCount;
 
+        /// <summary>
+        /// 백신 레벨. Advanced by <see cref="NeonVoid.Progression.VaccineLevelPolicy"/> inside
+        /// the transaction that writes the XP it was earned with.
+        /// <para>
+        /// <b>Stored rather than derived, and not cross-checked against the XP.</b> It would be
+        /// tempting for <see cref="Validate"/> to recompute the level from
+        /// <see cref="permanentXp"/> and refuse a mismatch, the way it does for the clone and
+        /// death counters. But the curve is [초안] (D-011) and will be retuned, and every live
+        /// save would fail to load the moment it was - a save that will not load is a far worse
+        /// outcome than a level an old curve was generous with. The clone table is [확정] and
+        /// cannot move, which is why that invariant is enforced and this one is not.
+        /// </para>
+        /// </summary>
         public int permanentLevel = 1;
 
-        /// <summary>영구 XP. Approved XP is never taken back (docs/04 section 2).</summary>
+        /// <summary>
+        /// 영구 XP, cumulative. Approved XP is never taken back (docs/04 section 2), so this only
+        /// rises - except at 최종 파기, which resets the whole vaccine.
+        /// </summary>
         public long permanentXp;
 
         public int unusedStatPoints;

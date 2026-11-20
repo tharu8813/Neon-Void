@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using NeonVoid.Core;
 using NeonVoid.Missions;
+using NeonVoid.Progression;
 using NUnit.Framework;
 
 namespace NeonVoid.Tests
@@ -216,6 +217,121 @@ namespace NeonVoid.Tests
             var state = new MissionRunState();
 
             Assert.AreEqual(0u, state.SeedFor(RandomStream.Mission));
+        }
+
+        // --- 의뢰 레벨 ---------------------------------------------------------------------
+
+        /// <summary>
+        /// A curve whose arithmetic is readable in the test itself: every level costs 100.
+        /// Using the shipping [초안] curve here would make these tests fail on a retune that
+        /// has nothing to do with what they are about.
+        /// </summary>
+        private static MissionRunState FlatLevelMission() =>
+            new MissionRunState(new LevelCurve(100L, 0L));
+
+        private static MissionRunState RunningFlatLevelMission()
+        {
+            var state = FlatLevelMission();
+            state.TryBegin(new RunIdentity(1L, 1u), 0L);
+            return state;
+        }
+
+        [Test]
+        public void AMissionStartsAtLevelOneWithNoXp()
+        {
+            // [확정] docs/04 section 1, C09 in docs/08: 새 의뢰 Lv.1.
+            var state = RunningFlatLevelMission();
+
+            Assert.AreEqual(MissionRunState.DesignStartingMissionLevel, state.MissionLevel);
+            Assert.AreEqual(1, state.MissionLevel);
+            Assert.AreEqual(0L, state.MissionXp);
+        }
+
+        [Test]
+        public void MissionXpRaisesTheMissionLevel()
+        {
+            var state = RunningFlatLevelMission();
+
+            Assert.IsTrue(state.TryAwardMissionXp(100L, out int gained));
+
+            Assert.AreEqual(2, state.MissionLevel);
+            Assert.AreEqual(1, gained);
+            Assert.AreEqual(100L, state.MissionXp);
+        }
+
+        [Test]
+        public void OneAwardCanCrossSeveralMissionLevels()
+        {
+            // The draft numbers put one cleared area at 720 XP against a first level of 100, so
+            // this is the normal case rather than an edge one.
+            var state = RunningFlatLevelMission();
+
+            state.TryAwardMissionXp(350L, out int gained);
+
+            Assert.AreEqual(4, state.MissionLevel);
+            Assert.AreEqual(3, gained);
+        }
+
+        [Test]
+        public void ANewMissionStartsOverAtLevelOne()
+        {
+            // This is the half of C09 that a shared variable would break: the mission level is
+            // temporary, and carrying it into the next mission would make it permanent progress
+            // by accident.
+            var state = RunningFlatLevelMission();
+            state.TryAwardMissionXp(500L);
+            state.TryFail();
+
+            Assert.IsTrue(state.TryBegin(new RunIdentity(2L, 2u), 600L));
+
+            Assert.AreEqual(1, state.MissionLevel, "The new mission inherited the old one's level.");
+            Assert.AreEqual(0L, state.MissionXp);
+        }
+
+        [Test]
+        public void MissionXpIsRefusedWithoutARunningMission()
+        {
+            var state = FlatLevelMission();
+
+            Assert.IsFalse(state.TryAwardMissionXp(100L), "XP landed with no mission at all.");
+            Assert.AreEqual(1, state.MissionLevel);
+            Assert.AreEqual(0L, state.MissionXp);
+
+            state.TryBegin(new RunIdentity(1L, 1u), 0L);
+            state.TryFail();
+
+            Assert.IsFalse(state.TryAwardMissionXp(100L), "A failed mission still levelled up.");
+            Assert.AreEqual(1, state.MissionLevel);
+        }
+
+        [Test]
+        public void NegativeMissionXpIsRefusedRatherThanSubtracted()
+        {
+            var state = RunningFlatLevelMission();
+            state.TryAwardMissionXp(250L);
+
+            Assert.IsFalse(state.TryAwardMissionXp(-100L));
+            Assert.AreEqual(250L, state.MissionXp);
+            Assert.AreEqual(3, state.MissionLevel);
+        }
+
+        [Test]
+        public void AMissionWithoutACurveIsRefusedAtConstruction()
+        {
+            // A defaulted curve would make every level free; the mission would be level
+            // MaxSupportedLevel after the first XP it ever saw.
+            Assert.Throws<ArgumentException>(() => new MissionRunState(default));
+        }
+
+        [Test]
+        public void TheDefaultMissionCurveIsTheDraftOne()
+        {
+            var state = new MissionRunState();
+
+            Assert.AreEqual(
+                ProgressionCurves.DraftMissionLevels.FirstStepXp, state.MissionLevels.FirstStepXp);
+            Assert.AreEqual(
+                ProgressionCurves.DraftMissionLevels.StepGrowthXp, state.MissionLevels.StepGrowthXp);
         }
     }
 }

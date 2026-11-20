@@ -1,5 +1,6 @@
 using NeonVoid.Combat;
 using NeonVoid.Core;
+using NeonVoid.Progression;
 using UnityEngine;
 
 namespace NeonVoid.Missions
@@ -117,14 +118,31 @@ namespace NeonVoid.Missions
         public DeterministicRng CreateRng(RandomStream stream) =>
             new DeterministicRng(State.SeedFor(stream));
 
-        /// <summary>Records a purification (정화) in the running mission.</summary>
+        /// <summary>
+        /// Records a purification (정화) in the running mission and awards the area's mission XP.
+        /// <para>
+        /// The XP figure is applied <b>here</b> rather than inside
+        /// <see cref="MissionRunState.TryRecordPurification"/>, so that reading 기본 720 임무
+        /// XP/구역 (docs/04 section 1, [초안]) as "one purified area is one 구역" is a decision
+        /// visible at this seam instead of a constant buried in the state object. Nothing in the
+        /// documents numbers permanent XP per area, so none is awarded; the permanent side waits
+        /// for 철수, and its settlement on death waits for D-012.
+        /// </para>
+        /// </summary>
         public bool RecordPurification()
         {
             bool recorded = State.TryRecordPurification();
-            if (recorded)
-                Debug.Log($"Purification {State.PurificationsCompleted} recorded for {Identity}.", this);
+            if (!recorded)
+                return false;
 
-            return recorded;
+            State.TryAwardMissionXp(ProgressionCurves.DraftMissionXpPerArea, out int levelsGained);
+            Debug.Log(
+                $"Purification {State.PurificationsCompleted} recorded for {Identity}: " +
+                $"+{ProgressionCurves.DraftMissionXpPerArea} 임무 XP, now Lv.{State.MissionLevel} " +
+                $"(+{levelsGained}).",
+                this);
+
+            return true;
         }
 
         /// <summary>
