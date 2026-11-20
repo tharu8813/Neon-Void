@@ -106,7 +106,10 @@ namespace NeonVoid.Plugins
             RadiusUnits = 0f,
             // 방화벽 차단 is the catalogue's own "armour and damage reduction weakened".
             AppliedStatus = StatusEffectId.FirewallBreach,
-            StatusMagnitude = 0.08f,       // [초안] per stack; 중첩 상한 is [미확정]
+            // [초안] resistance POINTS per stack, not a percentage: a percentage reduction is
+            // inert against the unarmoured enemies the prototype actually has. 중첩 상한 is
+            // [미확정], so the status catalogue's stacking policy is what bounds it.
+            StatusMagnitude = 3f,
             StatusDurationTicksOverride = StatedCorrosionDurationTicks,
         };
 

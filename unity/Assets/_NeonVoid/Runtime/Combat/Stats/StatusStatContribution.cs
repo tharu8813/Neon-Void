@@ -35,10 +35,20 @@ namespace NeonVoid.Combat.Stats
         public const float WeakenFractionPerMagnitude = 1f;
 
         /// <summary>
-        /// [초안] 방화벽 차단: fraction of base resistance removed per unit of magnitude. The
-        /// result may go below zero, which DamageMath handles as amplified damage.
+        /// [초안] 방화벽 차단: resistance points removed per unit of magnitude, FLAT.
+        /// <para>
+        /// Flat and not proportional, and that is the whole point. A percentage reduction does
+        /// nothing at all to a target with no armour, and every enemy in the prototype has
+        /// zero - so the mark applied, stacked, displayed and reduced exactly nothing, with no
+        /// error anywhere. A percentage of nothing is nothing.
+        /// </para>
+        /// <para>
+        /// docs/03 G12 says 물리·마법 방어 감소 중첩 and leaves 중첩 상한·재적용 규칙
+        /// [미확정]; it does not say flat or proportional. Flat is the reading that still works
+        /// on an unarmoured target, which is the only kind the game currently has.
+        /// </para>
         /// </summary>
-        public const float FirewallBreachFractionPerMagnitude = 1f;
+        public const float FirewallBreachArmorPerMagnitude = 1f;
 
         /// <summary>[초안] 스킬 가속 granted per unit of magnitude.</summary>
         public const float SkillHastePerMagnitude = 1f;
@@ -77,9 +87,11 @@ namespace NeonVoid.Combat.Stats
 
                     case StatusEffectId.FirewallBreach:
                         // 물리·마법 방어 감소: both, which is what docs/03 G12 asks for.
-                        float fraction = -magnitude * FirewallBreachFractionPerMagnitude;
-                        into.Add(StatModifier.Scale(ModifiedStat.PhysicalArmor, fraction));
-                        into.Add(StatModifier.Scale(ModifiedStat.MagicResistance, fraction));
+                        // Flat points, so an unarmoured target is pushed below zero rather
+                        // than left untouched. DamageMath amplifies from there.
+                        float points = -magnitude * FirewallBreachArmorPerMagnitude;
+                        into.Add(StatModifier.Add(ModifiedStat.PhysicalArmor, points));
+                        into.Add(StatModifier.Add(ModifiedStat.MagicResistance, points));
                         break;
                 }
             }

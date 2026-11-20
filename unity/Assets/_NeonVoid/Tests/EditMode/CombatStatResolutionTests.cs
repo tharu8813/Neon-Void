@@ -211,11 +211,10 @@ namespace NeonVoid.Tests
         [Test]
         public void TheCorrosionMarkReducesBothResistances()
         {
-            // docs/03 G12 is 물리·마법 방어 감소 - both. This is the plugin whose mark was
-            // already verified as being applied, while reducing nothing.
+            // docs/03 G12 is 물리·마법 방어 감소 - both.
             StatusContainer status = Container();
-            status.Apply(StatusEffectId.FirewallBreach, 0.1f);
-            status.Apply(StatusEffectId.FirewallBreach, 0.1f);
+            status.Apply(StatusEffectId.FirewallBreach, 3f);
+            status.Apply(StatusEffectId.FirewallBreach, 3f);
 
             var modifiers = new List<StatModifier>();
             StatusStatContribution.Collect(status, modifiers);
@@ -223,6 +222,29 @@ namespace NeonVoid.Tests
 
             Assert.Less(resolved.PhysicalArmor, 30f, "Physical armour was not reduced.");
             Assert.Less(resolved.MagicResistance, 40f, "Magic resistance was not reduced.");
+        }
+
+        [Test]
+        public void TheCorrosionMarkStillBitesATargetWithNoArmourAtAll()
+        {
+            // The bug this is here to stop coming back. The reduction was first written as a
+            // fraction of base resistance, which does nothing whatsoever to a target whose
+            // base is zero - and every enemy in the prototype has zero. The mark applied,
+            // stacked and displayed while reducing exactly nothing, with no error anywhere,
+            // and the first version of this test missed it by using a base with 30 armour.
+            // Test data has to be the data the game has.
+            CombatStats unarmoured = CombatStats.StartingVaccine();
+            Assert.AreEqual(0f, unarmoured.PhysicalArmor, "The starting block is unarmoured.");
+
+            StatusContainer status = Container();
+            status.Apply(StatusEffectId.FirewallBreach, 3f);
+
+            var modifiers = new List<StatModifier>();
+            StatusStatContribution.Collect(status, modifiers);
+            CombatStats resolved = CombatStatResolution.Resolve(unarmoured, modifiers, Caps());
+
+            Assert.Less(resolved.PhysicalArmor, 0f, "A mark on an unarmoured target did nothing.");
+            Assert.Less(resolved.MagicResistance, 0f, "A mark on an unarmoured target did nothing.");
         }
 
         [Test]

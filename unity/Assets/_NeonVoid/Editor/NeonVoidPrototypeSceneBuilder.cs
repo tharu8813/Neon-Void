@@ -353,6 +353,12 @@ namespace NeonVoid.EditorTools
             AssignSerializedInt(actor, "teamId", 1);
             AssignSerializedFloat(actor, "maxHealth", 40f);
 
+            // [초안] resistances above zero, so mitigation exists at all. With both at 0 the
+            // 100/(100+r) formula returns 1.0 for every hit ever landed in this project:
+            // armour, penetration and armour reduction were all computing on nothing.
+            AssignSerializedFloat(actor, "physicalArmor", 10f);
+            AssignSerializedFloat(actor, "magicResistance", 5f);
+
             // P2: it chases and attacks. The brain only forms intent; the hit itself goes
             // through CombatActor.ReceiveDamage, the same entry point the player's shots use.
             dummy.AddComponent<EnemyAgent>();
