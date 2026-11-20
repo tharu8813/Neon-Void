@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ab9e9bc7fe976c4899678c2b5190afd, type: 3}
+  m_Name: SK_PatchBurst
+  m_EditorClassIdentifier: NeonVoid.Runtime::NeonVoid.Combat.Skills.SkillAsset
+  documentKey: skill.patch_burst
+  displayName: "\uBCF5\uAD6C \uBC84\uC2A4\uD2B8"
+  definition:
+    SkillId: 1004
+    ManaCost: 30
+    BaseCooldownTicks: 540
+    IsMovementSkill: 0
+    Damage:
+      Flat: 18
+      AdRatio: 0
+      ApRatio: 0.5
+      Type: 1
+      CanCrit: 0
+      IsArea: 0
+      IsPeriodic: 0
+  shape:
+    Kind: 4
+    RadiusUnits: 0
+    ConeHalfAngleDegrees: 0
+    TeleportMaxDistanceUnits: 0
+    Field:
+      DurationTicks: 0
+      TickIntervalTicks: 0
+    CleansedEffects: 
+  appliedStatus:
+    Id: 0
+    Magnitude: 0
+    DurationTicksOverride: -1

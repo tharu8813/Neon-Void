@@ -35,6 +35,7 @@ MonoBehaviour:
     Field:
       DurationTicks: 300
       TickIntervalTicks: 30
+    CleansedEffects: 
   appliedStatus:
     Id: 21
     Magnitude: 0.25

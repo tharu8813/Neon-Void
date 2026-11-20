@@ -35,6 +35,7 @@ MonoBehaviour:
     Field:
       DurationTicks: 0
       TickIntervalTicks: 0
+    CleansedEffects: 
   appliedStatus:
     Id: 0
     Magnitude: 0

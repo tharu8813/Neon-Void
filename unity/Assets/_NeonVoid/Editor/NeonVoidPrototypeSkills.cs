@@ -46,11 +46,17 @@ namespace NeonVoid.EditorTools
             // The AssetDatabase has to know the folder exists before anything is created in it.
             AssetDatabase.Refresh();
 
+            // All six of docs/03's prototype pool exist as assets; the caster has three slots,
+            // and docs/00 has skills swapped mid-mission, so the other three are authored and
+            // ready to be dropped into a slot rather than written when somebody wants them.
             string[] paths =
             {
                 ArcPulse(),
                 FirewallField(),
                 PacketBlink(),
+                PatchBurst(),
+                Cleanse(),
+                LockOn(),
             };
 
             AssetDatabase.SaveAssets();
@@ -175,6 +181,110 @@ namespace NeonVoid.EditorTools
             SkillStatusEffect.None);
 
         /// <summary>Writes one skill asset and returns its path, never a live reference.</summary>
+        /// <summary>
+        /// `skill.patch_burst` 복구 버스트 - 자신 HP 회복. docs/03's verification points are the
+        /// already-full-health case and the relationship to shields.
+        /// <para>
+        /// The HP half only. The shield half is D-004: multi-shield absorption, expiry and
+        /// lifesteal ordering are unresolved, and a shield invented here would have to be
+        /// re-decided later with saves already holding it.
+        /// </para>
+        /// </summary>
+        private static string PatchBurst() => Author(
+            "SK_PatchBurst",
+            "skill.patch_burst",
+            "복구 버스트",
+            new SkillDefinition
+            {
+                SkillId = 1004,
+                ManaCost = 30f,
+                BaseCooldownTicks = 540,        // 9 s
+                IsMovementSkill = false,
+                Damage = new DamageRequest
+                {
+                    // Read as a magnitude rather than as damage: the heal uses the same
+                    // formula, so a skill's strength scales with the same stats either way.
+                    Flat = 18f,                 // [초안]
+                    ApRatio = 0.5f,             // [초안]
+                    Type = DamageType.Magic,
+                    CanCrit = false,
+                },
+            },
+            new SkillShape { Kind = SkillEffectKind.SelfHeal },
+            SkillStatusEffect.None);
+
+        /// <summary>
+        /// `skill.cleanse` 정화 패킷 - 특정 제어 효과 해제.
+        /// <para>
+        /// 정지 and 제한 are deliberately NOT listed. Both stop the cast from happening at all,
+        /// so a cleanse can never remove either, and listing an effect it could never reach
+        /// would be the silent kind of lie. That boundary is exactly docs/03's
+        /// 사용불가 디버프 경계 for this skill, and it stays a boundary until somebody decides
+        /// that one skill may ignore the cast gate.
+        /// </para>
+        /// </summary>
+        private static string Cleanse() => Author(
+            "SK_Cleanse",
+            "skill.cleanse",
+            "정화 패킷",
+            new SkillDefinition
+            {
+                SkillId = 1005,
+                ManaCost = 20f,
+                BaseCooldownTicks = 420,        // 7 s
+                IsMovementSkill = false,
+                Damage = default,
+            },
+            new SkillShape
+            {
+                Kind = SkillEffectKind.CleanseControl,
+                CleansedEffects = new[]
+                {
+                    StatusEffectId.Slow,
+                    StatusEffectId.Root,
+                    StatusEffectId.Malfunction,
+                },
+            },
+            SkillStatusEffect.None);
+
+        /// <summary>
+        /// `skill.lockon` 표적 지정 - 적에게 물리 단일 타격 + 방어 디버프.
+        /// <para>
+        /// The debuff is 방화벽 차단, the same one G12 applies, so a lock-on followed by basic
+        /// attacks hurts more - which is the point of a single-target skill in a game where
+        /// everything else is a cone or a field.
+        /// </para>
+        /// </summary>
+        private static string LockOn() => Author(
+            "SK_LockOn",
+            "skill.lockon",
+            "표적 지정",
+            new SkillDefinition
+            {
+                SkillId = 1006,
+                ManaCost = 25f,
+                BaseCooldownTicks = 360,        // 6 s
+                IsMovementSkill = false,
+                Damage = new DamageRequest
+                {
+                    Flat = 6f,                  // [초안]
+                    AdRatio = 1.4f,             // [초안]
+                    Type = DamageType.Physical,
+                    CanCrit = true,             // a single target hit is the natural crit case
+                },
+            },
+            new SkillShape
+            {
+                Kind = SkillEffectKind.SingleTarget,
+                RadiusUnits = 9f,               // [초안] how far it can lock on
+            },
+            new SkillStatusEffect
+            {
+                Id = StatusEffectId.FirewallBreach,
+                Magnitude = 5f,                 // [초안] resistance points, as G12 uses
+                DurationTicksOverride = 240,    // [초안] 4 s, the same as G12's mark
+            });
+
         private static string Author(
             string fileName,
             string documentKey,

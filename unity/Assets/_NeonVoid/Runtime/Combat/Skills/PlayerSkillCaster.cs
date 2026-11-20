@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using NeonVoid.Combat.Status;
 using NeonVoid.Core;
 using NeonVoid.Player;
 using UnityEngine;
@@ -223,6 +224,15 @@ namespace NeonVoid.Combat.Skills
                     if (motionDriver != null)
                         motionDriver.TeleportTo(new Vector2(blinkDestination.x, blinkDestination.z));
                     break;
+                case SkillEffectKind.SelfHeal:
+                    CastSelfHeal(asset);
+                    break;
+                case SkillEffectKind.CleanseControl:
+                    CastCleanse(asset);
+                    break;
+                case SkillEffectKind.SingleTarget:
+                    CastSingleTarget(asset);
+                    break;
             }
         }
 
@@ -266,6 +276,105 @@ namespace NeonVoid.Combat.Skills
                 if (status.Applies)
                     actor.ApplyStatus(status.Id, status.Magnitude, 0f, status.DurationTicksOverride);
             }
+        }
+
+        /// <summary>
+        /// Heals the caster. The amount comes from the same formula the damage does, so a
+        /// skill's strength scales with the same stats whichever direction it points.
+        /// <para>
+        /// A cast at full health is still spent. docs/03 lists 이미 full HP인 상태 as a case to
+        /// handle and does not say how: refusing would need a new cast rule, and inventing one
+        /// here would put a per-skill exception in the shared gate. So the mana goes, nothing
+        /// is healed, and the decision stays open.
+        /// </para>
+        /// </summary>
+        private void CastSelfHeal(SkillAsset asset)
+        {
+            float amount = DamageMath.RawDamage(asset.Definition.Damage, _actor.Stats, critRolled: false);
+            if (amount <= 0f)
+                return;
+
+            float healed = _actor.Heal(amount);
+            if (healed <= 0f)
+                Debug.Log($"{asset.DisplayName}: already at full health; the cast was spent anyway.", this);
+        }
+
+        /// <summary>
+        /// Removes the control effects this skill names from the caster.
+        /// <para>
+        /// [확정 경계] docs/03 flags 사용불가 디버프 경계 for this skill, and the boundary is
+        /// real: 정지 and 제한 stop the cast happening at all, so a cleanse can never remove
+        /// either of them. It is not listed as removing them, because a listed effect that
+        /// could never be reached is the silent kind of lie. What it does reach is 구속 and
+        /// 기능고장 - and 속박, since a cleanse is not a movement skill.
+        /// </para>
+        /// </summary>
+        private void CastCleanse(SkillAsset asset)
+        {
+            StatusEffectId[] cleansed = asset.Shape.CleansedEffects;
+            if (cleansed == null)
+                return;
+
+            int removed = 0;
+            for (int i = 0; i < cleansed.Length; ++i)
+                removed += _actor.Status.Remove(cleansed[i]);
+
+            if (removed > 0)
+                Debug.Log($"{asset.DisplayName}: cleared {removed} control effect(s).", this);
+        }
+
+        /// <summary>
+        /// Damages the nearest hostile in range, with no cone to aim. The cursor still chooses
+        /// which way the player is looking, but a single-target skill that demanded accurate
+        /// aiming would be a worse cone rather than a different skill.
+        /// </summary>
+        private void CastSingleTarget(SkillAsset asset)
+        {
+            Vector3 self = transform.position;
+            Collider[] candidates = Physics.OverlapSphere(
+                self, asset.Shape.RadiusUnits, ~0, QueryTriggerInteraction.Ignore);
+
+            CombatActor best = null;
+            float bestDistanceSqr = float.MaxValue;
+            int bestId = int.MaxValue;
+            _hitThisCast.Clear();
+
+            for (int i = 0; i < candidates.Length; ++i)
+            {
+                var actor = candidates[i].GetComponentInParent<CombatActor>();
+                if (actor == null || !actor.IsAlive || !_actor.IsHostileTo(actor))
+                    continue;
+                if (!_hitThisCast.Add(actor.ActorId))
+                    continue;
+
+                float distanceSqr = (actor.transform.position - self).sqrMagnitude;
+
+                // Ties broken by the lower actor id rather than by collider order, which the
+                // physics query does not promise to repeat.
+                bool closer = distanceSqr < bestDistanceSqr - 1e-5f;
+                bool tiedButLower = Mathf.Abs(distanceSqr - bestDistanceSqr) <= 1e-5f && actor.ActorId < bestId;
+                if (!closer && !tiedButLower)
+                    continue;
+
+                best = actor;
+                bestDistanceSqr = distanceSqr;
+                bestId = actor.ActorId;
+            }
+
+            if (best == null)
+                return;
+
+            DamageOutcome outcome = best.ReceiveDamage(
+                asset.Definition.Damage, _actor.Stats, _actor.RollCrit(asset.Definition.Damage));
+
+            if (outcome.Lifesteal.Total > 0f)
+                _actor.Heal(outcome.Lifesteal.Total);
+
+            _actor.NotifyHitLanded(best, asset.Definition.Damage, outcome, HitOrigin.Skill);
+
+            SkillStatusEffect status = asset.AppliedStatus;
+            if (status.Applies)
+                best.ApplyStatus(status.Id, status.Magnitude, 0f, status.DurationTicksOverride);
         }
 
         private void CastField(SkillAsset asset)

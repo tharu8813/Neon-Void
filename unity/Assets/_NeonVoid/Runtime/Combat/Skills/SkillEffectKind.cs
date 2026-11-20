@@ -33,5 +33,24 @@ namespace NeonVoid.Combat.Skills
         /// since 속박 denies movement skills specifically rather than all skills.
         /// </summary>
         Teleport = 3,
+
+        /// <summary>
+        /// Heals the caster. `skill.patch_burst`, whose verification point in docs/03 is the
+        /// case where the caster is already at full health.
+        /// </summary>
+        SelfHeal = 4,
+
+        /// <summary>
+        /// Removes named control effects from the caster. `skill.cleanse`, whose verification
+        /// point is 사용불가 디버프 경계 - the debuffs that stop it being cast in the first place.
+        /// This is the only thing in the project that calls StatusContainer.Remove.
+        /// </summary>
+        CleanseControl = 5,
+
+        /// <summary>
+        /// Damages the nearest single enemy. `skill.lockon`: physical damage on one target plus
+        /// a defence debuff, with no cone to aim.
+        /// </summary>
+        SingleTarget = 6,
     }
 }

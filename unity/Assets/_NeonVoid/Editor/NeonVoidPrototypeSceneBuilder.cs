@@ -143,7 +143,12 @@ namespace NeonVoid.EditorTools
             AssignSerialized(caster, "inputRouter", router);
             AssignSerialized(caster, "motionDriver", driver);
             AssignSerialized(caster, "fieldMaterial", fieldMat);
-            AssignSerializedObjectArray(caster, "slotSkills", NeonVoidPrototypeSkills.Load(skillPaths));
+            // Three slots, six assets: the rest are authored and sitting in the project for a
+            // slot to be pointed at, which is how docs/00 describes skills changing.
+            SkillAsset[] authored = NeonVoidPrototypeSkills.Load(skillPaths);
+            var equipped = new SkillAsset[Mathf.Min(DesignConstants.ActiveSkillSlots, authored.Length)];
+            System.Array.Copy(authored, equipped, equipped.Length);
+            AssignSerializedObjectArray(caster, "slotSkills", equipped);
 
             // P2: plugin procs. Three of docs/03's 27 are granted at startup so the proc queue
             // has something to judge; the three-card reward screen that really grants them

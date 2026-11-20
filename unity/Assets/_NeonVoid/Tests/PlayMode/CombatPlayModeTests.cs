@@ -406,6 +406,125 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+        // --- the three later skills --------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator PatchBurstHealsTheCasterAndIsSpentAtFullHealth()
+        {
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            _arena.Caster.Equip(0, PrototypeArena.SkillFrom(
+                "skill.patch_burst",
+                new SkillDefinition
+                {
+                    SkillId = 1004,
+                    ManaCost = 30f,
+                    BaseCooldownTicks = 1,
+                    Damage = new DamageRequest { Flat = 18f, ApRatio = 0.5f, Type = DamageType.Magic },
+                },
+                new SkillShape { Kind = SkillEffectKind.SelfHeal },
+                SkillStatusEffect.None));
+
+            _arena.Player.ReceiveDamage(
+                new DamageRequest { Flat = 40f, Type = DamageType.True }, CombatStats.StartingVaccine());
+            float wounded = _arena.Player.Health.Current;
+
+            Assert.IsTrue(_arena.Caster.CastSlot(0, Vector2.zero).Succeeded);
+            yield return _arena.Tick(2);
+            Assert.Greater(_arena.Player.Health.Current, wounded, "The heal did nothing.");
+
+            // At full health the cast is still spent. docs/03 lists this case and does not say
+            // how to resolve it, so the mana goes and the decision stays open.
+            CombatStats full = _arena.Player.BaseStats;
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, full);
+            float manaBefore = _arena.Player.Mana.Current;
+
+            Assert.IsTrue(_arena.Caster.CastSlot(0, Vector2.zero).Succeeded);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(_arena.Player.Health.Max, _arena.Player.Health.Current, 1e-3f);
+            Assert.Less(_arena.Player.Mana.Current, manaBefore, "A full-health cast was free.");
+        }
+
+        [UnityTest]
+        public IEnumerator TheCleanseClearsWhatItCanAndCannotBeCastThroughASilence()
+        {
+            // The only thing in the project that calls StatusContainer.Remove, and the one
+            // place docs/03's 사용불가 디버프 경계 is visible: 제한 stops the cast, so a cleanse
+            // can never remove it.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            _arena.Caster.Equip(0, PrototypeArena.SkillFrom(
+                "skill.cleanse",
+                new SkillDefinition { SkillId = 1005, ManaCost = 20f, BaseCooldownTicks = 1 },
+                new SkillShape
+                {
+                    Kind = SkillEffectKind.CleanseControl,
+                    CleansedEffects = new[]
+                    {
+                        StatusEffectId.Slow, StatusEffectId.Root, StatusEffectId.Malfunction,
+                    },
+                },
+                SkillStatusEffect.None));
+
+            _arena.Player.ApplyStatus(StatusEffectId.Slow, 0.4f);
+            _arena.Player.ApplyStatus(StatusEffectId.Root, 1f);
+            yield return _arena.Tick(1);
+            Assert.IsTrue(_arena.Player.Status.Has(StatusEffectId.Slow));
+
+            Assert.IsTrue(_arena.Caster.CastSlot(0, Vector2.zero).Succeeded, "Rooted blocked a still skill.");
+            yield return _arena.Tick(1);
+
+            Assert.IsFalse(_arena.Player.Status.Has(StatusEffectId.Slow), "구속 survived the cleanse.");
+            Assert.IsFalse(_arena.Player.Status.Has(StatusEffectId.Root), "속박 survived the cleanse.");
+
+            _arena.Player.ApplyStatus(StatusEffectId.Silence, 1f);
+            yield return _arena.Tick(1);
+            SkillCastResult refused = _arena.Caster.CastSlot(0, Vector2.zero);
+
+            Assert.IsFalse(refused.Succeeded);
+            Assert.AreEqual(SkillCastRejection.Silenced, refused.Rejection,
+                "A cleanse must not be able to cleanse the thing that stops it being cast.");
+        }
+
+        [UnityTest]
+        public IEnumerator LockOnHitsTheNearestEnemyAndLeavesItEasierToHurt()
+        {
+            _arena = PrototypeArena.Build(new Vector3(3f, 0.7f, 0f), new Vector3(8f, 0.7f, 0f));
+            _arena.WithoutPlugins();
+            CombatActor near = _arena.Enemies[0];
+            CombatActor far = _arena.Enemies[1];
+            yield return _arena.Tick(2);
+
+            _arena.Caster.Equip(0, PrototypeArena.SkillFrom(
+                "skill.lockon",
+                new SkillDefinition
+                {
+                    SkillId = 1006,
+                    ManaCost = 25f,
+                    BaseCooldownTicks = 1,
+                    Damage = new DamageRequest { Flat = 6f, AdRatio = 1.4f, Type = DamageType.Physical },
+                },
+                new SkillShape { Kind = SkillEffectKind.SingleTarget, RadiusUnits = 9f },
+                new SkillStatusEffect
+                {
+                    Id = StatusEffectId.FirewallBreach, Magnitude = 5f, DurationTicksOverride = 240,
+                }));
+
+            float farBefore = far.Health.Current;
+            float armourBefore = near.Stats.PhysicalArmor;
+
+            Assert.IsTrue(_arena.Caster.CastSlot(0, Vector2.zero).Succeeded);
+            yield return _arena.Tick(2);
+
+            Assert.Less(near.Health.Current, near.Health.Max, "The nearest enemy was not hit.");
+            Assert.AreEqual(farBefore, far.Health.Current, 1e-3f, "A single-target skill hit two enemies.");
+            Assert.Less(near.Stats.PhysicalArmor, armourBefore, "The defence debuff did nothing.");
+        }
+
         // --- the attack statuses -----------------------------------------------------------
 
         [UnityTest]

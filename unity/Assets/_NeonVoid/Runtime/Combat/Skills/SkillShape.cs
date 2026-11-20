@@ -1,4 +1,5 @@
 using System;
+using NeonVoid.Combat.Status;
 using UnityEngine;
 
 namespace NeonVoid.Combat.Skills
@@ -29,6 +30,9 @@ namespace NeonVoid.Combat.Skills
         [Tooltip("[초안] field lifetime and damage interval, in ticks.")]
         public FieldSchedule Field;
 
+        [Tooltip("Control effects a cleanse removes. Only control effects belong here.")]
+        public StatusEffectId[] CleansedEffects;
+
         /// <summary>
         /// Rejects a shape that cannot do what its kind says.
         /// <para>
@@ -57,6 +61,27 @@ namespace NeonVoid.Combat.Skills
                 case SkillEffectKind.PersistentField:
                     RequirePositive(RadiusUnits, nameof(RadiusUnits));
                     Field.Validate();
+                    return;
+
+                case SkillEffectKind.SelfHeal:
+                    // The magnitude comes from the damage formula, so nothing geometric is
+                    // needed; a radius here would only look like it meant something.
+                    return;
+
+                case SkillEffectKind.SingleTarget:
+                    RequirePositive(RadiusUnits, nameof(RadiusUnits));
+                    return;
+
+                case SkillEffectKind.CleanseControl:
+                    if (CleansedEffects == null || CleansedEffects.Length == 0)
+                        throw new InvalidOperationException(
+                            $"{nameof(CleansedEffects)} must name at least one effect, or the cleanse does nothing.");
+
+                    for (int i = 0; i < CleansedEffects.Length; ++i)
+                        if (!StatusCatalog.IsControlEffect(CleansedEffects[i]))
+                            throw new InvalidOperationException(
+                                $"{CleansedEffects[i]} is not a control effect. docs/03 asks for 특정 제어 효과 해제; " +
+                                "stripping buffs or damage over time is a different feature nobody has asked for.");
                     return;
 
                 case SkillEffectKind.Teleport:
