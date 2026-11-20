@@ -32,7 +32,7 @@ namespace NeonVoid.Player
     /// </para>
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
-    public sealed class PlayerSimulationDriver : MonoBehaviour, ISimulationTickReceiver
+    public sealed class PlayerSimulationDriver : MonoBehaviour, ISimulationTickReceiver, IDashState
     {
         [SerializeField] private PlayerInputRouter inputRouter;
 
@@ -55,6 +55,12 @@ namespace NeonVoid.Player
 
         /// <summary>Authoritative movement state as of the last completed tick.</summary>
         public PlayerMotionState State => _state;
+
+        /// <summary>
+        /// <see cref="IDashState"/>, so effects written against dashing can ask without this
+        /// domain knowing they exist. It is the same flag <see cref="State"/> already carries.
+        /// </summary>
+        public bool IsDashing => _state.IsDashing;
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Player;
 

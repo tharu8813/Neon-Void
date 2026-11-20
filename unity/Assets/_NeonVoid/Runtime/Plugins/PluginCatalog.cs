@@ -339,6 +339,52 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[초안] reach of the dash path in units. docs/03 G16 gives no number.</summary>
+        public const float DraftDashBlastRadiusUnits = 1.8f;
+
+        /// <summary>
+        /// G16 대시 폭발 - 대시 경로 폭발 피해.
+        /// <para>
+        /// <b>Once per enemy per dash</b>, which is docs/03's exception column verbatim:
+        /// 한 대시에서 중복 접촉. The dash lasts nine ticks in the prototype and the path is
+        /// swept on each of them, so an enemy standing in the way would otherwise take this
+        /// nine times.
+        /// </para>
+        /// <para>
+        /// <b>폭발 is the damage's flavour here, not a second explosion.</b> The path is the
+        /// area - docs/03 says 대시 경로 폭발 피해 - so each enemy in it is struck once, with
+        /// <see cref="DamageRequest.IsArea"/> set so the 33% area omnivamp efficiency applies.
+        /// Exploding around each touched enemy instead would make a dash through five of them
+        /// five overlapping explosions, and a crowd's damage would grow with the square of its
+        /// size.
+        /// </para>
+        /// <para>
+        /// <b>환경 영향 is not implemented</b>, the other half of that exception column. There
+        /// is no environment system to interact with yet; when there is, a dash blast is one of
+        /// the things that has to be asked about rather than assumed.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition DashDetonation() => new PluginDefinition
+        {
+            ProposalId = "G16",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnDashContact,
+            Effect = PluginEffectKind.DamageTarget,
+            Damage = new DamageRequest
+            {
+                AdRatio = 0.8f,          // [초안]
+                Type = DamageType.Magic,
+                CanCrit = true,
+                IsArea = true,
+            },
+            RadiusUnits = DraftDashBlastRadiusUnits,
+
+            // SingleUse: the dash's own contact is what fires this, and a blast that could
+            // re-enter its own chain would be reacting to itself.
+            Rule = ProcEffectRule.SingleUse(16),
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
@@ -352,6 +398,7 @@ namespace NeonVoid.Plugins
             SupportRound(),
             QuadCache(),
             DismantleProtocol(),
+            DashDetonation(),
         };
     }
 }

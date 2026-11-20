@@ -214,6 +214,19 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Appends every carried plugin that a dash touching an enemy sets off, in carry order.
+        /// </summary>
+        public void CollectTriggeredByDashContact(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+                if (_carried[i].Trigger == PluginTriggerKind.OnDashContact)
+                    into.Add(_carried[i]);
+        }
+
+        /// <summary>
         /// Whether a trigger kind matches a hit.
         /// <para>
         /// A hit that removed no health never triggers anything. An attack absorbed by 무적

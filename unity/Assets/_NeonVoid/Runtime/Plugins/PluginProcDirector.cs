@@ -56,8 +56,23 @@ namespace NeonVoid.Plugins
         private readonly List<StatModifier> _passiveBuffer = new List<StatModifier>();
         private readonly List<ExtraShotSpec> _extraShotBuffer = new List<ExtraShotSpec>();
         private readonly List<PluginDefinition> _burstBuffer = new List<PluginDefinition>();
+        private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
         private AutoAttacker _attacker;
+        private IDashState _dash;
         private DeterministicRng _rewardRng;
+
+        /// <summary>
+        /// Enemies this dash has already touched. Cleared when a dash begins, never during one.
+        /// <para>
+        /// docs/03 G16's exception column says 한 대시에서 중복 접촉 in as many words. A dash
+        /// lasts several ticks and the path is swept on each of them, so without this an enemy
+        /// standing in the way takes the damage once per tick - which at the prototype's 9 tick
+        /// dash is nine times the damage the card describes.
+        /// </para>
+        /// </summary>
+        private readonly HashSet<int> _touchedByThisDash = new HashSet<int>();
+
+        private bool _wasDashing;
 
         /// <summary>
         /// Resolved hit effects counted towards each burst card's next burst, keyed on the
@@ -85,6 +100,26 @@ namespace NeonVoid.Plugins
         /// </summary>
         public int ResolvedCountOf(int effectId) =>
             _resolvedByEffectId.TryGetValue(effectId, out int count) ? count : 0;
+
+        /// <summary>
+        /// Names what this director should ask about dashing, instead of looking for it on the
+        /// owner.
+        /// <para>
+        /// There are two reasons for the seam. A dash does not have to live on the same object
+        /// as the actor - a mount or a vehicle would own it - and a test has no way to press
+        /// the dash button, so without this the whole dash path could only be exercised by
+        /// driving the Input System.
+        /// </para>
+        /// </summary>
+        public void SetDashState(IDashState dashState)
+        {
+            _dash = dashState;
+            _wasDashing = false;
+            _touchedByThisDash.Clear();
+        }
+
+        /// <summary>Enemies the current dash has already touched. For tests and the HUD.</summary>
+        public int TouchedByThisDash => _touchedByThisDash.Count;
 
         /// <summary>Hit effects counted towards a burst card's next burst. For tests and the HUD.</summary>
         public int HitEffectsTowardsBurst(string proposalId) =>
@@ -273,6 +308,11 @@ namespace NeonVoid.Plugins
 
         void ISimulationTickReceiver.OnSimulationTick(long tickIndex)
         {
+            // Before the drain, so a contact found this tick resolves this tick. This runs at
+            // Effects + 1, after the player has already moved at Player order, so the position
+            // swept is where the dash actually is.
+            SweepDashPath(tickIndex);
+
             if (_router.PendingCount == 0)
                 return;
 
@@ -290,6 +330,64 @@ namespace NeonVoid.Plugins
                 Debug.LogError(
                     $"{name}: proc drain hit a resource limit on tick {tickIndex} ({report}). " +
                     "Effects the rules allowed did not happen.", this);
+        }
+
+        /// <summary>
+        /// Offers every enemy the dash is touching to the dash-triggered cards, once each per
+        /// dash.
+        /// <para>
+        /// An overlap at the dasher's position each tick rather than a swept capsule, which is
+        /// enough here and says why: the prototype dash covers about 0.23 units per tick and
+        /// the card's reach is several times that, so consecutive overlaps leave no gap for an
+        /// enemy to sit in. A faster dash or a smaller reach would need the sweep, and
+        /// <see cref="PluginDefinition.Validate"/> is where that requirement would belong.
+        /// </para>
+        /// </summary>
+        private void SweepDashPath(long tickIndex)
+        {
+            if (_dash == null && owner != null)
+                _dash = owner.GetComponent<IDashState>();   // the usual case: it is the player
+
+            if (_dash == null || owner == null || !owner.IsAlive)
+                return;
+
+            bool dashing = _dash.IsDashing;
+            if (dashing && !_wasDashing)
+                _touchedByThisDash.Clear();
+
+            _wasDashing = dashing;
+            if (!dashing)
+                return;
+
+            _dashBuffer.Clear();
+            _router.Loadout.CollectTriggeredByDashContact(_dashBuffer);
+            if (_dashBuffer.Count == 0)
+                return;
+
+            // The widest reach any carried dash card asks for, so the path is swept once rather
+            // than once per card.
+            float reach = 0f;
+            for (int i = 0; i < _dashBuffer.Count; ++i)
+                reach = Mathf.Max(reach, _dashBuffer[i].RadiusUnits);
+
+            if (reach <= 0f)
+                return;
+
+            Collider[] touching = Physics.OverlapSphere(
+                owner.transform.position, reach, ~0, QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < touching.Length; ++i)
+            {
+                var actor = touching[i].GetComponentInParent<CombatActor>();
+                if (actor == null || !actor.IsAlive || !owner.IsHostileTo(actor))
+                    continue;
+
+                // 한 대시에서 중복 접촉: the first contact of this dash is the only one.
+                if (!_touchedByThisDash.Add(actor.ActorId))
+                    continue;
+
+                _router.OnDashContact(owner.ActorId, actor.ActorId, tickIndex);
+            }
         }
 
         private void Resolve(ProcEvent evt, PluginDefinition plugin)
@@ -319,6 +417,9 @@ namespace NeonVoid.Plugins
                     break;
                 case PluginEffectKind.MarkTarget:
                     Mark(plugin, target);
+                    break;
+                case PluginEffectKind.DamageTarget:
+                    Strike(target, plugin, HitOrigin.Skill);
                     break;
             }
         }

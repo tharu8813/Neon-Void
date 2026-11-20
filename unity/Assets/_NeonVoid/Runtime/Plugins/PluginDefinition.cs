@@ -29,6 +29,16 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         OnHitEffectResolved = 4,
+
+        /// <summary>
+        /// 대시 중 접촉 시 - the dasher reaching an enemy. G16 대시 폭발.
+        /// <para>
+        /// Not a hit either: nothing has struck anybody when a dash passes through a crowd.
+        /// Evaluated per enemy the dash touches, once per dash, which is what docs/03's
+        /// exception column asks for by name (한 대시에서 중복 접촉).
+        /// </para>
+        /// </summary>
+        OnDashContact = 5,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>
@@ -56,6 +66,18 @@ namespace NeonVoid.Plugins
         /// an on-hit effect. R06 보조 탄환, G13 4중 캐시.
         /// </summary>
         FiringModifier = 5,
+
+        /// <summary>
+        /// Damage to the event's own target and nothing around it. G16 대시 폭발, once per
+        /// enemy the dash touched.
+        /// <para>
+        /// Not <see cref="ExplodeAroundTarget"/>: a dash through five enemies would then be
+        /// five overlapping explosions, each catching the others, and the damage a crowd takes
+        /// would grow with the square of its size. docs/03 says 대시 경로 폭발 피해 - the path
+        /// is the area, so the area is swept once and each enemy in it is struck once.
+        /// </para>
+        /// </summary>
+        DamageTarget = 6,
     }
 
     /// <summary>
@@ -141,6 +163,15 @@ namespace NeonVoid.Plugins
             if (Effect == PluginEffectKind.None)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that does nothing when it fires is not a plugin.");
 
+            // The dash path's reach is this radius: with none, the sweep finds nobody and the
+            // card fires for no enemy ever. That is the silent no-op shape, so the data
+            // refuses it rather than shipping a plugin that does nothing.
+            if (Trigger == PluginTriggerKind.OnDashContact && (float.IsNaN(RadiusUnits) || RadiusUnits <= 0f))
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: a dash effect needs a reach above zero, or the path touches nothing.");
+            }
+
             Damage.Validate();
             Passive.Validate();
             Firing.Validate(ProposalId);
@@ -178,6 +209,14 @@ namespace NeonVoid.Plugins
                     if (Firing.IsEmpty)
                         throw new InvalidOperationException(
                             $"{ProposalId}: a firing modifier that changes nothing about firing is not a plugin.");
+                    break;
+
+                case PluginEffectKind.DamageTarget:
+                    // A damaging effect that deals nothing is the silent no-op shape again: it
+                    // fires, it is counted, it reports, and the enemy is untouched.
+                    if (Damage.Flat <= 0f && Damage.AdRatio <= 0f && Damage.ApRatio <= 0f)
+                        throw new InvalidOperationException(
+                            $"{ProposalId}: a damaging effect with no damage would fire and do nothing.");
                     break;
 
                 case PluginEffectKind.MarkTarget:

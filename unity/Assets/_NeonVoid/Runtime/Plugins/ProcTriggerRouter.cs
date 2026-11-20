@@ -162,6 +162,41 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Offers one enemy a dash has touched to every plugin that reacts to a dash. docs/03
+        /// G16 대시 폭발 is 대시 경로 폭발 피해, and this is the contact, not a hit.
+        /// <para>
+        /// Called once per enemy per dash by whatever is sweeping the path; the "once" is that
+        /// caller's job, because it is the only thing that knows which dash this is. docs/03
+        /// names the hazard directly: 한 대시에서 중복 접촉.
+        /// </para>
+        /// </summary>
+        public void OnDashContact(
+            int sourceActorId, int targetActorId, long tick, int runId = 0, int attackId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredByDashContact(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+            {
+                PluginDefinition plugin = _triggered[i];
+                _queue.TryEnqueue(
+                    plugin.EffectId,
+                    sourceActorId,
+                    targetActorId,
+                    _activePath,
+                    tick,
+                    runId,
+                    attackId,
+                    plugin.Damage.Type,
+                    plugin.Damage.IsArea,
+                    plugin.Damage.IsPeriodic,
+                    isCritical: false,
+                    randomStreamId: 0,
+                    onHitEffectScale: _activeScale);
+            }
+        }
+
+        /// <summary>
         /// Resolves everything queued, handing each event the plugin that produced it. The
         /// resolver may deal damage, which may land, which may trigger more plugins - and those
         /// arrive with this event's ancestry attached rather than as fresh chains.
