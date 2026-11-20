@@ -3,6 +3,7 @@ using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
 using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
+using NeonVoid.Missions;
 using UnityEngine;
 
 namespace NeonVoid.Plugins
@@ -37,8 +38,11 @@ namespace NeonVoid.Plugins
         [Tooltip("Prototype: grant the draft plugins when the mission starts.")]
         [SerializeField] private bool grantPrototypePluginsOnStart = true;
 
-        [Tooltip("[초안] seed for the reward stream. A real run takes it from mission state (docs/04).")]
-        [SerializeField] private uint prototypeRewardSeed = 20261120u;
+        [Tooltip("Where the reward seed comes from. Found automatically when left empty.")]
+        [SerializeField] private MissionRunDirector missionDirector;
+
+        [Tooltip("Fallback reward seed, used only when no MissionRunDirector is in the scene.")]
+        [SerializeField] private uint fallbackRewardSeed = 20261120u;
 
         private ProcChainGuard _guard;
         private ProcQueue _queue;
@@ -83,9 +87,8 @@ namespace NeonVoid.Plugins
                 owner = GetComponent<CombatActor>();
 
             _guard = new ProcChainGuard();
-            // docs/06 section 4 keeps mission, combat and reward randomness in separate
-            // streams. A plugin roll is reward randomness, so it draws from its own.
-            _rewardRng = new DeterministicRng(prototypeRewardSeed);
+            if (missionDirector == null)
+                missionDirector = FindFirstObjectByType<MissionRunDirector>();
             _queue = new ProcQueue(_guard);
             _router = new ProcTriggerRouter(new PluginLoadout(), _guard, _queue);
         }
@@ -93,6 +96,14 @@ namespace NeonVoid.Plugins
         private void Start()
         {
             RefreshActorIndex();
+
+            // Created here rather than in Awake so the mission has certainly begun. docs/06
+            // section 4 keeps mission, combat and reward randomness in separate streams, and a
+            // plugin roll is reward randomness - taken from THIS run's reward stream, so two
+            // runs roll different stats instead of every run rolling the same ones.
+            _rewardRng = missionDirector != null
+                ? missionDirector.CreateRng(RandomStream.Reward)
+                : new DeterministicRng(fallbackRewardSeed);
 
             if (!grantPrototypePluginsOnStart)
                 return;

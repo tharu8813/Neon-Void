@@ -1,6 +1,7 @@
 using System;
 using NeonVoid.Combat;
 using NeonVoid.Core;
+using NeonVoid.Missions;
 using UnityEngine;
 
 namespace NeonVoid.Progression
@@ -24,10 +25,12 @@ namespace NeonVoid.Progression
         [Tooltip("The player's CombatActor. Its death is the run's death.")]
         [SerializeField] private CombatActor playerActor;
 
-        [Header("Prototype run identity")]
-        [Tooltip("Stand-in run id. Real runs get runId + seed from mission state (docs/04), " +
-                 "which does not exist yet. Prototype only.")]
-        [SerializeField, Min(1)] private long prototypeRunId = 1L;
+        [Header("Run identity")]
+        [Tooltip("Where the run id comes from. Found automatically when left empty.")]
+        [SerializeField] private MissionRunDirector missionDirector;
+
+        [Tooltip("Fallback run id, used only when no MissionRunDirector is in the scene.")]
+        [SerializeField, Min(1)] private long fallbackRunId = 1L;
 
         private SimulationRunner _runner;
         private IDeathCommitService _commitService;
@@ -46,6 +49,24 @@ namespace NeonVoid.Progression
         {
             if (playerActor == null)
                 playerActor = GetComponentInParent<CombatActor>();
+            if (missionDirector == null)
+                missionDirector = FindFirstObjectByType<MissionRunDirector>();
+        }
+
+        /// <summary>
+        /// The run this death belongs to. Taken from the mission, because a receipt keyed on a
+        /// constant would be the same key for every run the player ever plays - and the whole
+        /// point of the key is telling one death from another.
+        /// </summary>
+        private long CurrentRunId()
+        {
+            if (missionDirector != null && missionDirector.Identity.IsValid)
+                return missionDirector.Identity.RunId;
+
+            Debug.LogWarning(
+                $"{name}: no mission run to key this death on; falling back to run {fallbackRunId}. " +
+                "Two runs would mint the same receipt id.", this);
+            return fallbackRunId;
         }
 
         private void OnEnable()
@@ -95,7 +116,7 @@ namespace NeonVoid.Progression
             _deathsObserved++;
 
             var report = new DeathReport(
-                DeathId.For(prototypeRunId, actor.ActorId, _deathsObserved),
+                DeathId.For(CurrentRunId(), actor.ActorId, _deathsObserved),
                 _runner != null ? _runner.TickIndex : 0L);
 
             DeathRegistrationVerdict verdict = Ledger.TryRegisterDeath(report);
@@ -104,6 +125,12 @@ namespace NeonVoid.Progression
                 case DeathRegistrationVerdict.Accepted:
                     Debug.Log($"Death registered {report.Id} at tick {report.TickIndex}. " +
                               "Awaiting a save commit; no permanent state has changed.", this);
+
+                    // [확정] docs/00: 사망은 해당 의뢰 실패. The mission is marked failed here,
+                    // in memory; what that costs the player is still the save service's call.
+                    if (missionDirector != null)
+                        missionDirector.FailMission();
+
                     DeathRegistered?.Invoke(report);
                     RequestCommit(report);
                     break;

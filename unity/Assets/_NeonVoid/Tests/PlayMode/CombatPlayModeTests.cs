@@ -4,6 +4,7 @@ using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Combat.Status;
 using NeonVoid.Plugins;
+using NeonVoid.Missions;
 using NeonVoid.Progression;
 using NUnit.Framework;
 using UnityEngine;
@@ -399,6 +400,57 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+
+        // --- the run identity --------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator TheMissionBeginsWithASeedThatCanBeReadBack()
+        {
+            // A deterministic generator whose seed nobody can recover is not reproducible in
+            // practice, whatever it is in principle.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            Assert.IsTrue(_arena.Mission.Identity.IsValid, "No run was started.");
+            Assert.IsTrue(_arena.Mission.State.IsRunning);
+            Assert.AreNotEqual(
+                _arena.Mission.Identity.SeedFor(RandomStream.Reward),
+                _arena.Mission.Identity.SeedFor(RandomStream.Combat),
+                "Two streams share a seed, so one would shift the other.");
+        }
+
+        [UnityTest]
+        public IEnumerator ADeathReceiptIsKeyedOnTheRunThatWasActuallyPlayed()
+        {
+            // It used to be keyed on a hardcoded 1, so every run the player ever played would
+            // have minted the same receipt id - and telling one death from another is the whole
+            // job of that key.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            long runId = _arena.Mission.Identity.RunId;
+            PrototypeArena.Kill(_arena.Player);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(runId, _arena.DeathDirector.Ledger.RegisteredDeathId.RunId);
+        }
+
+        [UnityTest]
+        public IEnumerator APlayerDeathFailsTheMission()
+        {
+            // [확정] docs/00: 사망은 해당 의뢰 실패. In memory only; what it costs is still the
+            // save service's call, and there is no save service.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+            Assert.IsTrue(_arena.Mission.State.IsRunning);
+
+            PrototypeArena.Kill(_arena.Player);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(MissionPhase.Failed, _arena.Mission.State.Phase);
+            Assert.IsFalse(_arena.Mission.State.IsRunning);
+        }
 
         // --- the support -------------------------------------------------------------------
 

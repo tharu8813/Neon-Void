@@ -5,6 +5,7 @@ using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
+using NeonVoid.Missions;
 using NeonVoid.Player;
 using NeonVoid.Plugins;
 using NeonVoid.Progression;
@@ -34,6 +35,7 @@ namespace NeonVoid.Tests.PlayModeTests
         private readonly List<GameObject> _spawned = new List<GameObject>();
 
         public SimulationRunner Runner { get; private set; }
+        public MissionRunDirector Mission { get; private set; }
         public GameObject PlayerObject { get; private set; }
         public CombatActor Player { get; private set; }
         public PlayerSimulationDriver Driver { get; private set; }
@@ -124,6 +126,11 @@ namespace NeonVoid.Tests.PlayModeTests
             // component is added in play mode.
             var runnerObject = arena.Track(new GameObject("Simulation Runner"));
             arena.Runner = runnerObject.AddComponent<SimulationRunner>();
+
+            // The run identity everything else keys off. Added before the player, so the death
+            // director and the plugin director both find it.
+            var missionObject = arena.Track(new GameObject("Mission Run Director"));
+            arena.Mission = missionObject.AddComponent<MissionRunDirector>();
 
             arena.CreatePlayer();
 

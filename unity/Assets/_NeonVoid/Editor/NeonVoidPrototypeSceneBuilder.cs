@@ -5,6 +5,7 @@ using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
+using NeonVoid.Missions;
 using NeonVoid.Player;
 using NeonVoid.Plugins;
 using NeonVoid.Presentation;
@@ -108,6 +109,12 @@ namespace NeonVoid.EditorTools
             // Every tick in the scene comes from this one clock. Two accumulators would drift.
             var simulation = new GameObject("Simulation Runner");
             simulation.AddComponent<SimulationRunner>();
+
+            // The run's identity, which the death receipt is keyed on and the reward rolls are
+            // seeded from. Nothing here is saved; docs/04 puts 의뢰 상태 behind an approved
+            // save commit that does not exist yet.
+            var missionObject = new GameObject("Mission Run Director (Prototype)");
+            missionObject.AddComponent<MissionRunDirector>();
 
             // P0-02: movement, dash and aim run on the deterministic 60 Hz simulation.
             PlayerInputRouter router = player.AddComponent<PlayerInputRouter>();
