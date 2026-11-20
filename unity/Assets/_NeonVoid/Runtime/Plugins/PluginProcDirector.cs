@@ -43,8 +43,29 @@ namespace NeonVoid.Plugins
         private readonly Dictionary<int, CombatActor> _actorsById = new Dictionary<int, CombatActor>();
         private readonly HashSet<int> _damagedByExplosion = new HashSet<int>();
 
+        private readonly Dictionary<int, int> _resolvedByEffectId = new Dictionary<int, int>();
+
         /// <summary>The last drain's report, for inspection and for the HUD later.</summary>
         public ProcDrainReport LastDrain { get; private set; }
+
+        /// <summary>
+        /// How many times each effect has actually resolved this session.
+        /// <para>
+        /// This exists because the three prototype plugins are invisible. Chain lightning,
+        /// an explosion and an armour mark all deal their damage without a single VFX, there
+        /// are no health bars and no damage numbers, so "did the plugin fire?" had no answer
+        /// at all - which made the proc path impossible to verify in play, however many unit
+        /// tests passed. A count is the smallest honest answer.
+        /// </para>
+        /// </summary>
+        public int ResolvedCountOf(int effectId) =>
+            _resolvedByEffectId.TryGetValue(effectId, out int count) ? count : 0;
+
+        /// <summary>Refusals accumulated over the whole session, by reason.</summary>
+        public int BlockedByInternalCooldown { get; private set; }
+
+        /// <summary>Refusals accumulated over the whole session, by reason.</summary>
+        public int BlockedByCycleOrLimit { get; private set; }
 
         public PluginLoadout Loadout => _router?.Loadout;
 
@@ -130,6 +151,10 @@ namespace NeonVoid.Plugins
             ProcDrainReport report = _router.Drain(Resolve);
             LastDrain = report;
 
+            BlockedByInternalCooldown += report.BlockedByInternalCooldown;
+            BlockedByCycleOrLimit +=
+                report.BlockedByCycle + report.BlockedByOccurrenceLimit + report.BlockedByRepeatOnSameTarget;
+
             // docs/02 section 6 forbids losing rules quietly. A chain that ended because the
             // rules said so is healthy; one that ended because the budget ran out is not, and
             // the player would have no way of telling the difference.
@@ -143,6 +168,9 @@ namespace NeonVoid.Plugins
         {
             if (!_actorsById.TryGetValue(evt.TargetActorId, out CombatActor target) || target == null)
                 return;
+
+            _resolvedByEffectId.TryGetValue(evt.EffectId, out int resolved);
+            _resolvedByEffectId[evt.EffectId] = resolved + 1;
 
             switch (plugin.Effect)
             {

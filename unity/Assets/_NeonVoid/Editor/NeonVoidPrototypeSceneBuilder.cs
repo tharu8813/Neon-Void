@@ -148,6 +148,15 @@ namespace NeonVoid.EditorTools
             AssignSerialized(router, "aimCamera", camera);
             cameraObject.AddComponent<AudioListener>();
 
+            // Added after the camera exists, because it needs one to put health over an actor's
+            // head. The plugin effects have no VFX, health has no bar and statuses have no
+            // icons, so without this the simulation is unobservable and therefore unverifiable.
+            PrototypeCombatDebugOverlay overlay = deathObject.AddComponent<PrototypeCombatDebugOverlay>();
+            AssignSerialized(overlay, "player", playerActor);
+            AssignSerialized(overlay, "procDirector", procs);
+            AssignSerialized(overlay, "runner", simulation.GetComponent<SimulationRunner>());
+            AssignSerialized(overlay, "worldCamera", camera);
+
             GameObject lightObject = new GameObject("Directional Light");
             lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
             Light light = lightObject.AddComponent<Light>();
