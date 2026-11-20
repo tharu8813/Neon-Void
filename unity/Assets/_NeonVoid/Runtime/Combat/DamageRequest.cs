@@ -46,6 +46,34 @@ namespace NeonVoid.Combat
             IsPeriodic = false,
         };
 
+        /// <summary>
+        /// The same attack at a fraction of its size. docs/03 states this number three times -
+        /// R06 보조 탄환's extra shot deals 적중 효과 피해 80%, G13 4중 캐시's burst 70%, L01
+        /// 레이저 코어's conversion 70% - so it is one operation rather than three places that
+        /// each remember to multiply.
+        /// <para>
+        /// Every term scales, flat included. Scaling only the stat ratios would make a plugin
+        /// whose damage happens to be flat immune to the reduction, which is a balance hole that
+        /// depends on how a card was authored rather than on what it does.
+        /// </para>
+        /// <para>
+        /// <see cref="CanCrit"/>, <see cref="IsArea"/> and <see cref="IsPeriodic"/> are
+        /// deliberately untouched: a smaller hit is the same KIND of hit, and changing those
+        /// would change which omnivamp efficiency applies and whether the attack may crit.
+        /// </para>
+        /// </summary>
+        public DamageRequest Scaled(float factor)
+        {
+            if (float.IsNaN(factor) || float.IsInfinity(factor) || factor < 0f)
+                throw new InvalidOperationException($"A damage scale of {factor} is not a fraction.");
+
+            DamageRequest scaled = this;
+            scaled.Flat *= factor;
+            scaled.AdRatio *= factor;
+            scaled.ApRatio *= factor;
+            return scaled;
+        }
+
         public void Validate()
         {
             if (float.IsNaN(Flat) || float.IsInfinity(Flat))

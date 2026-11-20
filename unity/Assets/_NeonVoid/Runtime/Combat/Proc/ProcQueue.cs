@@ -100,7 +100,8 @@ namespace NeonVoid.Combat.Proc
             bool isArea = false,
             bool isPeriodic = false,
             bool isCritical = false,
-            int randomStreamId = 0)
+            int randomStreamId = 0,
+            float onHitEffectScale = 1f)
         {
             path ??= ProcChainPath.Root;
             ProcDecision decision = _guard.Evaluate(effectId, targetActorId, path, tick);
@@ -112,7 +113,7 @@ namespace NeonVoid.Combat.Proc
 
             _pending.Enqueue(new ProcEvent(
                 _nextEventId++, runId, tick, effectId, sourceActorId, targetActorId, attackId,
-                damageType, isArea, isPeriodic, isCritical, path, randomStreamId));
+                damageType, isArea, isPeriodic, isCritical, path, randomStreamId, onHitEffectScale));
 
             _guard.NoteFired(effectId, targetActorId, tick);
             return decision;

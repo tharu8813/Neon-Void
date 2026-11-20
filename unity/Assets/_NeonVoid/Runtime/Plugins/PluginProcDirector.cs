@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
+using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 using NeonVoid.Missions;
@@ -53,7 +54,21 @@ namespace NeonVoid.Plugins
 
         private readonly Dictionary<int, int> _resolvedByEffectId = new Dictionary<int, int>();
         private readonly List<StatModifier> _passiveBuffer = new List<StatModifier>();
+        private readonly List<ExtraShotSpec> _extraShotBuffer = new List<ExtraShotSpec>();
+        private readonly List<PluginDefinition> _burstBuffer = new List<PluginDefinition>();
+        private AutoAttacker _attacker;
         private DeterministicRng _rewardRng;
+
+        /// <summary>
+        /// Resolved hit effects counted towards each burst card's next burst, keyed on the
+        /// card's effect id.
+        /// <para>
+        /// Per card, because two burst cards count independently - G13 asks for 적중 효과 4회
+        /// and a second such card would have its own threshold. A single shared counter would
+        /// make them race for the same effects.
+        /// </para>
+        /// </summary>
+        private readonly Dictionary<string, int> _hitEffectsTowardsBurst = new Dictionary<string, int>();
 
         /// <summary>The last drain's report, for inspection and for the HUD later.</summary>
         public ProcDrainReport LastDrain { get; private set; }
@@ -70,6 +85,10 @@ namespace NeonVoid.Plugins
         /// </summary>
         public int ResolvedCountOf(int effectId) =>
             _resolvedByEffectId.TryGetValue(effectId, out int count) ? count : 0;
+
+        /// <summary>Hit effects counted towards a burst card's next burst. For tests and the HUD.</summary>
+        public int HitEffectsTowardsBurst(string proposalId) =>
+            proposalId != null && _hitEffectsTowardsBurst.TryGetValue(proposalId, out int counted) ? counted : 0;
 
         /// <summary>Refusals accumulated over the whole session, by reason.</summary>
         public int BlockedByInternalCooldown { get; private set; }
@@ -173,6 +192,67 @@ namespace NeonVoid.Plugins
             _passiveBuffer.Clear();
             _router.Loadout.CollectPassiveModifiers(_passiveBuffer);
             owner.SetPassiveModifiers(_passiveBuffer, _router.Loadout.PassiveMoveSpeedFraction());
+
+            PushFiringToAttacker();
+        }
+
+        /// <summary>
+        /// Hands the attacker the extra projectiles its carried plugins grant.
+        /// <para>
+        /// Pushed, like the passives and for the same layering reason: Combat must not reference
+        /// Plugins, so <see cref="AutoAttacker"/> is told what to fire rather than asking what
+        /// is carried. A card granted and never pushed would sit in the loadout firing nothing,
+        /// which is the shape of failure this project keeps finding.
+        /// </para>
+        /// </summary>
+        private void PushFiringToAttacker()
+        {
+            if (_attacker == null && owner != null)
+                _attacker = owner.GetComponent<AutoAttacker>();
+
+            if (_attacker == null)
+                return;
+
+            _extraShotBuffer.Clear();
+            _router.Loadout.CollectExtraShots(_extraShotBuffer);
+            _attacker.SetExtraShots(_extraShotBuffer);
+        }
+
+        /// <summary>
+        /// Counts one resolved hit effect towards every burst card, and queues a burst for each
+        /// that has reached its threshold.
+        /// <para>
+        /// Only RESOLVED effects count. An effect refused by an internal cooldown, a cycle rule
+        /// or an occurrence limit did nothing, and charging a burst off it would let a card turn
+        /// the rules' refusals into damage.
+        /// </para>
+        /// </summary>
+        private void CountHitEffectTowardsBursts()
+        {
+            if (_attacker == null || _router == null)
+                return;
+
+            _burstBuffer.Clear();
+            _router.Loadout.CollectBurstPlugins(_burstBuffer);
+
+            for (int i = 0; i < _burstBuffer.Count; ++i)
+            {
+                PluginDefinition plugin = _burstBuffer[i];
+                string key = plugin.ProposalId;
+                _hitEffectsTowardsBurst.TryGetValue(key, out int counted);
+                counted++;
+
+                if (counted < plugin.Firing.HitEffectsPerBurst)
+                {
+                    _hitEffectsTowardsBurst[key] = counted;
+                    continue;
+                }
+
+                // Reset rather than subtract: the count is "effects since the last burst", and
+                // leaving a remainder would make the second burst arrive early.
+                _hitEffectsTowardsBurst[key] = 0;
+                _attacker.QueueBurst(plugin.Firing.BurstShots, plugin.Firing.BurstOnHitScale);
+            }
         }
 
         /// <summary>Grants a plugin at runtime and republishes the passives.</summary>
@@ -219,6 +299,10 @@ namespace NeonVoid.Plugins
 
             _resolvedByEffectId.TryGetValue(evt.EffectId, out int resolved);
             _resolvedByEffectId[evt.EffectId] = resolved + 1;
+
+            // 적중 효과 for G13's counter. Counted here - the one place an effect is known to
+            // have been allowed through - rather than where effects are offered to the queue.
+            CountHitEffectTowardsBursts();
 
             switch (plugin.Effect)
             {
@@ -282,16 +366,23 @@ namespace NeonVoid.Plugins
             if (owner == null || !target.IsAlive)
                 return;
 
+            // 적중 효과 피해: the shot that woke this effect decides how much of it lands.
+            // Taken from the router, which holds the resolving event's fraction, so the card's
+            // own data stays the full-strength version and every effect path gets the reduction
+            // without each one remembering to apply it.
+            DamageRequest request = plugin.Damage.Scaled(_router.ActiveOnHitEffectScale);
+
             DamageOutcome outcome = target.ReceiveDamage(
-                plugin.Damage, owner.Stats, owner.RollCrit(plugin.Damage), isOnHitEvent: false);
+                request, owner.Stats, owner.RollCrit(request), isOnHitEvent: false);
 
             if (outcome.Lifesteal.Total > 0f)
                 owner.Heal(outcome.Lifesteal.Total);
 
             // Reported like any other hit, which is what lets a plugin effect trigger another
             // plugin - and what makes the ancestry carried by the router load-bearing rather
-            // than decorative.
-            owner.NotifyHitLanded(target, plugin.Damage, outcome, origin);
+            // than decorative. No scale on the report: the router is already holding this
+            // chain's fraction, and passing it again would square it.
+            owner.NotifyHitLanded(target, request, outcome, origin);
         }
 
         private CombatActor NearestHostileOtherThan(CombatActor from, float radiusUnits, int excludeActorId)

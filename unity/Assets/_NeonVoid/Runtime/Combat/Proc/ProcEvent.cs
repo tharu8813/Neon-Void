@@ -43,6 +43,16 @@ namespace NeonVoid.Combat.Proc
         /// </summary>
         public readonly int RandomStreamId;
 
+        /// <summary>
+        /// Fraction of its damage this effect should deal, from the shot that triggered it.
+        /// <para>
+        /// Carried on the event for the same reason the chain path is: resolution is deferred,
+        /// and an event waiting behind another branch cannot ask "what kind of shot is firing
+        /// right now" and get the right answer.
+        /// </para>
+        /// </summary>
+        public readonly float OnHitEffectScale;
+
         public ProcEvent(
             long eventId,
             int runId,
@@ -56,7 +66,8 @@ namespace NeonVoid.Combat.Proc
             bool isPeriodic,
             bool isCritical,
             ProcChainPath chainPath,
-            int randomStreamId)
+            int randomStreamId,
+            float onHitEffectScale = 1f)
         {
             EventId = eventId;
             RunId = runId;
@@ -71,6 +82,10 @@ namespace NeonVoid.Combat.Proc
             IsCritical = isCritical;
             ChainPath = chainPath ?? ProcChainPath.Root;
             RandomStreamId = randomStreamId;
+            OnHitEffectScale =
+                float.IsNaN(onHitEffectScale) || float.IsInfinity(onHitEffectScale) || onHitEffectScale < 0f
+                    ? 1f
+                    : onHitEffectScale;
         }
 
         /// <summary>The path a child of this event inherits.</summary>

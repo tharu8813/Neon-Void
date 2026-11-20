@@ -311,7 +311,14 @@ namespace NeonVoid.Tests
         public void EveryPrototypePluginStillValidates()
         {
             IReadOnlyList<PluginDefinition> prototype = PluginCatalog.Prototype();
-            Assert.AreEqual(7, prototype.Count);
+
+            // No hardcoded total: the catalogue grows as docs/03's 27 cards are implemented,
+            // and a number here would only ever be a reminder to edit this line. What must hold
+            // is that every card in the set is distinct and grantable.
+            Assert.IsNotEmpty(prototype);
+            var ids = new HashSet<string>();
+            for (int i = 0; i < prototype.Count; ++i)
+                Assert.IsTrue(ids.Add(prototype[i].ProposalId), $"{prototype[i].ProposalId} appears twice.");
 
             var loadout = new PluginLoadout();
             var rng = new DeterministicRng(1u);

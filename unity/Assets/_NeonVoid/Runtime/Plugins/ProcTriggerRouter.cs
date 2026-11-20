@@ -36,6 +36,7 @@ namespace NeonVoid.Plugins
         private readonly List<PluginDefinition> _triggered = new List<PluginDefinition>();
 
         private ProcChainPath _activePath = ProcChainPath.Root;
+        private float _activeScale = 1f;
 
         public ProcTriggerRouter(PluginLoadout loadout, ProcChainGuard guard, ProcQueue queue)
         {
@@ -46,6 +47,18 @@ namespace NeonVoid.Plugins
 
         /// <summary>Ancestry a hit arriving right now would inherit. Root outside a drain.</summary>
         public ProcChainPath ActivePath => _activePath;
+
+        /// <summary>
+        /// Damage fraction a hit arriving right now would inherit. 1 outside a drain.
+        /// <para>
+        /// <b>It is inherited, not compounded.</b> A 70% burst shot that triggers 전위 연쇄,
+        /// whose damage lands and triggers 폭발 각인, gives the explosion 70% and not 49%.
+        /// Everything in that chain is an effect of one burst shot, so the document's one
+        /// number applies once; compounding would make the damage depend on chain depth, which
+        /// docs/03 never mentions and nobody could predict from a card.
+        /// </para>
+        /// </summary>
+        public float ActiveOnHitEffectScale => _activeScale;
 
         public PluginLoadout Loadout => _loadout;
 
@@ -70,7 +83,7 @@ namespace NeonVoid.Plugins
             in PluginDefinition definition, DeterministicRng rewardRng, out string reason)
         {
             PluginGrantVerdict verdict = _loadout.TryGrant(definition, rewardRng, out reason);
-            if (verdict == PluginGrantVerdict.Granted && definition.Effect != PluginEffectKind.Passive)
+            if (verdict == PluginGrantVerdict.Granted && definition.ReachesProcQueue)
                 _guard.Register(definition.Rule);
 
             return verdict;
@@ -84,6 +97,12 @@ namespace NeonVoid.Plugins
         {
             _triggered.Clear();
             _loadout.CollectTriggered(hit, _triggered);
+
+            // Outside a drain _activeScale is 1, so a real shot contributes its own fraction.
+            // Inside one it is the resolving event's, and a plugin effect's own hit carries no
+            // fraction of its own - so the product is the chain's single inherited scale rather
+            // than a power of it.
+            float scale = _activeScale * hit.OnHitEffectScale;
 
             for (int i = 0; i < _triggered.Count; ++i)
             {
@@ -99,7 +118,9 @@ namespace NeonVoid.Plugins
                     plugin.Damage.Type,
                     plugin.Damage.IsArea,
                     plugin.Damage.IsPeriodic,
-                    hit.IsCritical);
+                    hit.IsCritical,
+                    randomStreamId: 0,
+                    onHitEffectScale: scale);
             }
         }
 
@@ -119,7 +140,9 @@ namespace NeonVoid.Plugins
                     return;
 
                 ProcChainPath previous = _activePath;
+                float previousScale = _activeScale;
                 _activePath = evt.ChildPath;
+                _activeScale = evt.OnHitEffectScale;
                 try
                 {
                     resolve(evt, plugin);
@@ -127,8 +150,10 @@ namespace NeonVoid.Plugins
                 finally
                 {
                     // Restored even if the resolver throws, or one failing effect would leave
-                    // every later hit in the tick inheriting a chain it had nothing to do with.
+                    // every later hit in the tick inheriting a chain - and a damage fraction -
+                    // it had nothing to do with.
                     _activePath = previous;
+                    _activeScale = previousScale;
                 }
             });
         }

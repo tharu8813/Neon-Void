@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 using UnityEngine;
@@ -39,10 +40,35 @@ namespace NeonVoid.Combat.Projectiles
 
         [SerializeField] private Material projectileMaterial;
 
+        [Header("Extra shots")]
+        [Tooltip(
+            "[초안] degrees between the extra shots a plugin grants. docs/03 does not say where " +
+            "R06 보조 탄환's additional projectile goes, only that there is one.")]
+        [SerializeField, Min(0f)] private float extraShotSpreadDegrees = 7f;
+
+        [Tooltip("[초안] ticks between the shots of a burst. 연사 is rapid, not simultaneous.")]
+        [SerializeField, Min(1)] private int burstShotGapTicks = 3;
+
         private CombatActor _actor;
         private SimulationRunner _runner;
         private int _ticksUntilNextShot;
         private StatCaps _caps = StatCaps.Draft();
+
+        /// <summary>Extra projectiles per volley, pushed in by whatever grants them.</summary>
+        private readonly List<ExtraShotSpec> _extraShots = new List<ExtraShotSpec>();
+
+        /// <summary>
+        /// One entry per queued burst shot, holding that shot's own effect fraction.
+        /// <para>
+        /// A queue rather than a count and a scale, because two bursts can overlap - G13 fires
+        /// every fourth hit effect, and four shots at three ticks apart take longer than that
+        /// can take to happen again. Collapsing them would give one burst's shots the other's
+        /// fraction.
+        /// </para>
+        /// </summary>
+        private readonly Queue<float> _pendingBurstShots = new Queue<float>();
+
+        private int _ticksUntilNextBurstShot;
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects;
 
@@ -65,6 +91,57 @@ namespace NeonVoid.Combat.Projectiles
         /// <summary>Distinct enemies one shot may damage, after 관통.</summary>
         public int EffectiveMaxTargets => maxTargetsPerShot
             + (_actor != null ? StatusStatContribution.ExtraPierceTargets(_actor.Status) : 0);
+
+        /// <summary>Extra projectiles this attacker currently fires per volley.</summary>
+        public int ExtraShotsPerVolley
+        {
+            get
+            {
+                int total = 0;
+                for (int i = 0; i < _extraShots.Count; ++i)
+                    total += _extraShots[i].Count;
+
+                return total;
+            }
+        }
+
+        /// <summary>Burst shots still waiting to be fired.</summary>
+        public int PendingBurstShots => _pendingBurstShots.Count;
+
+        /// <summary>
+        /// Replaces the extra shots this attacker fires. Pushed in, because Combat must not
+        /// reference Plugins; the attacker never learns what granted them.
+        /// <para>
+        /// Replaces rather than adds, for the same reason the stat pipeline recomputes from
+        /// base: a list that accumulated would grow every time the loadout was re-pushed, and
+        /// a card removed would keep firing.
+        /// </para>
+        /// </summary>
+        public void SetExtraShots(IReadOnlyList<ExtraShotSpec> shots)
+        {
+            _extraShots.Clear();
+            if (shots == null)
+                return;
+
+            for (int i = 0; i < shots.Count; ++i)
+            {
+                if (!shots[i].IsEmpty)
+                    _extraShots.Add(shots[i]);
+            }
+        }
+
+        /// <summary>
+        /// Queues a burst of shots, fired a few ticks apart. docs/03 G13 4중 캐시 asks for
+        /// 탄환 4발 추가 연사 - rapid fire, so they are queued rather than fired at once.
+        /// </summary>
+        public void QueueBurst(int count, float onHitEffectScale)
+        {
+            if (count <= 0)
+                return;
+
+            for (int i = 0; i < count; ++i)
+                _pendingBurstShots.Enqueue(onHitEffectScale);
+        }
 
         private void Awake() => _actor = GetComponent<CombatActor>();
 
@@ -90,9 +167,13 @@ namespace NeonVoid.Combat.Projectiles
             if (_actor == null || !_actor.IsAlive)
                 return;
 
-            // 정지 (Stun) denies every combat action, firing included.
+            // 정지 (Stun) denies every combat action, firing included. A queued burst is held,
+            // not discarded: the shots were earned before the stun landed, and throwing them
+            // away would make 정지 silently delete damage the player had already paid for.
             if (_actor.Status.Has(Status.StatusEffectId.Stun))
                 return;
+
+            FireDueBurstShot();
 
             if (_ticksUntilNextShot > 0)
             {
@@ -114,11 +195,63 @@ namespace NeonVoid.Combat.Projectiles
                 return;
             }
 
-            Fire(direction.normalized);
+            FireVolley(direction.normalized);
             _ticksUntilNextShot = IntervalTicks;
         }
 
-        private void Fire(Vector3 direction)
+        /// <summary>
+        /// The main shot plus whatever extra shots have been granted. The main shot keeps its
+        /// full effect strength; each extra one carries the fraction its grantor declared.
+        /// </summary>
+        private void FireVolley(Vector3 direction)
+        {
+            Fire(direction, 1f);
+
+            // Spread symmetrically around the aim so an odd number of extras does not pull the
+            // volley to one side. The angle is [초안]; docs/03 only says there is an extra shot.
+            int fired = 0;
+            for (int i = 0; i < _extraShots.Count; ++i)
+            {
+                ExtraShotSpec spec = _extraShots[i];
+                for (int shot = 0; shot < spec.Count; ++shot)
+                {
+                    fired++;
+                    float side = (fired % 2 == 1) ? 1f : -1f;
+                    float degrees = extraShotSpreadDegrees * Mathf.Ceil(fired / 2f) * side;
+                    Fire(Quaternion.Euler(0f, degrees, 0f) * direction, spec.OnHitEffectScale);
+                }
+            }
+        }
+
+        /// <summary>
+        /// One queued burst shot, if its gap has elapsed. Fired in the aim direction, which is
+        /// where the attacker is looking now rather than where it looked when the burst was
+        /// earned - 연사 is a continuing volley, not a replay.
+        /// </summary>
+        private void FireDueBurstShot()
+        {
+            if (_pendingBurstShots.Count == 0)
+            {
+                _ticksUntilNextBurstShot = 0;
+                return;
+            }
+
+            if (_ticksUntilNextBurstShot > 0)
+            {
+                _ticksUntilNextBurstShot--;
+                return;
+            }
+
+            Vector3 direction = transform.forward;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 1e-4f)
+                return;
+
+            Fire(direction.normalized, _pendingBurstShots.Dequeue());
+            _ticksUntilNextBurstShot = burstShotGapTicks;
+        }
+
+        private void Fire(Vector3 direction, float onHitEffectScale)
         {
             var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             orb.name = "NV Shot";
@@ -145,7 +278,8 @@ namespace NeonVoid.Combat.Projectiles
 
             orb.AddComponent<CombatProjectile>().Launch(
                 _actor, request, direction,
-                EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets);
+                EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets,
+                onHitEffectScale);
         }
     }
 }

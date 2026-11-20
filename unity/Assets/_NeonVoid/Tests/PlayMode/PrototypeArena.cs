@@ -182,7 +182,12 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         /// <summary>Fires a shot from the player at a target, as AutoAttacker would.</summary>
-        public CombatProjectile FireAt(CombatActor target, float adRatio = 1f, int maxTargets = 1)
+        /// <param name="onHitEffectScale">
+        /// 적중 효과 피해 for this shot: 1 for a normal one, 0.80 for an R06 보조 탄환 extra
+        /// shot, 0.70 for a G13 4중 캐시 burst shot.
+        /// </param>
+        public CombatProjectile FireAt(
+            CombatActor target, float adRatio = 1f, int maxTargets = 1, float onHitEffectScale = 1f)
         {
             Vector3 direction = target.transform.position - PlayerObject.transform.position;
             direction.y = 0f;
@@ -198,7 +203,8 @@ namespace NeonVoid.Tests.PlayModeTests
             };
 
             CombatProjectile projectile = orb.AddComponent<CombatProjectile>();
-            projectile.Launch(Player, request, direction.normalized, 15f, 180, maxTargets);
+            projectile.Launch(
+                Player, request, direction.normalized, 15f, 180, maxTargets, onHitEffectScale);
             return projectile;
         }
 
@@ -238,6 +244,18 @@ namespace NeonVoid.Tests.PlayModeTests
             DeathDirector = PlayerObject.AddComponent<RunDeathDirector>();
 
             Player.Configure(PlayerTeam, PlayerStats());
+        }
+
+        /// <summary>
+        /// Another dummy beside an existing one, for effects that need a second body in reach -
+        /// 전위 연쇄 and 폭발 각인 both need somewhere to go.
+        /// </summary>
+        public CombatActor SpawnEnemyNear(CombatActor of, string name, float offsetUnits = 1.6f)
+        {
+            CombatActor spawned = CreateEnemy(
+                of.transform.position + new Vector3(offsetUnits, 0f, 0f), name);
+            Enemies.Add(spawned);
+            return spawned;
         }
 
         private CombatActor CreateEnemy(Vector3 position, string name)

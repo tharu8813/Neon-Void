@@ -30,6 +30,17 @@ namespace NeonVoid.Combat.Projectiles
         private SimulationRunner _runner;
         private bool _launched;
 
+        /// <summary>
+        /// Fraction of their damage the effects this shot triggers deal. 1 for a normal shot,
+        /// 0.80 for R06 보조 탄환's extra shot, 0.70 for G13 4중 캐시's burst.
+        /// <para>
+        /// It belongs to the shot and travels with it, so a shot already in flight keeps the
+        /// fraction it was fired with even if the loadout changes before it lands - the same
+        /// reason the attacker's stats are copied here rather than referenced.
+        /// </para>
+        /// </summary>
+        private float _onHitEffectScale = 1f;
+
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Projectiles;
 
         /// <summary>
@@ -43,8 +54,10 @@ namespace NeonVoid.Combat.Projectiles
             Vector3 direction,
             float speedUnitsPerSecond,
             int lifetimeTicks,
-            int maxTargets)
+            int maxTargets,
+            float onHitEffectScale = 1f)
         {
+            _onHitEffectScale = onHitEffectScale;
             _attacker = attacker;
             _attackerStats = attacker != null ? attacker.Stats : CombatStats.StartingVaccine();
             _damage = damage;
@@ -104,9 +117,12 @@ namespace NeonVoid.Combat.Projectiles
                 if (_attacker != null && outcome.Lifesteal.Total > 0f)
                     _attacker.Heal(outcome.Lifesteal.Total);
 
-                // 탄환 적중: the trigger G10 and G17 are written against.
+                // 탄환 적중: the trigger G10 and G17 are written against. The fraction rides
+                // along so an extra or burst shot's effects land smaller without the cards
+                // knowing which kind of shot fired them.
                 if (_attacker != null)
-                    _attacker.NotifyHitLanded(actor, _damage, outcome, HitOrigin.Projectile);
+                    _attacker.NotifyHitLanded(
+                        actor, _damage, outcome, HitOrigin.Projectile, _onHitEffectScale);
 
                 if (_ledger.IsSpent)
                 {

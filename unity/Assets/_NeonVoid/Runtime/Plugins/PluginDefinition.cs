@@ -40,6 +40,12 @@ namespace NeonVoid.Plugins
         /// by being carried. G01 랜덤 패치, G02 경량화, G04 취약점 분석, R01 처형 알고리즘.
         /// </summary>
         Passive = 4,
+
+        /// <summary>
+        /// Changes the basic attack itself - extra projectiles, bursts - rather than a stat or
+        /// an on-hit effect. R06 보조 탄환, G13 4중 캐시.
+        /// </summary>
+        FiringModifier = 5,
     }
 
     /// <summary>
@@ -89,8 +95,23 @@ namespace NeonVoid.Plugins
         [Tooltip("What this plugin contributes simply by being carried.")]
         public PluginPassive Passive;
 
+        [Tooltip("What this plugin does to the basic attack: extra projectiles or bursts.")]
+        public PluginFiring Firing;
+
         /// <summary>The effect id the proc queue knows this plugin by.</summary>
         public int EffectId => Rule.EffectId;
+
+        /// <summary>
+        /// Whether this plugin ever becomes a proc event.
+        /// <para>
+        /// Asked here rather than by each caller comparing against the kinds, because the two
+        /// kinds that never reach the queue carry no chain rule - and the caller that forgot
+        /// would hand the guard an empty rule and throw on an effect id of 0. Which is exactly
+        /// what happened when the firing modifiers were added.
+        /// </para>
+        /// </summary>
+        public bool ReachesProcQueue =>
+            Effect != PluginEffectKind.Passive && Effect != PluginEffectKind.FiringModifier;
 
         public void Validate()
         {
@@ -98,23 +119,35 @@ namespace NeonVoid.Plugins
                 throw new InvalidOperationException("A plugin needs its docs/03 id for traceability.");
             if (!Enum.IsDefined(typeof(PluginRarity), Rarity))
                 throw new InvalidOperationException($"{ProposalId}: unknown rarity.");
-            // A passive has nothing to trigger it, by definition; everything else must say
-            // what sets it off or it can never do anything.
-            if (Trigger == PluginTriggerKind.None && Effect != PluginEffectKind.Passive)
+            // A passive and a firing modifier have nothing to trigger them, by definition;
+            // everything else must say what sets it off or it can never do anything.
+            bool untriggered = Effect == PluginEffectKind.Passive || Effect == PluginEffectKind.FiringModifier;
+            if (Trigger == PluginTriggerKind.None && !untriggered)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
 
-            if (Effect == PluginEffectKind.Passive && Trigger != PluginTriggerKind.None)
+            if (untriggered && Trigger != PluginTriggerKind.None)
                 throw new InvalidOperationException(
-                    $"{ProposalId}: a passive is not triggered by hits; leave the trigger as None so the queue never sees it.");
+                    $"{ProposalId}: this kind is not triggered by hits; leave the trigger as None so the queue never sees it.");
             if (Effect == PluginEffectKind.None)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that does nothing when it fires is not a plugin.");
 
             Damage.Validate();
             Passive.Validate();
+            Firing.Validate(ProposalId);
 
-            // A passive never reaches the proc queue, so it needs no chain identity. Validating
-            // the rule anyway would force every passive to carry a meaningless effect id.
-            if (Effect != PluginEffectKind.Passive)
+            // Only the kind that is about firing may describe firing. A chaining card that
+            // quietly also added projectiles would be doing something no reader of its row in
+            // docs/03 would expect.
+            if (Effect != PluginEffectKind.FiringModifier && !Firing.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.FiringModifier)} may change the basic attack.");
+            }
+
+            // Neither untriggered kind reaches the proc queue, so neither needs a chain
+            // identity. Validating the rule anyway would force them to carry a meaningless
+            // effect id.
+            if (ReachesProcQueue)
                 Rule.Validate();
 
             switch (Effect)
@@ -129,6 +162,12 @@ namespace NeonVoid.Plugins
                     if (Passive.IsEmpty)
                         throw new InvalidOperationException(
                             $"{ProposalId}: a passive that contributes nothing is not a plugin.");
+                    break;
+
+                case PluginEffectKind.FiringModifier:
+                    if (Firing.IsEmpty)
+                        throw new InvalidOperationException(
+                            $"{ProposalId}: a firing modifier that changes nothing about firing is not a plugin.");
                     break;
 
                 case PluginEffectKind.MarkTarget:

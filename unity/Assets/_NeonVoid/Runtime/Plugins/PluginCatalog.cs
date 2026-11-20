@@ -201,6 +201,69 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 R06 보조 탄환: 발사 탄환 1개 추가.</summary>
+        public const int StatedSupportShotCount = 1;
+
+        /// <summary>[원안 수치] docs/03 R06: 추가탄 적중 효과 피해 80%.</summary>
+        public const float StatedSupportShotOnHitScale = 0.80f;
+
+        /// <summary>[원안 수치] docs/03 G13 4중 캐시: 적중 효과 4회 후 탄환 4발 추가 연사.</summary>
+        public const int StatedCacheHitEffects = 4;
+
+        /// <summary>[원안 수치] docs/03 G13: 탄환 4발.</summary>
+        public const int StatedCacheBurstShots = 4;
+
+        /// <summary>[원안 수치] docs/03 G13: 추가탄 적중 효과 피해 70%.</summary>
+        public const float StatedCacheBurstOnHitScale = 0.70f;
+
+        /// <summary>
+        /// R06 보조 탄환 - 발사 탄환 1개 추가, 추가탄 적중 효과 피해 80%.
+        /// <para>
+        /// Where the extra shot goes is [초안]: docs/03's exception column says only
+        /// multi-shot/레이저와 합성, so the spread angle lives on the attacker as a draft number
+        /// and the card states the two figures the document does give.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition SupportRound() => new PluginDefinition
+        {
+            ProposalId = "R06",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.FiringModifier,
+            Damage = default,
+            Firing = new PluginFiring
+            {
+                ExtraShotsPerVolley = StatedSupportShotCount,
+                ExtraShotOnHitScale = StatedSupportShotOnHitScale,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// G13 4중 캐시 - 적중 효과 4회 후 탄환 4발 추가 연사, 추가탄 적중 효과 피해 70%.
+        /// <para>
+        /// 적중 효과 is counted as effects that actually RESOLVED, not as effects offered to the
+        /// queue. A refused one - an internal cooldown, a cycle, an occurrence limit - did
+        /// nothing, and counting it would let a card charge its burst off effects the rules had
+        /// just declined.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition QuadCache() => new PluginDefinition
+        {
+            ProposalId = "G13",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.FiringModifier,
+            Damage = default,
+            Firing = new PluginFiring
+            {
+                HitEffectsPerBurst = StatedCacheHitEffects,
+                BurstShots = StatedCacheBurstShots,
+                BurstOnHitScale = StatedCacheBurstOnHitScale,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
@@ -211,6 +274,8 @@ namespace NeonVoid.Plugins
             Lightweight(),
             WeaknessAnalysis(),
             ExecutionAlgorithm(),
+            SupportRound(),
+            QuadCache(),
         };
     }
 }

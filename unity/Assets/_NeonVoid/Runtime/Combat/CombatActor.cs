@@ -352,7 +352,8 @@ namespace NeonVoid.Combat
         /// that deal damage cannot each assemble it slightly differently.
         /// </summary>
         public void NotifyHitLanded(
-            CombatActor target, in DamageRequest request, in DamageOutcome outcome, HitOrigin origin)
+            CombatActor target, in DamageRequest request, in DamageOutcome outcome, HitOrigin origin,
+            float onHitEffectScale = 1f)
         {
             if (target == null)
                 return;
@@ -360,7 +361,7 @@ namespace NeonVoid.Combat
             NotifyHitLanded(new HitReport(
                 ActorId, target.ActorId, origin, request.Type,
                 request.IsArea, request.IsPeriodic, outcome.Resolution.IsCritical,
-                outcome.Killed, outcome.HealthRemoved));
+                outcome.Killed, outcome.HealthRemoved, onHitEffectScale));
         }
 
         /// <summary>

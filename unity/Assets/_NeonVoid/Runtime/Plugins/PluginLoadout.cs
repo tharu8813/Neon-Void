@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using NeonVoid.Combat;
+using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 
@@ -140,6 +141,40 @@ namespace NeonVoid.Plugins
                 total += _carried[i].Passive.MoveSpeedFraction;
 
             return total;
+        }
+
+        /// <summary>
+        /// Appends every carried plugin's extra volley shots, each with its own effect fraction.
+        /// <para>
+        /// One entry per card rather than a total, because the fraction belongs to the card:
+        /// docs/03 gives R06 보조 탄환's extra shot 80% and G13 4중 캐시's burst 70%, so summing
+        /// the counts would force one of those numbers onto the other card's shots.
+        /// </para>
+        /// </summary>
+        public void CollectExtraShots(List<ExtraShotSpec> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                PluginFiring firing = _carried[i].Firing;
+                if (firing.AddsExtraShots)
+                    into.Add(new ExtraShotSpec(firing.ExtraShotsPerVolley, firing.ExtraShotOnHitScale));
+            }
+        }
+
+        /// <summary>Appends every carried plugin that earns a burst from resolved hit effects.</summary>
+        public void CollectBurstPlugins(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Firing.FiresBursts)
+                    into.Add(_carried[i]);
+            }
         }
 
         /// <summary>Drops everything, e.g. when a mission ends. Saves nothing.</summary>
