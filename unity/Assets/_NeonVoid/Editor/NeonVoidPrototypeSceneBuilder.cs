@@ -5,6 +5,8 @@ using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Projectiles;
 using NeonVoid.Core;
 using NeonVoid.Player;
+using NeonVoid.Presentation;
+using NeonVoid.Progression;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -44,6 +46,7 @@ namespace NeonVoid.EditorTools
             Material wall = GetOrCreateMaterial("NV_Wall", new Color(0.17f, 0.27f, 0.37f));
             Material playerMat = GetOrCreateMaterial("NV_Player", new Color(0.3f, 0.95f, 0.96f));
             Material enemyMat = GetOrCreateMaterial("NV_Dummy", new Color(1f, 0.23f, 0.42f));
+            Material corpseMat = GetOrCreateMaterial("NV_Corpse", new Color(0.21f, 0.13f, 0.19f));
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             CreateBox("Ground - XZ", new Vector3(0f, -0.25f, 0f),
@@ -76,13 +79,27 @@ namespace NeonVoid.EditorTools
             AssignSerialized(driver, "inputRouter", router);
 
             // P1: the player is a real combat actor and shoots through the damage pipeline.
-            player.AddComponent<CombatActor>();
+            CombatActor playerActor = player.AddComponent<CombatActor>();
             AutoAttacker attacker = player.AddComponent<AutoAttacker>();
             AssignSerialized(attacker, "projectileMaterial", playerMat);
 
-            CreateDummy("Dummy A", new Vector3(6f, 0.7f, 5f), enemyMat);
-            CreateDummy("Dummy B", new Vector3(-7f, 0.7f, -5f), enemyMat);
-            CreateDummy("Dummy C", new Vector3(8f, 0.7f, -3f), enemyMat);
+            // The body stops colliding and looks dead. Without this a corpse stays a solid,
+            // invisible wall that can corner the player and stop their shots.
+            ActorDeathReaction playerDeath = player.AddComponent<ActorDeathReaction>();
+            AssignSerialized(playerDeath, "corpseMaterial", corpseMat);
+
+            CreateDummy("Dummy A", new Vector3(6f, 0.7f, 5f), enemyMat, corpseMat);
+            CreateDummy("Dummy B", new Vector3(-7f, 0.7f, -5f), enemyMat, corpseMat);
+            CreateDummy("Dummy C", new Vector3(8f, 0.7f, -3f), enemyMat, corpseMat);
+
+            // The player's death ends the run. The director records it and commands a save
+            // service; none exists yet, so the run honestly sits in AwaitingCommit and the
+            // banner says so rather than showing invented losses.
+            var deathObject = new GameObject("Run Death Director (Prototype)");
+            RunDeathDirector director = deathObject.AddComponent<RunDeathDirector>();
+            AssignSerialized(director, "playerActor", playerActor);
+            PrototypeDeathBanner banner = deathObject.AddComponent<PrototypeDeathBanner>();
+            AssignSerialized(banner, "deathDirector", director);
 
             GameObject cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
@@ -217,7 +234,7 @@ namespace NeonVoid.EditorTools
             return go;
         }
 
-        private static GameObject CreateDummy(string name, Vector3 position, Material material)
+        private static GameObject CreateDummy(string name, Vector3 position, Material material, Material corpseMaterial)
         {
             GameObject dummy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             dummy.name = name;
@@ -241,6 +258,12 @@ namespace NeonVoid.EditorTools
             // P2: it chases and attacks. The brain only forms intent; the hit itself goes
             // through CombatActor.ReceiveDamage, the same entry point the player's shots use.
             dummy.AddComponent<EnemyAgent>();
+
+            // Killing one must leave something visibly dead that no longer blocks the arena.
+            // The body is parked rather than destroyed: what a kill drops is reward policy,
+            // and docs/04 puts rewards behind an approved save commit.
+            ActorDeathReaction death = dummy.AddComponent<ActorDeathReaction>();
+            AssignSerialized(death, "corpseMaterial", corpseMaterial);
             return dummy;
         }
 

@@ -102,18 +102,23 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void ATargetThatDiesIsReleased()
+        public void ATargetThatDiesIsReleasedRatherThanAttackedWhereItFell()
         {
-            var config = Config();
+            // Acquired at 3 units, which is outside attack range, so no attack has been spent
+            // and the cooldown is still clear. The corpse is then at 1.5, inside attack range:
+            // a brain that kept hold of a dead target would hit it on this very tick.
+            var config = Config();     // attack range 2.4, preferred range 1.8
             var state = EnemyBrainState.Fresh();
             EnemyBrain.Decide(ref state, See(Vector2.zero, Alive(Player, 3f, 0f)), config);
 
             EnemyIntent intent = EnemyBrain.Decide(
                 ref state,
-                See(Vector2.zero, new PerceivedActor(Player, new Vector2(3f, 0f), false)),
+                See(Vector2.zero, new PerceivedActor(Player, new Vector2(1.5f, 0f), false)),
                 config);
 
             Assert.IsFalse(intent.HasTarget);
+            Assert.IsFalse(intent.WantsAttack, "The enemy kept attacking a dead target.");
+            Assert.AreEqual(Vector2.zero, intent.MoveXZ, "The enemy kept manoeuvring around a corpse.");
         }
 
         [Test]

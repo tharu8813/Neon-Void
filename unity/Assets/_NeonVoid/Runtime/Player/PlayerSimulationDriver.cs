@@ -1,3 +1,4 @@
+using NeonVoid.Combat;
 using NeonVoid.Core;
 using UnityEngine;
 
@@ -23,6 +24,12 @@ namespace NeonVoid.Player
     /// never drift apart, but a position after collision is Unity's answer rather than a
     /// reproducible one. docs/02 section 1 requires stating that rather than assuming it away.
     /// </para>
+    /// <para>
+    /// <b>A dead player stops moving but keeps consuming input.</b> Dropping the tick outright
+    /// would leave the router's latches holding whatever was pressed at the moment of death, so
+    /// the first tick after any revive would spend a dash nobody asked for. The command is read
+    /// and discarded instead.
+    /// </para>
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public sealed class PlayerSimulationDriver : MonoBehaviour, ISimulationTickReceiver
@@ -42,6 +49,10 @@ namespace NeonVoid.Player
         private PlayerMotionState _state;
         private SimulationRunner _runner;
 
+        // Optional: movement does not require combat. A driver with no actor beside it is
+        // always treated as alive, so a movement-only test scene still works.
+        private CombatActor _actor;
+
         /// <summary>Authoritative movement state as of the last completed tick.</summary>
         public PlayerMotionState State => _state;
 
@@ -50,6 +61,7 @@ namespace NeonVoid.Player
         private void Awake()
         {
             _character = GetComponent<CharacterController>();
+            _actor = GetComponent<CombatActor>();
 
             try
             {
@@ -103,6 +115,12 @@ namespace NeonVoid.Player
             PlayerInputCommand command = inputRouter != null
                 ? inputRouter.ConsumeCommandForTick(_state.PositionXZ)
                 : PlayerInputCommand.Idle(_state.PositionXZ + Vector2.up);
+
+            // Dead: the command above was read so no press is banked, and nothing else runs.
+            // The CharacterController is disabled by ActorDeathReaction at this point, so
+            // calling Move would warn as well as being wrong.
+            if (_actor != null && !_actor.IsAlive)
+                return;
 
             _state = PlayerMotionSimulation.Step(_state, command, motionConfig, out Vector2 desired);
 
