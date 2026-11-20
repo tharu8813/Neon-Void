@@ -1,3 +1,4 @@
+using NeonVoid.Combat;
 using NeonVoid.Core;
 using UnityEngine;
 
@@ -23,6 +24,12 @@ namespace NeonVoid.Player
     /// never drift apart, but a position after collision is Unity's answer rather than a
     /// reproducible one. docs/02 section 1 requires stating that rather than assuming it away.
     /// </para>
+    /// <para>
+    /// <b>A dead player stops moving but keeps consuming input.</b> Dropping the tick outright
+    /// would leave the router's latches holding whatever was pressed at the moment of death, so
+    /// the first tick after any revive would spend a dash nobody asked for. The command is read
+    /// and discarded instead.
+    /// </para>
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public sealed class PlayerSimulationDriver : MonoBehaviour, ISimulationTickReceiver
@@ -42,6 +49,10 @@ namespace NeonVoid.Player
         private PlayerMotionState _state;
         private SimulationRunner _runner;
 
+        // Optional: movement does not require combat. A driver with no actor beside it is
+        // always treated as alive, so a movement-only test scene still works.
+        private CombatActor _actor;
+
         /// <summary>Authoritative movement state as of the last completed tick.</summary>
         public PlayerMotionState State => _state;
 
@@ -50,6 +61,7 @@ namespace NeonVoid.Player
         private void Awake()
         {
             _character = GetComponent<CharacterController>();
+            _actor = GetComponent<CombatActor>();
 
             try
             {
@@ -104,7 +116,18 @@ namespace NeonVoid.Player
                 ? inputRouter.ConsumeCommandForTick(_state.PositionXZ)
                 : PlayerInputCommand.Idle(_state.PositionXZ + Vector2.up);
 
-            _state = PlayerMotionSimulation.Step(_state, command, motionConfig, out Vector2 desired);
+            // Dead: the command above was read so no press is banked, and nothing else runs.
+            // The CharacterController is disabled by ActorDeathReaction at this point, so
+            // calling Move would warn as well as being wrong.
+            if (_actor != null && !_actor.IsAlive)
+                return;
+
+            // The player obeys 구속 / 속박 / 정지 through the same function the enemies use.
+            // Until this was passed, enemies respected a slow and the player did not.
+            float speedMultiplier = _actor != null ? _actor.MoveSpeedMultiplier : 1f;
+
+            _state = PlayerMotionSimulation.Step(
+                _state, command, motionConfig, out Vector2 desired, speedMultiplier);
 
             _character.Move(new Vector3(desired.x, 0f, desired.y));
 
@@ -112,6 +135,39 @@ namespace NeonVoid.Player
             // simulation too instead of letting the rules walk through it on their own ledger.
             Vector3 resolved = transform.position;
             _state.PositionXZ = new Vector2(resolved.x, resolved.z);
+        }
+
+        /// <summary>
+        /// Moves the player to a position without travelling through what is in between, for a
+        /// blink or teleport. The caller is responsible for the destination being free.
+        /// <para>
+        /// The simulation state is written as well as the transform, which is the whole reason
+        /// this is a method rather than the caller setting the position itself. The rules keep
+        /// their own position ledger, and leaving it behind would make the next tick resolve
+        /// facing and the dash dead zone against where the player used to be.
+        /// </para>
+        /// <para>
+        /// The CharacterController is switched off across the move: it resolves movement
+        /// against geometry, and asking it to jump a distance in one frame is how a teleport
+        /// ends up refused, halved, or inside a wall.
+        /// </para>
+        /// </summary>
+        public void TeleportTo(Vector2 positionXZ)
+        {
+            if (float.IsNaN(positionXZ.x) || float.IsNaN(positionXZ.y))
+                return;
+
+            bool wasEnabled = _character != null && _character.enabled;
+            if (_character != null)
+                _character.enabled = false;
+
+            Vector3 position = transform.position;
+            transform.position = new Vector3(positionXZ.x, position.y, positionXZ.y);
+
+            if (_character != null)
+                _character.enabled = wasEnabled;
+
+            _state.PositionXZ = positionXZ;
         }
 
         /// <summary>

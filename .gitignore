@@ -37,3 +37,5 @@ os_checkpoint.json
 Thumbs.db
 *.log
 .env
+# Test reports written by `unity test` into whatever directory it ran from
+test-results.xml

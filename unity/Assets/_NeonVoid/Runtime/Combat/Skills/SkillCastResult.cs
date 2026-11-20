@@ -34,6 +34,18 @@ namespace NeonVoid.Combat.Skills
 
         /// <summary>속박 - rooted; movement skills specifically are unusable.</summary>
         Rooted = 7,
+
+        /// <summary>
+        /// The caster is dead. Not a control effect: a corpse is refused before the gate is
+        /// even consulted, and the HUD must not report it as a stun.
+        /// </summary>
+        CasterIsDead = 8,
+
+        /// <summary>
+        /// A movement skill had nowhere legal to put the caster - 벽 속 이동 금지. Refused
+        /// before anything is spent, so the player keeps the mana and the cooldown.
+        /// </summary>
+        NoValidDestination = 9,
     }
 
     /// <summary>The outcome of attempting one cast.</summary>

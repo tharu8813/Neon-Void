@@ -54,6 +54,21 @@ namespace NeonVoid.Combat
         public float TenacityPercent;
 
         /// <summary>
+        /// [원안 수치] docs/03 R01 처형 알고리즘: extra damage against a target below
+        /// <see cref="LowHealthThresholdFraction"/> of its maximum health, as a percentage.
+        /// <para>
+        /// Carried as a stat rather than applied by whoever fires, so every path into
+        /// <see cref="DamageApplication"/> gets it. A caller-side multiplier would have to be
+        /// remembered by the projectile, the cone, the field, the chain and the explosion
+        /// separately, and the one that forgot would be a silently weaker build.
+        /// </para>
+        /// </summary>
+        public float LowHealthDamageBonusPercent;
+
+        /// <summary>[원안 수치] docs/03 R01: the 50% mark, as a fraction.</summary>
+        public float LowHealthThresholdFraction;
+
+        /// <summary>
         /// The documented starting block. Offence values carry their [확정] status; the rest
         /// are [초안] and exist so tests have something concrete to run against.
         /// </summary>
@@ -74,6 +89,10 @@ namespace NeonVoid.Combat
             OmnivampPercent = 0f,
             SkillHaste = 0f,
             TenacityPercent = 0f,
+            LowHealthDamageBonusPercent = 0f,
+            // R01 states the 50% mark, so the threshold is the design's number even when no
+            // plugin grants the bonus. A threshold of 0 with a bonus would never apply.
+            LowHealthThresholdFraction = 0.5f,
         };
 
         /// <summary>Resistance consulted for the given damage type. True damage reads none.</summary>
@@ -118,6 +137,8 @@ namespace NeonVoid.Combat
             RequireFinite(OmnivampPercent, nameof(OmnivampPercent));
             RequireFinite(SkillHaste, nameof(SkillHaste));
             RequireFinite(TenacityPercent, nameof(TenacityPercent));
+            RequireFinite(LowHealthDamageBonusPercent, nameof(LowHealthDamageBonusPercent));
+            RequireFraction(LowHealthThresholdFraction, nameof(LowHealthThresholdFraction));
             RequireFinite(PhysicalPenFlat, nameof(PhysicalPenFlat));
             RequireFinite(MagicPenFlat, nameof(MagicPenFlat));
             RequireFraction(PhysicalPenPercent, nameof(PhysicalPenPercent));
