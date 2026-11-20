@@ -184,7 +184,15 @@ namespace NeonVoid.Tests.PlayModeTests
             // identical dummies, one shot at full strength and one at G13's 70%: the explosion
             // 폭발 각인 produces must be smaller on the second.
             _arena = PrototypeArena.Build(new Vector3(-6f, 0.7f, 5f), new Vector3(6f, 0.7f, 5f));
-            _arena.Attacker.SetExtraShots(null);
+            yield return WithAnEmptyLoadout();
+
+            // 폭발 각인 alone, so the health reading below is the explosion and nothing else.
+            // With the whole prototype set carried, R04's 해체 adds an UNSCALED damage over
+            // time to the same number - the fraction applies to effect damage, not to status
+            // magnitudes - and the ratio stops measuring what this test is about. It is better
+            // for this test to name the one card it depends on than to loosen its tolerance
+            // every time a new card lands.
+            _arena.Procs.Grant(PluginCatalog.DetonationGlyph(), out _);
 
             CombatActor full = _arena.Enemies[0];
             CombatActor reduced = _arena.Enemies[1];

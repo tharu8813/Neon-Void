@@ -264,6 +264,57 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>
+        /// [초안] magic damage per 해체 stack per event. docs/03 R04 gives no number - it says
+        /// 시간·성능은 집약형 데이터 and forbids inventing a stack cap, not a magnitude.
+        /// </summary>
+        public const float DraftDismantleMagnitudePerStack = 2f;
+
+        /// <summary>
+        /// R04 해체 프로토콜 - 적중 효과 발생 때마다 상한 없는 스택의 지속 마법 피해.
+        /// <para>
+        /// <b>No cap, deliberately.</b> docs/03's exception column says 스택 캡 임의 추가 금지
+        /// in as many words, and section 7 requires the unbounded stacking to use 하나의 집계
+        /// 상태 so the cost stays stable as the count grows. That is the
+        /// <see cref="StatusStackPolicy.UnboundedAggregated"/> policy docs/02 names after this
+        /// card: one instance per target, one timer, one periodic event, whatever the stack
+        /// count is.
+        /// </para>
+        /// <para>
+        /// <b>It reacts to effects, not to hits.</b> 적중 효과 발생 includes 부식 표식 applying a
+        /// mark, which removes no health, so a hit trigger could never see it.
+        /// </para>
+        /// <para>
+        /// <b>One stack per causal chain, which is an interpretation [미확정, D-018].</b> The
+        /// card says 적중 효과 발생 때마다. Taken as "per effect resolution" it would include
+        /// R04's own resolution - a 적중 효과 like any other - and the card would feed itself
+        /// for free, bounded only by whatever chain depth was allowed. There is no hit in that
+        /// loop and no way to read it off the card, so the chain rule allows this effect once
+        /// per chain and the ancestry the queue already carries does the refusing. A shot that
+        /// sets off two separate effects is two chains and therefore two stacks; a three-deep
+        /// chain is one. Recorded in docs/08 rather than settled here.
+        /// </para>
+        /// <para>
+        /// <b>No internal cooldown.</b> The card's text is 때마다, and a cooldown would silently
+        /// turn "every time" into "sometimes". The stack count is the thing allowed to grow
+        /// without limit, and it does.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition DismantleProtocol() => new PluginDefinition
+        {
+            ProposalId = "R04",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.OnHitEffectResolved,
+            Effect = PluginEffectKind.MarkTarget,
+            Damage = default,
+            // SingleUse, and that is a reading of the card rather than a transcription of it.
+            // See the remarks: one stack per causal chain, no internal cooldown.
+            Rule = ProcEffectRule.SingleUse(4),
+            AppliedStatus = StatusEffectId.Dismantle,
+            StatusMagnitude = DraftDismantleMagnitudePerStack,
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
@@ -276,6 +327,7 @@ namespace NeonVoid.Plugins
             ExecutionAlgorithm(),
             SupportRound(),
             QuadCache(),
+            DismantleProtocol(),
         };
     }
 }

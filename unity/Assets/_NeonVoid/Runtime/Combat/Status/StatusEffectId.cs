@@ -61,5 +61,19 @@ namespace NeonVoid.Combat.Status
 
         /// <summary>방화벽 차단 - armor and damage reduction weakened. Not a control effect.</summary>
         FirewallBreach = 28,
+
+        /// <summary>
+        /// 해체 - unbounded magic damage over time, for docs/03 R04 해체 프로토콜.
+        /// <para>
+        /// <b>Its own effect rather than 무결성 공격.</b> docs/02's stack-type list names the
+        /// policy <c>UnboundedAggregated</c>(해체) and section 6 calls out 중첩이 무제한인 해체
+        /// against thousands of enemies as a specific performance risk, so the document already
+        /// treats 해체 as a state of its own. 무결성 공격 is the generic DoT and uses
+        /// IndependentStacks - one timer per application - which is the opposite of the single
+        /// aggregate state docs/03 section 7 requires here. Changing its policy to suit one
+        /// card would quietly change every other DoT in the game.
+        /// </para>
+        /// </summary>
+        Dismantle = 29,
     }
 }

@@ -19,6 +19,16 @@ namespace NeonVoid.Plugins
 
         /// <summary>스킬 피해 적중 시 - an active skill landing. G14 and others.</summary>
         OnSkillHit = 3,
+
+        /// <summary>
+        /// 적중 효과 발생 시 - another plugin's on-hit effect resolving. R04 해체 프로토콜.
+        /// <para>
+        /// Not a hit, which is why it cannot be a <see cref="HitReport"/> trigger like the
+        /// others: 부식 표식 applying a mark is an 적중 효과 and lands no damage at all. So it
+        /// is evaluated where an effect is known to have resolved, and only there.
+        /// </para>
+        /// </summary>
+        OnHitEffectResolved = 4,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>

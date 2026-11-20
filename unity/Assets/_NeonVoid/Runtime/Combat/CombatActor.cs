@@ -394,6 +394,10 @@ namespace NeonVoid.Combat
                         Heal(fired.Magnitude);
                         break;
 
+                    // 해체 and 무결성 공격 both tick as magic damage over time. One case, two
+                    // ids: they differ in how they stack, which is the container's business,
+                    // not this switch's.
+                    case StatusEffectId.Dismantle:
                     case StatusEffectId.IntegrityAttack:
                         ReceiveDamage(
                             new DamageRequest

@@ -23,16 +23,56 @@ namespace NeonVoid.Tests
         [Test]
         public void CatalogueHasTheEightBuffsAndNineDebuffsTheDocumentLists()
         {
+            // docs/02 section 5's two tables, named rather than counted. A total would be the
+            // assertion, and it was: 해체 arriving for docs/03 R04 made it fail, which was
+            // right to flag and wrong to answer by editing the number up. What must hold is
+            // that nothing the document lists has gone missing or changed side.
             var catalog = Catalog();
-            int buffs = 0, debuffs = 0;
-            foreach (var entry in catalog.Values)
+
+            foreach (StatusEffectId id in new[]
             {
-                if (entry.IsBuff) buffs++; else debuffs++;
+                StatusEffectId.Empower, StatusEffectId.Haste, StatusEffectId.ProjectileSpeedUp,
+                StatusEffectId.AttackSpeedUp, StatusEffectId.SkillHaste, StatusEffectId.Regeneration,
+                StatusEffectId.Invulnerable, StatusEffectId.Pierce,
+            })
+            {
+                Assert.IsTrue(catalog.ContainsKey(id), id + " is in the document's buff table.");
+                Assert.IsTrue(catalog[id].IsBuff, id + " stopped being a buff.");
             }
 
-            Assert.AreEqual(17, catalog.Count);
-            Assert.AreEqual(8, buffs);
-            Assert.AreEqual(9, debuffs);
+            foreach (StatusEffectId id in new[]
+            {
+                StatusEffectId.Weaken, StatusEffectId.Slow, StatusEffectId.AttackSpeedDown,
+                StatusEffectId.Malfunction, StatusEffectId.Silence, StatusEffectId.Root,
+                StatusEffectId.Stun, StatusEffectId.IntegrityAttack, StatusEffectId.FirewallBreach,
+            })
+            {
+                Assert.IsTrue(catalog.ContainsKey(id), id + " is in the document's debuff table.");
+                Assert.IsFalse(catalog[id].IsBuff, id + " stopped being a debuff.");
+            }
+        }
+
+        [Test]
+        public void TheOnlyEffectBeyondTheDocumentsTablesIsDismantle()
+        {
+            // 해체 is in docs/02 - as the name of the UnboundedAggregated stack type and as a
+            // performance risk in section 6 - but not as a row in the debuff table. It exists
+            // because docs/03 R04 needs a DoT that aggregates, and 무결성 공격 cannot be that
+            // without changing every other DoT. Anything ELSE appearing here is content
+            // somebody invented, so the test names the one exception rather than counting.
+            var documented = new HashSet<StatusEffectId>
+            {
+                StatusEffectId.Empower, StatusEffectId.Haste, StatusEffectId.ProjectileSpeedUp,
+                StatusEffectId.AttackSpeedUp, StatusEffectId.SkillHaste, StatusEffectId.Regeneration,
+                StatusEffectId.Invulnerable, StatusEffectId.Pierce,
+                StatusEffectId.Weaken, StatusEffectId.Slow, StatusEffectId.AttackSpeedDown,
+                StatusEffectId.Malfunction, StatusEffectId.Silence, StatusEffectId.Root,
+                StatusEffectId.Stun, StatusEffectId.IntegrityAttack, StatusEffectId.FirewallBreach,
+                StatusEffectId.Dismantle,
+            };
+
+            foreach (StatusEffectId id in Catalog().Keys)
+                Assert.IsTrue(documented.Contains(id), id + " is not in docs/02 and nothing asked for it.");
         }
 
         /// <summary>

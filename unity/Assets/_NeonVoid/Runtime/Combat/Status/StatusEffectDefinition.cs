@@ -149,6 +149,11 @@ namespace NeonVoid.Combat.Status
             Add(StatusEffectId.IntegrityAttack, false, StatusStackPolicy.IndependentStacks, 1, 180, 30);
             // The named unbounded case from docs/02 section 6.
             Add(StatusEffectId.FirewallBreach, false, StatusStackPolicy.UnboundedAggregated, 0, 300);
+            // 해체, the policy docs/02 names after it. One aggregate state with no cap, as
+            // docs/03 section 7 requires: 무제한 중첩이 하나의 집계 상태를 사용하여 스택 수가
+            // 많아져도 선형/안정된 비용. [초안] duration and interval; the magnitude per stack
+            // is the card's.
+            Add(StatusEffectId.Dismantle, false, StatusStackPolicy.UnboundedAggregated, 0, 300, 30);
 
             return catalog;
         }

@@ -125,6 +125,43 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Offers an effect's own resolution to every plugin that reacts to one. docs/03 R04
+        /// 해체 프로토콜 is 적중 효과 발생 때마다, which is this and not a hit.
+        /// <para>
+        /// Called from inside a drain, so the ancestry it enqueues under is the resolving
+        /// event's own child path. That is what makes the cycle rule able to refuse R04
+        /// stacking off its own resolution: the queue sees effect 4 asking to happen inside a
+        /// chain that already contains effect 4, which is the one thing docs/03 section 2
+        /// forbids outright (원형 참조 금지).
+        /// </para>
+        /// </summary>
+        public void OnHitEffectResolved(
+            int sourceActorId, int targetActorId, long tick, int runId = 0, int attackId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredByEffectResolution(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+            {
+                PluginDefinition plugin = _triggered[i];
+                _queue.TryEnqueue(
+                    plugin.EffectId,
+                    sourceActorId,
+                    targetActorId,
+                    _activePath,
+                    tick,
+                    runId,
+                    attackId,
+                    plugin.Damage.Type,
+                    plugin.Damage.IsArea,
+                    plugin.Damage.IsPeriodic,
+                    isCritical: false,
+                    randomStreamId: 0,
+                    onHitEffectScale: _activeScale);
+            }
+        }
+
+        /// <summary>
         /// Resolves everything queued, handing each event the plugin that produced it. The
         /// resolver may deal damage, which may land, which may trigger more plugins - and those
         /// arrive with this event's ancestry attached rather than as fresh chains.

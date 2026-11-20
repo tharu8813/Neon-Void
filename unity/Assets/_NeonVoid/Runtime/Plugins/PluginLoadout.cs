@@ -195,6 +195,25 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Appends every carried plugin that another plugin's effect resolving sets off, in
+        /// carry order.
+        /// <para>
+        /// A separate collector from the hit one, because 적중 효과 발생 is not a hit: 부식 표식
+        /// applying a mark is an 적중 효과 and removes no health at all, so it would never pass
+        /// the <c>hit.Landed</c> gate the hit path correctly applies.
+        /// </para>
+        /// </summary>
+        public void CollectTriggeredByEffectResolution(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+                if (_carried[i].Trigger == PluginTriggerKind.OnHitEffectResolved)
+                    into.Add(_carried[i]);
+        }
+
+        /// <summary>
         /// Whether a trigger kind matches a hit.
         /// <para>
         /// A hit that removed no health never triggers anything. An attack absorbed by 무적
@@ -212,6 +231,10 @@ namespace NeonVoid.Plugins
                 PluginTriggerKind.OnProjectileHit => hit.Origin == HitOrigin.Projectile,
                 PluginTriggerKind.OnSkillHit => hit.Origin == HitOrigin.Skill,
                 PluginTriggerKind.OnAnyHit => hit.Origin != HitOrigin.Unknown,
+
+                // OnHitEffectResolved lands here on purpose: a hit is not an effect resolving,
+                // and an R04 that also fired on every hit would stack far faster than the card
+                // says.
                 _ => false,
             };
         }
