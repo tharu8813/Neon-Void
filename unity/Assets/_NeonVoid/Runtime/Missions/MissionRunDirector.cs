@@ -119,27 +119,43 @@ namespace NeonVoid.Missions
             new DeterministicRng(State.SeedFor(stream));
 
         /// <summary>
-        /// Records a purification (정화) in the running mission and awards the area's mission XP.
+        /// Records a purification (정화) in the running mission and awards the area's 의뢰 XP.
         /// <para>
-        /// The XP figure is applied <b>here</b> rather than inside
-        /// <see cref="MissionRunState.TryRecordPurification"/>, so that reading 기본 720 임무
-        /// XP/구역 (docs/04 section 1, [초안]) as "one purified area is one 구역" is a decision
-        /// visible at this seam instead of a constant buried in the state object. Nothing in the
-        /// documents numbers permanent XP per area, so none is awarded; the permanent side waits
-        /// for 철수, and its settlement on death waits for D-012.
+        /// The XP is applied <b>here</b> rather than inside
+        /// <see cref="MissionRunState.TryRecordPurification"/>, so that reading "one purified
+        /// area is one 구역" is a decision visible at this seam instead of a constant buried in
+        /// the state object. The budget rises with the areas already cleared, per
+        /// <see cref="MissionXpBudget"/>.
+        /// </para>
+        /// <para>
+        /// Only 의뢰 XP. The 백신 영구 XP this area is worth stays unbanked until an extraction
+        /// commits it ([확정] docs/04 section 2 settles only a share of it on death), so nothing
+        /// permanent is written here - and nothing permanent could be, because this records no
+        /// save commit.
         /// </para>
         /// </summary>
         public bool RecordPurification()
         {
-            bool recorded = State.TryRecordPurification();
-            if (!recorded)
+            // Read before recording: the budget is a function of the areas already purified, and
+            // taking it after the increment would pay this area at the next one's rate.
+            int alreadyPurified = State.PurificationsCompleted;
+            if (alreadyPurified >= DesignConstants.HardwareCount)
+            {
+                Debug.LogError(
+                    $"{name}: {Identity} has already purified all {DesignConstants.HardwareCount} " +
+                    $"hardware areas, so this purification is a duplicate and is refused.", this);
+                return false;
+            }
+
+            if (!State.TryRecordPurification())
                 return false;
 
-            State.TryAwardMissionXp(ProgressionCurves.DraftMissionXpPerArea, out int levelsGained);
+            long xp = MissionXpBudget.XpForArea(alreadyPurified);
+            State.TryAwardMissionXp(xp, out int levelsGained);
+
             Debug.Log(
                 $"Purification {State.PurificationsCompleted} recorded for {Identity}: " +
-                $"+{ProgressionCurves.DraftMissionXpPerArea} 임무 XP, now Lv.{State.MissionLevel} " +
-                $"(+{levelsGained}).",
+                $"+{xp} 의뢰 XP, now Lv.{State.MissionLevel} (+{levelsGained}).",
                 this);
 
             return true;

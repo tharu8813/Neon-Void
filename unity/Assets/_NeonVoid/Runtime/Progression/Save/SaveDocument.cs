@@ -359,6 +359,38 @@ namespace NeonVoid.Progression.Save
             return null;
         }
 
+        /// <summary>
+        /// How many committed receipts have ids starting with <paramref name="prefix"/>.
+        /// <para>
+        /// <b>Why a command may count its own history.</b> The document holds no run state
+        /// (D-017), so the preconditions docs/04 section 5 writes about a run - 최소 1개 정화 for
+        /// an extraction, 중복 미제시 for a reward - have nothing in the snapshot to check
+        /// against. But a purification <i>is</i> a commit, and the receipt log is permanent, so
+        /// the run's committed progress is derivable from the log itself. That makes the
+        /// precondition checkable against this slot's own record instead of against a number the
+        /// caller claims, and it needs no new schema field to do it.
+        /// </para>
+        /// <para>
+        /// Receipt ids are therefore structured, not opaque: <c>cleanse:{runId}:{areaId}</c> is
+        /// both the idempotency key that refuses a second purification of one area and the key
+        /// this counts over.
+        /// </para>
+        /// </summary>
+        public int CountReceipts(string prefix)
+        {
+            if (string.IsNullOrEmpty(prefix))
+                return 0;
+
+            int found = 0;
+            for (int i = 0; i < receipts.Count; ++i)
+            {
+                if (receipts[i].receiptId != null && receipts[i].receiptId.StartsWith(prefix, StringComparison.Ordinal))
+                    ++found;
+            }
+
+            return found;
+        }
+
         public void Validate()
         {
             if (schemaVersion != CurrentSchemaVersion)

@@ -67,15 +67,15 @@ namespace NeonVoid.Tests
         [Test]
         public void OneClearedAreaIsWorthFourMissionLevelsOnTheDraftNumbers()
         {
-            // Not a rule - a consequence of two [초안] numbers meeting (기본 720 임무 XP/구역
-            // against a first level of 100). It is asserted so that retuning either one shows
-            // what it does to pacing instead of being discovered in play.
+            // GDD v1 section 5.4 publishes this row itself: 720 XP, 기준 종료 레벨 5. Asserting
+            // it means the curve here and the worked example in the design document agree, and a
+            // retune of either number shows up as a failure rather than in play.
             LevelCurve mission = ProgressionCurves.DraftMissionLevels;
 
-            int reached = mission.LevelFor(ProgressionCurves.DraftMissionXpPerArea);
+            int reached = mission.LevelFor(MissionXpBudget.DraftFirstAreaXp);
 
             Assert.AreEqual(5, reached, "720 XP should carry a mission from Lv.1 to Lv.5");
-            Assert.AreEqual(140L, mission.XpIntoLevel(reached, ProgressionCurves.DraftMissionXpPerArea));
+            Assert.AreEqual(140L, mission.XpIntoLevel(reached, MissionXpBudget.DraftFirstAreaXp));
         }
 
         [Test]

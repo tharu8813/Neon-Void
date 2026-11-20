@@ -38,13 +38,6 @@ namespace NeonVoid.Progression
         /// </summary>
         public const int DraftPointsPerVaccineLevel = 1;
 
-        /// <summary>
-        /// [초안] 기본 720 임무 XP/구역 (docs/04 section 1). The mission XP one cleared hardware
-        /// area is worth. Nothing awards it yet - no area can be cleared - so this is the figure
-        /// the first thing that can will use, not a figure already in play.
-        /// </summary>
-        public const long DraftMissionXpPerArea = 720L;
-
         /// <summary>The draft mission (의뢰) curve. Reset to level 1 by every new mission.</summary>
         public static LevelCurve DraftMissionLevels =>
             new LevelCurve(DraftMissionFirstStepXp, DraftMissionStepGrowthXp);
