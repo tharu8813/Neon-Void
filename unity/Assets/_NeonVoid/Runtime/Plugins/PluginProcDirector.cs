@@ -283,7 +283,7 @@ namespace NeonVoid.Plugins
                 return;
 
             DamageOutcome outcome = target.ReceiveDamage(
-                plugin.Damage, owner.Stats, critRolled: false, isOnHitEvent: false);
+                plugin.Damage, owner.Stats, owner.RollCrit(plugin.Damage), isOnHitEvent: false);
 
             if (outcome.Lifesteal.Total > 0f)
                 owner.Heal(outcome.Lifesteal.Total);

@@ -133,6 +133,10 @@ namespace NeonVoid.EditorTools
             // hide the 0.33 area efficiency the field exists to demonstrate.
             AssignSerializedFloat(playerActor, "abilityPower", 20f);
             AssignSerializedFloat(playerActor, "omnivampPercent", 15f);
+            // [초안] a crit chance above zero, so the roll has something to decide. Every
+            // caller used to pass critRolled: false, and with a chance of 0 the stat would
+            // still look identical to nothing being rolled at all.
+            AssignSerializedFloat(playerActor, "critChancePercent", 20f);
 
             // P2: Q/E/R cast the three prototype skills through the tested cast rules.
             PlayerSkillCaster caster = player.AddComponent<PlayerSkillCaster>();

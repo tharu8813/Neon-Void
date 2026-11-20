@@ -136,6 +136,7 @@ namespace NeonVoid.Presentation
                 GUILayout.Label(
                     $"AD {stats.AttackDamage:0.#}/{baseStats.AttackDamage:0.#}   " +
                     $"AP {stats.AbilityPower:0.#}   " +
+                    $"crit {stats.CritChancePercent:0.#}%   " +
                     $"spd x{player.MoveSpeedMultiplier:0.00}", _panelLabel);
 
                 string status = StatusSummary(player.Status);

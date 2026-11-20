@@ -314,7 +314,7 @@ namespace NeonVoid.Combat.AI
 
         private void Strike(CombatActor target, in DamageRequest request)
         {
-            DamageOutcome outcome = target.ReceiveDamage(request, _self.Stats, critRolled: false);
+            DamageOutcome outcome = target.ReceiveDamage(request, _self.Stats, _self.RollCrit(request));
             if (outcome.Lifesteal.Total > 0f)
                 _self.Heal(outcome.Lifesteal.Total);
 

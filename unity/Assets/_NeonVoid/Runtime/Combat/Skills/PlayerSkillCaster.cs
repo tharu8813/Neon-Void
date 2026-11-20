@@ -255,7 +255,8 @@ namespace NeonVoid.Combat.Skills
                         selfXZ, facing, new Vector2(p.x, p.z), shape.RadiusUnits, shape.ConeHalfAngleDegrees))
                     continue;
 
-                DamageOutcome outcome = actor.ReceiveDamage(asset.Definition.Damage, _actor.Stats);
+                DamageOutcome outcome = actor.ReceiveDamage(
+                    asset.Definition.Damage, _actor.Stats, _actor.RollCrit(asset.Definition.Damage));
                 if (outcome.Lifesteal.Total > 0f)
                     _actor.Heal(outcome.Lifesteal.Total);
 

@@ -97,7 +97,10 @@ namespace NeonVoid.Combat.Projectiles
                 if (_ledger.TryRegisterHit(actor.ActorId) != ProjectileHitVerdict.Allowed)
                     continue;
 
-                DamageOutcome outcome = actor.ReceiveDamage(_damage, _attackerStats, critRolled: false);
+                // The attacker rolls, because the chance is its stat. A shot in flight whose
+                // attacker has died rolls nothing, which is the same answer as a zero chance.
+                bool crit = _attacker != null && _attacker.RollCrit(_damage);
+                DamageOutcome outcome = actor.ReceiveDamage(_damage, _attackerStats, crit);
                 if (_attacker != null && outcome.Lifesteal.Total > 0f)
                     _attacker.Heal(outcome.Lifesteal.Total);
 

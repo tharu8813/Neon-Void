@@ -1,3 +1,4 @@
+using NeonVoid.Combat;
 using NeonVoid.Core;
 using UnityEngine;
 
@@ -48,6 +49,11 @@ namespace NeonVoid.Missions
                 Debug.LogError($"{name}: mission {identity} refused to begin.", this);
                 return;
             }
+
+            // Every actor derives its combat generator from this. Set before any actor's Awake
+            // thanks to DefaultExecutionOrder, so nobody seeds itself from the default and then
+            // rolls a sequence belonging to no run.
+            CombatActor.SetRunCombatSeed(identity.SeedFor(RandomStream.Combat));
 
             // Logged because a deterministic generator whose seed nobody can read back is not
             // reproducible in practice, whatever it is in principle.

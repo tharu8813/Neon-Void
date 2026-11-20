@@ -105,7 +105,10 @@ namespace NeonVoid.Combat.Skills
                 // attack that lands, and letting a damage-over-time tick count as one would
                 // turn a five second field into five seconds of on-hit sustain.
                 DamageOutcome outcome = actor.ReceiveDamage(
-                    _damage, _ownerStats, critRolled: false, isOnHitEvent: false);
+                    _damage,
+                    _ownerStats,
+                    _owner != null && _owner.RollCrit(_damage),
+                    isOnHitEvent: false);
 
                 if (_owner != null && outcome.Lifesteal.Total > 0f)
                     _owner.Heal(outcome.Lifesteal.Total);

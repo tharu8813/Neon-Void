@@ -31,7 +31,30 @@ namespace NeonVoid.Combat
         private static ActorIdAllocator _allocator = new ActorIdAllocator();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetAllocator() => _allocator = new ActorIdAllocator();
+        private static void ResetAllocator()
+        {
+            _allocator = new ActorIdAllocator();
+            _runCombatSeed = DefaultRunCombatSeed;
+        }
+
+        /// <summary>Used until a mission supplies the run's own combat seed.</summary>
+        private const uint DefaultRunCombatSeed = 0x9E3779B9u;
+
+        // The run's combat stream seed, which every actor mixes with its own id. Static for the
+        // same reason the allocator is: it belongs to the run rather than to any one actor, and
+        // it is reset on load because Unity can skip the domain reload between play sessions.
+        private static uint _runCombatSeed = DefaultRunCombatSeed;
+
+        /// <summary>
+        /// Hands every actor created from now on the run's combat randomness.
+        /// <para>
+        /// [확정] docs/06 section 4: combat randomness is its own stream. Each actor derives a
+        /// generator from this and its actor id, so one enemy's attacks cannot shift where the
+        /// player's crit sequence has got to - which would make a fight depend on how many
+        /// times something else happened to swing.
+        /// </para>
+        /// </summary>
+        public static void SetRunCombatSeed(uint seed) => _runCombatSeed = seed;
 
         [Header("Identity")]
         [Tooltip("Faction tag. Actors only damage actors of a different team.")]
@@ -47,8 +70,10 @@ namespace NeonVoid.Combat
         [SerializeField] private float omnivampPercent;
         [SerializeField] private float onHitLifestealPercent;
         [SerializeField] private float skillHaste;
+        [SerializeField] private float critChancePercent;
         [SerializeField] private float tenacityPercent;
 
+        private DeterministicRng _combatRng;
         private CombatStats _baseStats;
         private CombatStats _stats;
         private HealthPool _health;
@@ -170,6 +195,7 @@ namespace NeonVoid.Combat
             _baseStats.OmnivampPercent = omnivampPercent;
             _baseStats.OnHitLifestealPercent = onHitLifestealPercent;
             _baseStats.SkillHaste = skillHaste;
+            _baseStats.CritChancePercent = critChancePercent;
             _baseStats.TenacityPercent = tenacityPercent;
 
             try
@@ -180,6 +206,14 @@ namespace NeonVoid.Combat
             {
                 Debug.LogError($"{name}: combat stats rejected ({error.Message}). Falling back to the starting block.", this);
                 _baseStats = CombatStats.StartingVaccine();
+            }
+
+            // Mixed with the actor id so two actors never share a position in the stream, and
+            // so the same run gives the same actor the same sequence on a replay.
+            unchecked
+            {
+                uint mixed = _runCombatSeed ^ ((uint)ActorId * 2654435761u);
+                _combatRng = new DeterministicRng(mixed);
             }
 
             _caps = StatCaps.Draft();
@@ -324,6 +358,15 @@ namespace NeonVoid.Combat
                 request.IsArea, request.IsPeriodic, outcome.Resolution.IsCritical,
                 outcome.Killed, outcome.HealthRemoved));
         }
+
+        /// <summary>
+        /// Rolls this actor's chance to crit with a given attack, from its own combat stream.
+        /// <para>
+        /// The attacker rolls, because the chance is the attacker's stat. Callers pass the
+        /// result into <see cref="ReceiveDamage"/>; nothing rolls on the defender's behalf.
+        /// </para>
+        /// </summary>
+        public bool RollCrit(in DamageRequest request) => CritRoll.Roll(request, Stats, _combatRng);
 
         /// <summary>Heals this actor, e.g. from its own lifesteal.</summary>
         public float Heal(float amount) => IsAlive ? _health.Heal(amount) : 0f;

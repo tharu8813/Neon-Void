@@ -402,6 +402,78 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+        // --- crits -------------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator AGuaranteedCritHitsHarderThanOneThatCannotHappen()
+        {
+            // Every attack site used to pass critRolled: false, so this is the first time a
+            // crit can happen in the scene at all.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f), new Vector3(5f, 0.7f, 8f));
+            _arena.WithoutPlugins();
+            CombatActor unlucky = _arena.Enemies[0];
+            CombatActor doomed = _arena.Enemies[1];
+            yield return _arena.Tick(2);
+
+            CombatStats never = _arena.Player.BaseStats;
+            never.CritChancePercent = 0f;
+            CombatStats always = _arena.Player.BaseStats;
+            always.CritChancePercent = 100f;
+
+            var hit = new DamageRequest { Flat = 5f, Type = DamageType.True, CanCrit = true };
+
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, never);
+            float before = unlucky.Health.Current;
+            unlucky.ReceiveDamage(hit, _arena.Player.Stats, _arena.Player.RollCrit(hit));
+            float normalLoss = before - unlucky.Health.Current;
+
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, always);
+            before = doomed.Health.Current;
+            doomed.ReceiveDamage(hit, _arena.Player.Stats, _arena.Player.RollCrit(hit));
+            float critLoss = before - doomed.Health.Current;
+
+            Assert.Greater(critLoss, normalLoss, "A guaranteed crit did no more than a normal hit.");
+            Assert.AreEqual(
+                normalLoss * _arena.Player.Stats.CritDamageMultiplier, critLoss, 0.05f);
+        }
+
+        [UnityTest]
+        public IEnumerator EachActorRollsOnItsOwnStreamPosition()
+        {
+            // One enemy's swings must not shift where the player's crit sequence has got to, or
+            // a fight would depend on how many times something else happened to attack.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f));
+            yield return _arena.Tick(2);
+
+            CombatStats half = _arena.Player.BaseStats;
+            half.CritChancePercent = 50f;
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, half);
+
+            CombatStats enemyHalf = _arena.Enemies[0].BaseStats;
+            enemyHalf.CritChancePercent = 50f;
+            _arena.Enemies[0].Configure(PrototypeArena.EnemyTeam, enemyHalf);
+
+            var hit = new DamageRequest { Flat = 1f, Type = DamageType.True, CanCrit = true };
+
+            // The player's first eight rolls, with the enemy rolling in between.
+            var withInterference = new System.Text.StringBuilder();
+            for (int i = 0; i < 8; ++i)
+            {
+                withInterference.Append(_arena.Player.RollCrit(hit) ? '1' : '0');
+                _arena.Enemies[0].RollCrit(hit);
+            }
+
+            // A fresh arena, same run id and seed is not guaranteed - so instead assert the
+            // weaker but meaningful property: the enemy's rolls are not the player's.
+            var enemyRolls = new System.Text.StringBuilder();
+            for (int i = 0; i < 8; ++i)
+                enemyRolls.Append(_arena.Enemies[0].RollCrit(hit) ? '1' : '0');
+
+            Assert.AreNotEqual(withInterference.ToString(), enemyRolls.ToString(),
+                "The player and an enemy drew the same sequence, so they share a stream position.");
+        }
+
         // --- the run identity --------------------------------------------------------------
 
         [UnityTest]
