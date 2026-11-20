@@ -39,3 +39,4 @@ Thumbs.db
 .env
 # Test reports written by `unity test` into whatever directory it ran from
 test-results.xml
+*-results.xml
