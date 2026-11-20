@@ -223,13 +223,15 @@ namespace NeonVoid.Missions
 
             CombatActor bossActor = SpawnBody(
                 bossPrefab, prototypeBossStats, PrimitiveType.Capsule,
-                "코어 워처", layout, layout.Boss, root.transform);
+                BossNameFor(layout.Spec.Hardware), layout, layout.Boss, root.transform);
+
+            GiveTheBossItsPatterns(layout.Spec.Hardware, bossActor, player);
 
             // The gate goes on its own object: it deactivates what it holds, and a gate that
             // deactivated itself could not be told to open again.
             AreaBossGate bossGate = AddAsleep<AreaBossGate>(
                 "Boss Gate", root.transform,
-                g => g.Configure(bossActor, bossActor.gameObject, "코어 워처"));
+                g => g.Configure(bossActor, bossActor.gameObject, BossNameFor(layout.Spec.Hardware)));
 
             Transform console = Marker("정화 콘솔", layout, layout.Purification, root.transform);
             Transform pad = Marker("철수 패드", layout, layout.Extraction, root.transform);
@@ -251,6 +253,54 @@ namespace NeonVoid.Missions
 
             return new AreaBuildResult(
                 root, layout, runtime, devices, bossGate, console, pad, roomGates, floorSlabs, wallSlabs);
+        }
+
+        /// <summary>
+        /// 보스 컨셉 from docs/01 section 2. The name is content; the fight is
+        /// <see cref="GiveTheBossItsPatterns"/>'s problem.
+        /// </summary>
+        public static string BossNameFor(HardwareId hardware)
+        {
+            switch (hardware)
+            {
+                case HardwareId.Cpu: return "코어 워처";
+                case HardwareId.Gpu: return "렌더 옵저버";
+                case HardwareId.Ram: return "메모리 리치";
+                case HardwareId.Ssd: return "스트림 인터셉터";
+                case HardwareId.Hdd: return "섹터 콜로서스";
+                default: return "boss";
+            }
+        }
+
+        /// <summary>
+        /// Gives the area's boss its patterns, where they exist.
+        /// <para>
+        /// Only the CPU's 코어 워처 is built. The other four are <b>not</b> given the 코어 워처's
+        /// cycle as a stand-in: a GPU fight that was secretly the CPU's would pass every test and
+        /// is the copy-paste CLAUDE.md forbids by name. They get a boss that can be shot and
+        /// killed - enough for the mission flow - and the console says so once, rather than
+        /// looking finished.
+        /// </para>
+        /// <para>
+        /// This choice lives in the Missions domain because docs/06 makes 월드 its own, and
+        /// <see cref="BossCatalog"/> in Combat must not reach across to ask which hardware it is
+        /// looking at.
+        /// </para>
+        /// </summary>
+        private void GiveTheBossItsPatterns(HardwareId hardware, CombatActor bossActor, Transform player)
+        {
+            if (hardware != HardwareId.Cpu)
+            {
+                Debug.LogWarning(
+                    $"{BossNameFor(hardware)} ({hardware}) has no patterns yet, so it stands still and can be " +
+                    "killed. docs/01 section 3's contract - 3 patterns, a 지역 기믹, a phase change - is " +
+                    "unmet for this area, and it is not given the 코어 워처's.", this);
+                return;
+            }
+
+            var brain = bossActor.gameObject.AddComponent<AreaBossBrain>();
+            brain.Configure(bossActor, player != null ? player.GetComponent<CombatActor>() : null);
+            brain.UseCycle(BossCatalog.CoreWatcher());
         }
 
         /// <summary>
