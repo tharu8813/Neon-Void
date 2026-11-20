@@ -70,6 +70,7 @@ namespace NeonVoid.Missions
         private AreaBuildResult _area;
         private Vector3 _motherboardStanding;
         private bool _boardTaken;
+        private long _boardRunId;
         private MissionBoardPlan _board;
 
         /// <summary>Raised when an area has been built and entered.</summary>
@@ -78,12 +79,17 @@ namespace NeonVoid.Missions
         /// <summary>Raised after an area has been taken away.</summary>
         public event Action<HardwareId> AreaLeft;
 
-        /// <summary>What this mission offers. Fixed by the run's seed.</summary>
+        /// <summary>
+        /// What this mission offers. Fixed by the run's seed - and re-selected when the run
+        /// changes, because a hub the player comes back to plays more than one mission and the
+        /// second one's difficulties are its own.
+        /// </summary>
         public MissionBoardPlan Board
         {
             get
             {
-                EnsureBoard();
+                if (EnsureBoard())
+                    NamePortals();
                 return _board;
             }
         }
@@ -191,6 +197,12 @@ namespace NeonVoid.Missions
                 ResetDwells();
                 return;
             }
+
+            // The board belongs to the run, and a hub session plays several. Asked here rather
+            // than only in Awake, where a scene with a hub has no mission yet and would have
+            // fixed every mission's difficulties to the absent run's seed.
+            if (EnsureBoard())
+                NamePortals();
 
             TickPortals(flow);
         }
@@ -308,17 +320,29 @@ namespace NeonVoid.Missions
             }
         }
 
-        private void EnsureBoard()
+        /// <summary>
+        /// Selects the board for whichever run is current, once per run. Returns whether it
+        /// changed, so the caller can relabel the portals.
+        /// <para>
+        /// Keyed on the run id rather than a one-shot flag: the first mission of a hub scene is
+        /// begun after this component wakes, so a board taken in Awake would be the one for the
+        /// absent run - 쉬움 보장 included - and every later mission would inherit it.
+        /// </para>
+        /// </summary>
+        private bool EnsureBoard()
         {
-            if (_boardTaken)
-                return;
-
             MissionFlow flow = Flow;
+            long runId = flow != null ? flow.Run.Identity.RunId : 0L;
+            if (_boardTaken && _boardRunId == runId)
+                return false;
+
             uint seed = flow != null ? flow.Run.SeedFor(RandomStream.Mission) : 0u;
             _board = MissionBoard.Select(seed);
             _boardTaken = true;
+            _boardRunId = runId;
 
-            Debug.Log($"Mission board: {_board}", this);
+            Debug.Log($"Mission board for run {runId}: {_board}", this);
+            return true;
         }
 
         private void RebuildDwells()
@@ -358,7 +382,22 @@ namespace NeonVoid.Missions
                 }
 
                 portal.position = at;
-                portal.name = $"Portal {_board.For(hardware).GateLine()}";
+            }
+
+            NamePortals();
+        }
+
+        /// <summary>
+        /// Puts this mission's 난이도·환경 on each portal's name, so the board is readable in the
+        /// hierarchy before a panel exists to show it. Separate from placing them because the
+        /// board changes between missions and the positions do not.
+        /// </summary>
+        private void NamePortals()
+        {
+            foreach (KeyValuePair<HardwareId, Transform> pair in _portals)
+            {
+                if (pair.Value != null)
+                    pair.Value.name = $"Portal {_board.For(pair.Key).GateLine()}";
             }
         }
 
@@ -380,6 +419,22 @@ namespace NeonVoid.Missions
                 (portalRingRadiusUnits + portalRadiusUnits) * 2.5f,
                 0.5f,
                 (portalRingRadiusUnits + portalRadiusUnits) * 2.5f);
+        }
+
+        /// <summary>
+        /// Stands the player on the motherboard. Called by the hub when a mission begins: the
+        /// motherboard is where 의뢰 시작 puts them ([확정] docs/00 section 1's loop), and this
+        /// component is the only thing that knows where its own middle is.
+        /// </summary>
+        public void PlacePlayerOnBoard()
+        {
+            if (player == null)
+            {
+                Debug.LogWarning($"{name}: no player to stand on the motherboard.", this);
+                return;
+            }
+
+            MovePlayer(_motherboardStanding);
         }
 
         private void MovePlayer(Vector3 destination)

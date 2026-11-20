@@ -32,11 +32,21 @@ namespace NeonVoid.Missions
         [Tooltip("Seed. 0 picks one at startup and logs it, so a run can be reproduced.")]
         [SerializeField] private uint seed;
 
+        [Tooltip(
+            "Begin the first mission the moment this wakes. A scene with a 디펜더 허브 turns " +
+            "this off: there the mission begins at the 임무 터미널, and beginning one here " +
+            "would hand the player a run they never started. An arena with no hub needs a run " +
+            "immediately, because every actor derives its combat generator from one.")]
+        [SerializeField] private bool beginMissionOnAwake = true;
+
         /// <summary>The live mission. Read by the death director and the plugin director.</summary>
         public MissionRunState State { get; } = new MissionRunState();
 
         private IMissionCommitGate _commits;
         private MissionFlow _flow;
+        private Progression.Save.VaccineSaveDirector _saveDirector;
+        private uint _sessionSeed;
+        private int _missionsBegun;
 
         /// <summary>
         /// 허브 → 메인보드 → 구역 → 목표 → 보스 → 정화 → 철수. Built once, over whatever can
@@ -60,31 +70,90 @@ namespace NeonVoid.Missions
         /// </summary>
         private void Awake()
         {
-            uint chosen = seed != 0u ? seed : PickSeed();
+            _sessionSeed = seed != 0u ? seed : PickSeed();
 
             // Resolved before the flow is first touched, so the flow is built over the real gate
             // when a save is connected and over the prototype one when nothing is.
-            var saveDirector = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
-            var identity = new RunIdentity(ResolveRunId(saveDirector), chosen);
-            _commits = ResolveCommitGate(saveDirector);
+            _saveDirector = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
+            _commits = ResolveCommitGate(_saveDirector);
 
-            if (!Flow.TryBeginMission(identity, onTick: 0L))
+            if (!beginMissionOnAwake)
             {
-                Debug.LogError($"{name}: mission {identity} refused to begin: {Flow.LastRefusal}", this);
+                // The flow starts in the hub, which is where it belongs: docs/00's loop is
+                // 허브 → 의뢰 시작, and a mission begun here would be one the player never asked
+                // for. The combat seed is left alone too - it belongs to a mission, and there is
+                // no mission yet.
+                Debug.Log(
+                    $"{name}: waiting in the hub. The mission begins at the 임무 터미널 " +
+                    $"(session seed {_sessionSeed}).", this);
                 return;
             }
 
-            // Every actor derives its combat generator from this. Set before any actor's Awake
-            // thanks to DefaultExecutionOrder, so nobody seeds itself from the default and then
-            // rolls a sequence belonging to no run.
+            TryBeginNextMission();
+        }
+
+        /// <summary>
+        /// Begins the next mission of this session: a run id of its own, a seed of its own, and
+        /// the flow stepped out of the hub.
+        /// <para>
+        /// <b>Both are per mission, not per session.</b> [확정] docs/04 section 5 forbids
+        /// 같은 runId 중복 시작 and keys the death receipt on the run, so a second mission on the
+        /// first one's id would have its first death refused as one already settled - and no
+        /// clone would ever be charged again. [확정] docs/00 makes the next mission's map and
+        /// enemies new, which a reused seed would rebuild identically.
+        /// <see cref="MissionSeries"/> derives both from the ordinal, so a retry asks under the
+        /// same key and is answered with the id already allocated.
+        /// </para>
+        /// </summary>
+        public bool TryBeginNextMission()
+        {
+            int ordinal = _missionsBegun + 1;
+            uint missionSeed = MissionSeries.SeedFor(_sessionSeed, ordinal);
+            long id = RunIdForMission(ordinal);
+            if (id <= 0L)
+            {
+                // Nothing begins on an id permanent state did not give out. Playing under a
+                // guess is how a death gets charged to another run.
+                Debug.LogError(
+                    $"{name}: mission {ordinal} has no run id, so it does not begin. " +
+                    "영구 상태가 런 ID를 주지 않으면 의뢰를 시작하지 않는다.", this);
+                return false;
+            }
+
+            var identity = new RunIdentity(id, missionSeed);
+            if (!Flow.TryBeginMission(identity, onTick: 0L))
+            {
+                Debug.LogError($"{name}: mission {identity} refused to begin: {Flow.LastRefusal}", this);
+                return false;
+            }
+
+            _missionsBegun = ordinal;
+
+            // Every actor derives its combat generator from this. On the first mission of an
+            // arena scene it is set before any actor's Awake thanks to DefaultExecutionOrder;
+            // on a later one it is set here, before anything that mission spawns exists.
             CombatActor.SetRunCombatSeed(identity.SeedFor(RandomStream.Combat));
 
             // Logged because a deterministic generator whose seed nobody can read back is not
             // reproducible in practice, whatever it is in principle.
             Debug.Log(
-                $"Mission begun: {identity} (mission stream {identity.SeedFor(RandomStream.Mission)}, " +
+                $"Mission {ordinal} begun: {identity} (mission stream {identity.SeedFor(RandomStream.Mission)}, " +
                 $"combat {identity.SeedFor(RandomStream.Combat)}, reward {identity.SeedFor(RandomStream.Reward)}).",
                 this);
+            return true;
+        }
+
+        /// <summary>How many missions this session has begun. 0 before the first.</summary>
+        public int MissionsBegun => _missionsBegun;
+
+        /// <summary>
+        /// Fills in what a scene would have serialized. Call before this object wakes - add the
+        /// component to a deactivated GameObject, configure, then activate.
+        /// </summary>
+        public void ConfigureStart(bool beginOnAwake, uint sessionSeed = 0u)
+        {
+            beginMissionOnAwake = beginOnAwake;
+            seed = sessionSeed;
         }
 
         /// <summary>
@@ -102,21 +171,43 @@ namespace NeonVoid.Missions
         /// and the id only has to exist. It says so rather than looking like a real run id.
         /// </para>
         /// </summary>
-        private long ResolveRunId(Progression.Save.VaccineSaveDirector saveDirector)
+        private long RunIdForMission(int ordinal)
         {
-            if (saveDirector == null)
-                return runId < 1L ? 1L : runId;
+            if (_saveDirector == null)
+                return FallbackRunId(ordinal);
 
             // Asked for rather than waited for, so this does not depend on which Awake ran
             // first.
-            saveDirector.EnsurePrepared();
-            if (saveDirector.RunId > 0L)
-                return saveDirector.RunId;
+            _saveDirector.EnsurePrepared();
+
+            // The slot bootstrap already took an id while it was preparing the slot. The first
+            // mission plays under that one rather than leaving it unused and taking another:
+            // run ids are a monotonic counter in permanent state, and a session that burned one
+            // per launch would make a save file claim more runs than were ever played.
+            if (ordinal == MissionSeries.FirstOrdinal && _saveDirector.RunId > 0L)
+                return _saveDirector.RunId;
+
+            long allocated = _saveDirector.AllocateRunId(
+                MissionSeries.NonceFor(_saveDirector.SessionNonce, ordinal));
+            if (allocated > 0L)
+                return allocated;
 
             Debug.LogWarning(
-                $"{name}: a save is in the scene but allocated no run id ({saveDirector.Result.Verdict}), " +
-                $"so this run uses the fallback id {runId} and nothing will be committed.", this);
-            return runId < 1L ? 1L : runId;
+                $"{name}: a save is in the scene but allocated no run id for mission {ordinal} " +
+                $"({_saveDirector.Result.Verdict}), so it uses a fallback id and nothing will be " +
+                "committed.", this);
+            return FallbackRunId(ordinal);
+        }
+
+        /// <summary>
+        /// The id for a mission in a scene with no connected save. Nothing is committed under
+        /// it, so the only thing it has to do is differ from the other missions of the session -
+        /// a repeated id would make the in-memory flow look like a 중복 시작.
+        /// </summary>
+        private long FallbackRunId(int ordinal)
+        {
+            long first = runId < 1L ? 1L : runId;
+            return first + (ordinal - MissionSeries.FirstOrdinal);
         }
 
         /// <summary>

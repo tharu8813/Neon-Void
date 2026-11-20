@@ -79,6 +79,19 @@ namespace NeonVoid.Progression
                 return;
             }
             playerActor.Died += OnActorDied;
+
+            // Asked for rather than waited for. VaccineSaveDirector registers itself with
+            // whatever death director it finds while it is preparing the slot, which works only
+            // when this component already exists - and a player spawned from a prefab, or a
+            // scene built in a different order, wakes after it. A death director with no commit
+            // service reports every death as AwaitingCommit and charges no clone, and nothing
+            // about that looks broken, so the lookup goes both ways.
+            if (_commitService == null)
+            {
+                var saves = FindFirstObjectByType<Save.VaccineSaveDirector>();
+                if (saves != null)
+                    saves.ConnectDeathsTo(this);
+            }
         }
 
         private void OnDisable()
@@ -91,6 +104,13 @@ namespace NeonVoid.Progression
         /// Hands this director the service that owns permanent state. Called by whatever boots
         /// progression; there is nothing to call it yet.
         /// </summary>
+        /// <summary>
+        /// Whether permanent state is listening. False means a death will be registered and
+        /// left in <see cref="RunDeathPhase.AwaitingCommit"/>: no clone is charged, and the
+        /// death screen must not claim one was.
+        /// </summary>
+        public bool HasCommitService => _commitService != null;
+
         public void RegisterCommitService(IDeathCommitService service)
         {
             if (service == null)

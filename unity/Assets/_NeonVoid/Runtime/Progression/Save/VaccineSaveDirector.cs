@@ -52,6 +52,7 @@ namespace NeonVoid.Progression.Save
         [SerializeField] private RunDeathDirector deathDirector;
 
         private bool _prepared;
+        private string _sessionNonce = string.Empty;
 
         /// <summary>The store, or null when permanent writes are off or the root was refused.</summary>
         public SaveStore Store { get; private set; }
@@ -67,6 +68,65 @@ namespace NeonVoid.Progression.Save
 
         /// <summary>True when a death reaching the store will actually be written.</summary>
         public bool CanCommit => Store != null && Result.CanCommit;
+
+        /// <summary>
+        /// What this session's save commands are retried under. Stable for the process and
+        /// different from every other, so a lost acknowledgement is answered with the result
+        /// already committed instead of producing a second one.
+        /// <para>
+        /// Public because a session plays more than one mission and each needs its own run id -
+        /// see <see cref="AllocateRunId"/>. The caller derives its nonce from this one rather
+        /// than inventing one, so its retry carries the same key.
+        /// </para>
+        /// </summary>
+        public string SessionNonce => _sessionNonce;
+
+        /// <summary>
+        /// Takes another run id from permanent state, for a mission after the first.
+        /// <para>
+        /// The slot bootstrap allocates one id while it is preparing the slot, which was enough
+        /// while a session was a single mission. [확정] docs/04 section 5 forbids 같은 runId
+        /// 중복 시작 and keys the death receipt on the run, so the second mission of a session
+        /// needs an id of its own: reusing the first one's would have the second mission's first
+        /// death refused as a death already settled, and no clone would ever be charged again.
+        /// </para>
+        /// <para>
+        /// Idempotent per nonce, like every other command here. Asking twice under the same
+        /// nonce returns the id already allocated rather than burning a second one, which is
+        /// what makes it safe to call from a terminal the player can walk into twice.
+        /// </para>
+        /// </summary>
+        /// <returns>The run id, or 0 when nothing could be committed.</returns>
+        public long AllocateRunId(string nonce)
+        {
+            if (string.IsNullOrWhiteSpace(nonce))
+                throw new ArgumentException("A run id is allocated under a nonce.", nameof(nonce));
+
+            EnsurePrepared();
+            if (!CanCommit)
+                return 0L;
+
+            SaveCommitResult allocated = Store.Commit(new AllocateRunIdCommand(nonce));
+            if (!allocated.Acknowledged)
+            {
+                Debug.LogError(
+                    $"{name}: no run id could be allocated for '{nonce}', so no mission may begin. " +
+                    $"{allocated.Detail}", this);
+                return 0L;
+            }
+
+            long runId = AllocateRunIdCommand.RunIdIn(allocated.Result);
+            if (runId <= 0L)
+            {
+                // The receipt is the authority and it carried no id. Inventing one here would
+                // recreate exactly the collision this allocation exists to prevent.
+                Debug.LogError(
+                    $"{name}: the run id receipt for '{nonce}' carried no id ('{allocated.Result}').", this);
+                return 0L;
+            }
+
+            return runId;
+        }
 
         private void Awake() => EnsurePrepared();
 
@@ -94,11 +154,12 @@ namespace NeonVoid.Progression.Save
 
             _prepared = true;
             Store = store;
+            _sessionNonce = string.IsNullOrWhiteSpace(sessionNonce)
+                ? Guid.NewGuid().ToString("N")
+                : sessionNonce;
             Result = VaccineSlotBootstrap.Prepare(
                 Store,
-                sessionNonce: string.IsNullOrWhiteSpace(sessionNonce)
-                    ? Guid.NewGuid().ToString("N")
-                    : sessionNonce,
+                sessionNonce: _sessionNonce,
                 newVaccineId: () => "vaccine-" + Guid.NewGuid().ToString("N"),
                 mayStartNextVaccine: autoStartNextVaccine);
 
@@ -145,9 +206,10 @@ namespace NeonVoid.Progression.Save
                 return;
             }
 
+            _sessionNonce = Guid.NewGuid().ToString("N");
             Result = VaccineSlotBootstrap.Prepare(
                 Store,
-                sessionNonce: Guid.NewGuid().ToString("N"),
+                sessionNonce: _sessionNonce,
                 newVaccineId: () => "vaccine-" + Guid.NewGuid().ToString("N"),
                 mayStartNextVaccine: autoStartNextVaccine);
 
@@ -163,12 +225,52 @@ namespace NeonVoid.Progression.Save
 
             if (deathDirector == null)
             {
-                Debug.LogWarning(
-                    $"{name}: no RunDeathDirector in the scene, so a death would never reach the save.", this);
+                // Not an error: the death director may simply not exist yet. It asks for this
+                // itself when it wakes - see ConnectDeathsTo.
+                Debug.Log(
+                    $"{name}: no RunDeathDirector in the scene yet; it will ask for the commit " +
+                    "service when it wakes.", this);
                 return;
             }
 
-            deathDirector.RegisterCommitService(new SaveDeathCommitService(Store));
+            ConnectDeathsTo(deathDirector);
+        }
+
+        /// <summary>
+        /// Gives a death director the service that writes to permanent state.
+        /// <para>
+        /// Public because the lookup has to work in both directions. This component prepares the
+        /// slot early (<see cref="DefaultExecutionOrder"/> -300) and registers with whatever
+        /// death director it can find, which is nothing at all when the player is spawned later
+        /// or the scene is assembled in another order. A death director left without a service
+        /// registers every death and charges no clone - and nothing about that looks broken,
+        /// which is exactly why it must not be possible.
+        /// </para>
+        /// </summary>
+        public void ConnectDeathsTo(RunDeathDirector director)
+        {
+            if (director == null)
+                throw new ArgumentNullException(nameof(director));
+
+            EnsurePrepared();
+
+            if (!CanCommit)
+            {
+                // Deliberately registers nothing. docs/04 section 7: a save that cannot write
+                // must not be represented as one that can, and a service that refused every
+                // death would turn each one into a failure dialogue instead of the honest
+                // AwaitingCommit the death director was built around.
+                Debug.LogWarning(
+                    $"{name}: the save cannot commit ({Result.Verdict}), so deaths will be reported " +
+                    $"and left uncommitted. No clone will be spent. {Result.Detail}", this);
+                return;
+            }
+
+            if (director.HasCommitService)
+                return;
+
+            deathDirector = director;
+            director.RegisterCommitService(new SaveDeathCommitService(Store));
             Debug.Log(
                 $"{name}: deaths will be committed to {Store.Layout.SnapshotPath}. " +
                 $"{Result.CopiesRemaining} clone(s) left on vaccine {Result.VaccineId} " +

@@ -116,7 +116,23 @@ namespace NeonVoid.Tests.PlayModeTests
             return asset;
         }
 
-        public static PrototypeArena Build(params Vector3[] enemyPositions)
+        public static PrototypeArena Build(params Vector3[] enemyPositions) =>
+            Build(beginMissionOnAwake: true, sessionSeed: 0u, enemyPositions: enemyPositions);
+
+        /// <summary>
+        /// An arena whose mission has <b>not</b> begun, for a scene with a 디펜더 허브: there the
+        /// mission begins at the 임무 터미널, and one begun on Awake would be a run the player
+        /// never asked for.
+        /// </summary>
+        /// <param name="sessionSeed">
+        /// The session's seed. The first mission plays it unchanged, so a test can state which
+        /// map it expects.
+        /// </param>
+        public static PrototypeArena BuildWaitingInTheHub(uint sessionSeed, params Vector3[] enemyPositions) =>
+            Build(beginMissionOnAwake: false, sessionSeed: sessionSeed, enemyPositions: enemyPositions);
+
+        private static PrototypeArena Build(
+            bool beginMissionOnAwake, uint sessionSeed, Vector3[] enemyPositions)
         {
             var arena = new PrototypeArena();
             Time.captureDeltaTime = TickSeconds;
@@ -129,9 +145,13 @@ namespace NeonVoid.Tests.PlayModeTests
             arena.Runner = runnerObject.AddComponent<SimulationRunner>();
 
             // The run identity everything else keys off. Added before the player, so the death
-            // director and the plugin director both find it.
+            // director and the plugin director both find it - and configured while the object is
+            // deactivated, because the decision is read in Awake.
             var missionObject = arena.Track(new GameObject("Mission Run Director"));
+            missionObject.SetActive(false);
             arena.Mission = missionObject.AddComponent<MissionRunDirector>();
+            arena.Mission.ConfigureStart(beginMissionOnAwake, sessionSeed);
+            missionObject.SetActive(true);
 
             arena.CreatePlayer();
 
