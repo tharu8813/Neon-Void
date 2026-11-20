@@ -224,6 +224,26 @@ namespace NeonVoid.Tests
             Assert.Throws<ArgumentException>(() => SaveSlotLayout.Under("  ", "slot-1"));
         }
 
+        [Test]
+        public void TheLegacyRootCheckRefusesTheOldLocationAndNotTheGamesOwn()
+        {
+            // The first version of this refused any path with a folder called NeonVoid in it,
+            // which would have refused the game's OWN save directory the moment the product was
+            // named NeonVoid - Unity's data path is AppData/LocalLow/<company>/<product>. The
+            // legacy location is AppData/Local/NeonVoid, and Local and LocalLow are different
+            // directories.
+            Assert.IsTrue(UnitySaveRoot.IsLegacyRoot(@"C:\Users\p\AppData\Local\NeonVoid"));
+            Assert.IsTrue(UnitySaveRoot.IsLegacyRoot(@"C:\Users\p\AppData\Local\NeonVoid\saves"));
+            Assert.IsTrue(UnitySaveRoot.IsLegacyRoot("/home/p/appdata/local/neonvoid/"));
+
+            Assert.IsFalse(
+                UnitySaveRoot.IsLegacyRoot(@"C:\Users\p\AppData\LocalLow\Studio\NeonVoid"),
+                "The game's own save directory was refused as legacy data.");
+            Assert.IsFalse(UnitySaveRoot.IsLegacyRoot(@"C:\Users\p\AppData\LocalLow\NeonVoid\NeonVoid"));
+            Assert.IsFalse(UnitySaveRoot.IsLegacyRoot(@"C:\Projects\NeonVoid"));
+            Assert.IsFalse(UnitySaveRoot.IsLegacyRoot(null));
+        }
+
         // --- opening -----------------------------------------------------------------------
 
         [Test]

@@ -28,7 +28,39 @@ namespace NeonVoid.Progression.Save
         public const string LegacyDirectoryName = "NeonVoid";
 
         /// <summary>
-        /// The persistent data path, refused if it looks like the legacy location.
+        /// True when this path is, or sits inside, the previous project's save directory:
+        /// <c>%LOCALAPPDATA%\NeonVoid</c>.
+        /// <para>
+        /// <b>Why this is not "any folder called NeonVoid".</b> That was the first version of
+        /// this check and it was a trap. Unity's persistent data path is
+        /// <c>AppData\LocalLow\&lt;company&gt;\&lt;product&gt;</c>, so naming the product
+        /// NeonVoid - the obvious thing to do, and currently unset - would have made this refuse
+        /// the game's own save directory and stop saving entirely, with an error blaming the
+        /// legacy data policy. The legacy location is under <c>AppData\Local</c>, which is a
+        /// different directory from <c>AppData\LocalLow</c>, so the check is on that exact pair
+        /// of segments.
+        /// </para>
+        /// <para>
+        /// The real protection is not this - it is <see cref="LegacyDataGuard"/>, which refuses
+        /// the five legacy file names on every read and write wherever they appear. This only
+        /// catches a wrong root before anything is attempted, which is a clearer error than a
+        /// refused write later.
+        /// </para>
+        /// </summary>
+        public static bool IsLegacyRoot(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            string normalized = path.Replace('\\', '/').ToLowerInvariant().TrimEnd('/');
+            string legacy = "/appdata/local/" + LegacyDirectoryName.ToLowerInvariant();
+
+            return normalized.EndsWith(legacy, StringComparison.Ordinal)
+                || normalized.Contains(legacy + "/");
+        }
+
+        /// <summary>
+        /// The persistent data path, refused if it is the legacy location.
         /// <para>
         /// Throwing is deliberate. The alternative - picking a different directory and carrying
         /// on - would mean a build that silently saves somewhere nobody expected, and the thing
@@ -41,15 +73,11 @@ namespace NeonVoid.Progression.Save
             if (string.IsNullOrWhiteSpace(root))
                 throw new InvalidOperationException("Unity reported no persistent data path, so there is nowhere to save.");
 
-            string[] parts = root.Replace('\\', '/').Split('/');
-            for (int i = 0; i < parts.Length; ++i)
+            if (IsLegacyRoot(root))
             {
-                if (string.Equals(parts[i], LegacyDirectoryName, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"The persistent data path '{root}' passes through '{LegacyDirectoryName}', which is the " +
-                        "legacy Python save location. docs/04 section 4 forbids writing there.");
-                }
+                throw new InvalidOperationException(
+                    $"The persistent data path '{root}' is the legacy Python save location " +
+                    $"(%LOCALAPPDATA%\\{LegacyDirectoryName}). docs/04 section 4 forbids writing there.");
             }
 
             return root;
