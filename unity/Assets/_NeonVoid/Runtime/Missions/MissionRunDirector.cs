@@ -35,6 +35,21 @@ namespace NeonVoid.Missions
         /// <summary>The live mission. Read by the death director and the plugin director.</summary>
         public MissionRunState State { get; } = new MissionRunState();
 
+        private IMissionCommitGate _commits;
+        private MissionFlow _flow;
+
+        /// <summary>
+        /// 허브 → 메인보드 → 구역 → 목표 → 보스 → 정화 → 철수. Built once, over whatever can
+        /// commit in this scene.
+        /// <para>
+        /// The gate is fixed at construction on purpose: a flow that could be handed a different
+        /// one halfway through would have committed some of its purifications to one place and
+        /// the rest to another, and the extraction counts them all.
+        /// </para>
+        /// </summary>
+        public MissionFlow Flow =>
+            _flow ?? (_flow = new MissionFlow(State, _commits ?? PrototypeMissionCommits.Instance));
+
         /// <summary>This mission's run identity, or the absent one before it begins.</summary>
         public RunIdentity Identity => State.Identity;
 
@@ -46,11 +61,16 @@ namespace NeonVoid.Missions
         private void Awake()
         {
             uint chosen = seed != 0u ? seed : PickSeed();
-            var identity = new RunIdentity(ResolveRunId(), chosen);
 
-            if (!State.TryBegin(identity, onTick: 0L))
+            // Resolved before the flow is first touched, so the flow is built over the real gate
+            // when a save is connected and over the prototype one when nothing is.
+            var saveDirector = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
+            var identity = new RunIdentity(ResolveRunId(saveDirector), chosen);
+            _commits = ResolveCommitGate(saveDirector);
+
+            if (!Flow.TryBeginMission(identity, onTick: 0L))
             {
-                Debug.LogError($"{name}: mission {identity} refused to begin.", this);
+                Debug.LogError($"{name}: mission {identity} refused to begin: {Flow.LastRefusal}", this);
                 return;
             }
 
@@ -82,9 +102,8 @@ namespace NeonVoid.Missions
         /// and the id only has to exist. It says so rather than looking like a real run id.
         /// </para>
         /// </summary>
-        private long ResolveRunId()
+        private long ResolveRunId(Progression.Save.VaccineSaveDirector saveDirector)
         {
-            var saveDirector = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
             if (saveDirector == null)
                 return runId < 1L ? 1L : runId;
 
@@ -119,59 +138,55 @@ namespace NeonVoid.Missions
             new DeterministicRng(State.SeedFor(stream));
 
         /// <summary>
-        /// Records a purification (정화) in the running mission and awards the area's 의뢰 XP.
+        /// The gate the flow's 정화 and 철수 go through.
         /// <para>
-        /// The XP is applied <b>here</b> rather than inside
-        /// <see cref="MissionRunState.TryRecordPurification"/>, so that reading "one purified
-        /// area is one 구역" is a decision visible at this seam instead of a constant buried in
-        /// the state object. The budget rises with the areas already cleared, per
-        /// <see cref="MissionXpBudget"/>.
-        /// </para>
-        /// <para>
-        /// Only 의뢰 XP. The 백신 영구 XP this area is worth stays unbanked until an extraction
-        /// commits it ([확정] docs/04 section 2 settles only a share of it on death), so nothing
-        /// permanent is written here - and nothing permanent could be, because this records no
-        /// save commit.
+        /// A connected save that <i>cannot</i> commit - a halted slot, a future schema, a
+        /// vaccine awaiting its replacement - gets the prototype gate rather than a store that
+        /// would refuse everything, and says so once. The difference matters: the prototype gate
+        /// lets the area loop be played and refuses only the extraction, which is the one
+        /// transition whose product is permanent.
         /// </para>
         /// </summary>
-        public bool RecordPurification()
+        private IMissionCommitGate ResolveCommitGate(Progression.Save.VaccineSaveDirector saveDirector)
         {
-            // Read before recording: the budget is a function of the areas already purified, and
-            // taking it after the increment would pay this area at the next one's rate.
-            int alreadyPurified = State.PurificationsCompleted;
-            if (alreadyPurified >= DesignConstants.HardwareCount)
+            if (saveDirector == null)
             {
-                Debug.LogError(
-                    $"{name}: {Identity} has already purified all {DesignConstants.HardwareCount} " +
-                    $"hardware areas, so this purification is a duplicate and is refused.", this);
-                return false;
+                Debug.Log(
+                    $"{name}: no save in the scene, so 정화 is played and nothing is written, and " +
+                    "철수 is refused. 영구 보상은 저장 커밋 승인 후에만 확정된다.", this);
+                return PrototypeMissionCommits.Instance;
             }
 
-            if (!State.TryRecordPurification())
-                return false;
+            saveDirector.EnsurePrepared();
+            if (!saveDirector.CanCommit)
+            {
+                Debug.LogWarning(
+                    $"{name}: the save cannot commit ({saveDirector.Result.Verdict}), so this mission " +
+                    "runs on the prototype gate: nothing is written and 철수 is refused.", this);
+                return PrototypeMissionCommits.Instance;
+            }
 
-            long xp = MissionXpBudget.XpForArea(alreadyPurified);
-            State.TryAwardMissionXp(xp, out int levelsGained);
-
-            Debug.Log(
-                $"Purification {State.PurificationsCompleted} recorded for {Identity}: " +
-                $"+{xp} 의뢰 XP, now Lv.{State.MissionLevel} (+{levelsGained}).",
-                this);
-
-            return true;
+            return new Progression.Save.SaveMissionCommitGate(saveDirector.Store);
         }
 
         /// <summary>
-        /// Marks the mission failed. Called when the player dies; the consequences stay with
-        /// the save service, which has not been written.
+        /// Marks the mission failed. Called when the player dies; what the death costs stays
+        /// with <see cref="Progression.IDeathCommitService"/>, which nothing implements.
         /// </summary>
         public bool FailMission()
         {
-            bool failed = State.TryFail();
-            if (failed)
-                Debug.Log($"Mission {Identity} failed. 사망은 해당 의뢰 실패 (docs/00).", this);
+            if (!Flow.TryFail())
+            {
+                Debug.LogWarning($"{name}: mission {Identity} was not failed: {Flow.LastRefusal}", this);
+                return false;
+            }
 
-            return failed;
+            Debug.Log($"Mission {Identity} failed. 사망은 해당 의뢰 실패 (docs/00).", this);
+            return true;
         }
+
+        /// <summary>One line for the debug overlay and the completion report.</summary>
+        public string StatusLine() =>
+            $"{Identity} · {Flow} · 의뢰 Lv.{State.MissionLevel} ({State.MissionXp} XP) · {_commits}";
     }
 }

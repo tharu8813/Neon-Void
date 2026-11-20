@@ -17,6 +17,14 @@ namespace NeonVoid.Missions
         /// 재시작하지 않는다 - a failed mission is not resumed, the next one is new.
         /// </summary>
         Failed = 2,
+
+        /// <summary>
+        /// 성공 철수. [확정] docs/04 section 1 gives the mission three ends - 성공/사망/중단 - and
+        /// this is the first. Until it existed a mission could only fail, so a successful
+        /// extraction left the state InProgress and the next mission was refused as beginning on
+        /// top of a running one.
+        /// </summary>
+        Completed = 3,
     }
 
     /// <summary>
@@ -161,6 +169,29 @@ namespace NeonVoid.Missions
                 return false;
 
             Phase = MissionPhase.Failed;
+            return true;
+        }
+
+        /// <summary>
+        /// Marks the mission a success, which is what a 성공 철수 means.
+        /// <para>
+        /// Refused without a purification: [확정] docs/04 section 7 puts 정화 0개 철수 under
+        /// 성공 불가 and forbids paying it. The extraction command enforces the same rule against
+        /// the committed receipts; this is the in-memory half, and having both means neither can
+        /// be the only thing standing between an empty run and a reward.
+        /// </para>
+        /// <para>
+        /// One-way, like failure. A mission that could be un-succeeded would let a committed
+        /// extraction be followed by more purifications in the same run, and the next extraction
+        /// would settle areas the first one had already been paid for.
+        /// </para>
+        /// </summary>
+        public bool TryComplete()
+        {
+            if (!IsRunning || PurificationsCompleted < 1)
+                return false;
+
+            Phase = MissionPhase.Completed;
             return true;
         }
 
