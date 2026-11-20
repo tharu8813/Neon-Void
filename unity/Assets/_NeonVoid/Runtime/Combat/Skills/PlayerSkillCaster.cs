@@ -80,6 +80,45 @@ namespace NeonVoid.Combat.Skills
                 _runner.Unregister(this);
         }
 
+        /// <summary>
+        /// Puts a skill in a slot at runtime and equips it into the actor's loadout.
+        /// <para>
+        /// The hub screen that lets a player choose their three skills needs exactly this, and
+        /// docs/00 has 임무 중 새로 얻은 스킬만 즉시 교체 - skills change mid-mission. So this
+        /// is the loadout path, not a test hook, and PlayMode tests use it as such.
+        /// </para>
+        /// </summary>
+        public void Equip(int slotIndex, SkillAsset asset)
+        {
+            if (slotSkills == null || slotIndex < 0 || slotIndex >= slotSkills.Length)
+            {
+                Debug.LogError($"{name}: slot {slotIndex} is outside the active slots.", this);
+                return;
+            }
+
+            slotSkills[slotIndex] = asset;
+
+            if (_actor == null)
+                return;
+
+            if (asset == null)
+            {
+                _actor.Skills.Clear(slotIndex);
+                return;
+            }
+
+            try
+            {
+                asset.Validate();
+                _actor.Skills.Equip(slotIndex, asset.Definition);
+            }
+            catch (System.Exception error)
+            {
+                Debug.LogError($"{name}: skill asset {asset.DocumentKey} rejected ({error.Message}).", asset);
+                _actor.Skills.Clear(slotIndex);
+            }
+        }
+
         private void EquipConfiguredSkills()
         {
             if (_actor == null || slotSkills == null)
@@ -125,6 +164,21 @@ namespace NeonVoid.Combat.Skills
                 TryCastSlot(2, command);
         }
 
+        /// <summary>
+        /// Casts a slot at a point on the ground. This is the real entry point; the tick above
+        /// only decides which slot a press means.
+        /// <para>
+        /// Separating the two is what makes a cast testable in Play mode without simulating a
+        /// keyboard: a test aims and casts exactly as the tick does, and the effect it produces
+        /// is the effect the game produces.
+        /// </para>
+        /// </summary>
+        public SkillCastResult CastSlot(int slotIndex, Vector2 aimWorldXZ)
+        {
+            TryCastSlot(slotIndex, new PlayerInputCommand(Vector2.zero, aimWorldXZ));
+            return LastResult;
+        }
+
         private void TryCastSlot(int slotIndex, in PlayerInputCommand command)
         {
             SkillAsset asset = slotSkills != null && slotIndex >= 0 && slotIndex < slotSkills.Length
@@ -138,6 +192,8 @@ namespace NeonVoid.Combat.Skills
             bool isBlink = asset != null && asset.Shape.Kind == SkillEffectKind.Teleport;
             if (isBlink && !TryFindBlinkDestination(asset, command, out blinkDestination))
             {
+                LastResult = SkillCastResult.Refused(
+                    SkillCastRejection.NoValidDestination, asset.Definition.SkillId);
                 Debug.Log($"{asset.DisplayName}: nowhere to blink to; the cast was not spent.", this);
                 return;
             }

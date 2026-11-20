@@ -304,6 +304,34 @@ namespace NeonVoid.Combat
             return outcome;
         }
 
+        /// <summary>
+        /// Sets this actor's team and base stats at runtime, refilling its health.
+        /// <para>
+        /// The serialized fields only describe an actor placed in a scene by hand. Anything
+        /// spawned - every enemy in a generated mission, per archetype - has to be configured
+        /// after it exists, so this is the spawn path rather than a test hook. It is what
+        /// PlayMode tests use, for the same reason.
+        /// </para>
+        /// </summary>
+        public void Configure(int newTeamId, in CombatStats newBaseStats)
+        {
+            teamId = newTeamId;
+            _baseStats = newBaseStats;
+
+            try
+            {
+                _baseStats.Validate();
+            }
+            catch (InvalidOperationException error)
+            {
+                Debug.LogError($"{name}: configured stats rejected ({error.Message}). Falling back to the starting block.", this);
+                _baseStats = CombatStats.StartingVaccine();
+            }
+
+            _health = HealthPool.Full(_baseStats.MaxHealth);
+            _statsDirty = true;
+        }
+
         /// <summary>True when this actor may damage the other one.</summary>
         public bool IsHostileTo(CombatActor other) => other != null && other.teamId != teamId;
     }
