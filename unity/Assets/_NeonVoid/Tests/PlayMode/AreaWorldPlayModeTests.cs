@@ -178,7 +178,12 @@ namespace NeonVoid.Tests.PlayModeTests
             ConnectSave();
             _arena = PrototypeArena.Build();
             AreaBuildResult area = BuildArea();
-            yield return _arena.Tick(1);
+
+            // Two ticks and an explicit sync: a few hundred colliders were created this frame and
+            // the physics scene picks transform changes up lazily. Asking it about geometry it has
+            // not ingested yet is how this test flaked.
+            yield return _arena.Tick(2);
+            Physics.SyncTransforms();
 
             foreach (AreaCell cell in area.Layout.AllSpawns)
             {
