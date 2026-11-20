@@ -40,6 +40,7 @@ namespace NeonVoid.Tests.PlayModeTests
         public CombatActor Player { get; private set; }
         public PlayerSimulationDriver Driver { get; private set; }
         public PlayerSkillCaster Caster { get; private set; }
+        public AutoAttacker Attacker { get; private set; }
         public PluginProcDirector Procs { get; private set; }
         public RunDeathDirector DeathDirector { get; private set; }
         public List<CombatActor> Enemies { get; } = new List<CombatActor>();
@@ -223,6 +224,11 @@ namespace NeonVoid.Tests.PlayModeTests
 
             Player = PlayerObject.AddComponent<CombatActor>();
             Driver = PlayerObject.AddComponent<PlayerSimulationDriver>();
+            // Disabled by default: most tests fire deliberately through FireAt rather than on
+            // a timer. Tests about the attack rate enable it.
+            Attacker = PlayerObject.AddComponent<AutoAttacker>();
+            Attacker.enabled = false;
+
             Caster = PlayerObject.AddComponent<PlayerSkillCaster>();
             Procs = PlayerObject.AddComponent<PluginProcDirector>();
             PlayerObject.AddComponent<ActorDeathReaction>();

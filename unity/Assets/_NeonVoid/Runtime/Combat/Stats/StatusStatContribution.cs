@@ -53,6 +53,22 @@ namespace NeonVoid.Combat.Stats
         /// <summary>[초안] 스킬 가속 granted per unit of magnitude.</summary>
         public const float SkillHastePerMagnitude = 1f;
 
+        /// <summary>[초안] 발사속도 증가/감소: fraction of base attack rate per unit of magnitude.</summary>
+        public const float AttackSpeedFractionPerMagnitude = 1f;
+
+        /// <summary>[초안] 탄환속도 증가: fraction of base projectile speed per unit of magnitude.</summary>
+        public const float ProjectileSpeedFractionPerMagnitude = 1f;
+
+        /// <summary>
+        /// [초안] 기능고장 is 공격속도 감소 plus a chance the shot fails. docs/02 gives one
+        /// magnitude and does not split it, so the same number drives both: a magnitude of 0.3
+        /// is a 30% slower attack and a 30% chance of nothing coming out.
+        /// </summary>
+        public const float MalfunctionFailureChancePerMagnitude = 100f;
+
+        /// <summary>[초안] extra targets one stack of 관통 adds to a shot.</summary>
+        public const int PierceTargetsPerStack = 1;
+
         /// <summary>
         /// Appends contributions for every status present. Nothing is appended for a status
         /// that only denies actions - 정지, 속박 and 제한 are the skill gate's job, not a stat's.
@@ -95,6 +111,84 @@ namespace NeonVoid.Combat.Stats
                         break;
                 }
             }
+        }
+
+        /// <summary>
+        /// Fraction of base attack rate this actor may use: 발사속도 증가 raises it, 발사속도
+        /// 감소 and 기능고장 lower it.
+        /// <para>
+        /// Added rather than multiplied together, so two sources cannot compound into a figure
+        /// nobody tuned, and floored at zero rather than allowed to invert.
+        /// </para>
+        /// </summary>
+        public static float AttackSpeedMultiplier(StatusContainer status)
+        {
+            if (status == null)
+                return 1f;
+
+            float multiplier = 1f
+                + status.TotalMagnitudeOf(StatusEffectId.AttackSpeedUp) * AttackSpeedFractionPerMagnitude
+                - status.TotalMagnitudeOf(StatusEffectId.AttackSpeedDown) * AttackSpeedFractionPerMagnitude
+                - status.TotalMagnitudeOf(StatusEffectId.Malfunction) * AttackSpeedFractionPerMagnitude;
+
+            if (float.IsNaN(multiplier) || multiplier < 0f)
+                return 0f;
+
+            return multiplier;
+        }
+
+        /// <summary>Fraction of base projectile speed, from 탄환속도 증가.</summary>
+        public static float ProjectileSpeedMultiplier(StatusContainer status)
+        {
+            if (status == null)
+                return 1f;
+
+            float multiplier = 1f
+                + status.TotalMagnitudeOf(StatusEffectId.ProjectileSpeedUp)
+                * ProjectileSpeedFractionPerMagnitude;
+
+            if (float.IsNaN(multiplier) || multiplier <= 0f)
+                return 1f;
+
+            return multiplier;
+        }
+
+        /// <summary>
+        /// Extra distinct targets a shot may damage, from 관통.
+        /// <para>
+        /// [확정] docs/02 section 5 is explicit that 관통 lets projectiles pierce but one
+        /// projectile still may not hit one enemy twice - which is the ledger's job, not this
+        /// number's. All this does is raise how many different enemies one shot may reach.
+        /// </para>
+        /// </summary>
+        public static int ExtraPierceTargets(StatusContainer status)
+        {
+            if (status == null)
+                return 0;
+
+            int stacks = status.StacksOf(StatusEffectId.Pierce);
+            return stacks > 0 ? stacks * PierceTargetsPerStack : 0;
+        }
+
+        /// <summary>
+        /// Chance in percent that a shot simply fails, from 기능고장.
+        /// <para>
+        /// Rolled by the attacker from its own combat stream, so a malfunctioning weapon is
+        /// reproducible rather than merely unlucky.
+        /// </para>
+        /// </summary>
+        public static float ShotFailureChancePercent(StatusContainer status)
+        {
+            if (status == null)
+                return 0f;
+
+            float chance = status.TotalMagnitudeOf(StatusEffectId.Malfunction)
+                           * MalfunctionFailureChancePerMagnitude;
+
+            if (float.IsNaN(chance) || chance <= 0f)
+                return 0f;
+
+            return chance > 100f ? 100f : chance;
         }
 
         /// <summary>

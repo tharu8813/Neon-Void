@@ -1,3 +1,4 @@
+using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 using UnityEngine;
 
@@ -41,12 +42,29 @@ namespace NeonVoid.Combat.Projectiles
         private CombatActor _actor;
         private SimulationRunner _runner;
         private int _ticksUntilNextShot;
+        private StatCaps _caps = StatCaps.Draft();
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects;
 
-        /// <summary>Attack interval in whole ticks, never below one.</summary>
-        public int IntervalTicks =>
-            Mathf.Max(1, Mathf.RoundToInt(DesignConstants.SimulationTicksPerSecond / Mathf.Max(0.1f, attacksPerSecond)));
+        /// <summary>
+        /// Attack interval in whole ticks, after 발사속도 증가/감소 and 기능고장.
+        /// <para>
+        /// Until this read the actor's statuses, every one of those effects was tracked with a
+        /// duration and a magnitude that nothing looked at, so the attack rate never moved.
+        /// </para>
+        /// </summary>
+        public int IntervalTicks => AttackRateMath.IntervalTicksFor(
+            attacksPerSecond,
+            _actor != null ? StatusStatContribution.AttackSpeedMultiplier(_actor.Status) : 1f,
+            _caps.MaxAttacksPerSecond);
+
+        /// <summary>Projectile speed after 탄환속도 증가.</summary>
+        public float EffectiveProjectileSpeed => projectileSpeed
+            * (_actor != null ? StatusStatContribution.ProjectileSpeedMultiplier(_actor.Status) : 1f);
+
+        /// <summary>Distinct enemies one shot may damage, after 관통.</summary>
+        public int EffectiveMaxTargets => maxTargetsPerShot
+            + (_actor != null ? StatusStatContribution.ExtraPierceTargets(_actor.Status) : 0);
 
         private void Awake() => _actor = GetComponent<CombatActor>();
 
@@ -87,6 +105,15 @@ namespace NeonVoid.Combat.Projectiles
             if (direction.sqrMagnitude < 1e-4f)
                 return;
 
+            // 기능고장: the shot may simply fail. The cooldown is spent either way - a weapon
+            // that only consumed its interval on success would malfunction for free.
+            float failureChance = StatusStatContribution.ShotFailureChancePercent(_actor.Status);
+            if (failureChance > 0f && _actor.RollChance(failureChance))
+            {
+                _ticksUntilNextShot = IntervalTicks;
+                return;
+            }
+
             Fire(direction.normalized);
             _ticksUntilNextShot = IntervalTicks;
         }
@@ -117,7 +144,8 @@ namespace NeonVoid.Combat.Projectiles
             };
 
             orb.AddComponent<CombatProjectile>().Launch(
-                _actor, request, direction, projectileSpeed, projectileLifetimeTicks, maxTargetsPerShot);
+                _actor, request, direction,
+                EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets);
         }
     }
 }

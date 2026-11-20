@@ -422,6 +422,27 @@ namespace NeonVoid.Combat
         /// </summary>
         public bool RollCrit(in DamageRequest request) => CritRoll.Roll(request, Stats, _combatRng);
 
+        /// <summary>
+        /// Rolls a percentage chance on this actor's own combat stream, for effects whose
+        /// outcome has to be reproducible - 기능고장 deciding whether a shot comes out at all.
+        /// <para>
+        /// A decided chance draws no number, for the same reason a decided crit does not: the
+        /// stream must not advance for an outcome that was never in doubt.
+        /// </para>
+        /// </summary>
+        public bool RollChance(float percent)
+        {
+            if (float.IsNaN(percent) || percent <= 0f)
+                return false;
+            if (percent >= 100f)
+                return true;
+            if (_combatRng == null)
+                return false;
+
+            int threshold = (int)(percent * (CritRoll.Resolution / 100f));
+            return _combatRng.NextInt(0, CritRoll.Resolution) < threshold;
+        }
+
         /// <summary>Heals this actor, e.g. from its own lifesteal.</summary>
         public float Heal(float amount) => IsAlive ? _health.Heal(amount) : 0f;
 

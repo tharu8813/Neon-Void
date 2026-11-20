@@ -31,18 +31,25 @@ namespace NeonVoid.Combat.Stats
         /// <summary>[초안] no stated bound; this one only keeps the number finite.</summary>
         public float MaxSkillHaste;
 
+        /// <summary>
+        /// [미확정] docs/02 section 3 states that an attack speed cap exists and that its value
+        /// is not decided. 10 a second is a placeholder chosen to be clearly a placeholder.
+        /// </summary>
+        public float MaxAttacksPerSecond;
+
         public static StatCaps Draft() => new StatCaps
         {
             MaxCritChancePercent = 100f,
             MaxPenetrationPercent = 100f,
             MaxTenacityPercent = 90f,
             MaxSkillHaste = 500f,
+            MaxAttacksPerSecond = 10f,
         };
 
         public void Validate()
         {
             if (MaxCritChancePercent <= 0f || MaxPenetrationPercent <= 0f
-                || MaxTenacityPercent <= 0f || MaxSkillHaste <= 0f)
+                || MaxTenacityPercent <= 0f || MaxSkillHaste <= 0f || MaxAttacksPerSecond <= 0f)
                 throw new InvalidOperationException("Every cap must be above zero; a cap of 0 disables the stat.");
         }
     }

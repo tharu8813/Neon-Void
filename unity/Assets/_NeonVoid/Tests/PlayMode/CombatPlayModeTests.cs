@@ -1,6 +1,7 @@
 using System.Collections;
 using NeonVoid.Combat;
 using NeonVoid.Combat.AI;
+using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Combat.Status;
 using NeonVoid.Plugins;
@@ -403,6 +404,92 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+
+        // --- the attack statuses -----------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator AttackSpeedUpMakesTheWeaponFireMoreOften()
+        {
+            // 발사속도 증가 was tracked and read by nothing, so the rate never moved.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            int baseInterval = _arena.Attacker.IntervalTicks;
+            _arena.Player.ApplyStatus(StatusEffectId.AttackSpeedUp, 0.5f);
+            yield return _arena.Tick(1);
+
+            Assert.Less(_arena.Attacker.IntervalTicks, baseInterval, "The buff changed nothing.");
+        }
+
+        [UnityTest]
+        public IEnumerator MalfunctionBothSlowsTheWeaponAndMakesItFail()
+        {
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            int baseInterval = _arena.Attacker.IntervalTicks;
+            _arena.Player.ApplyStatus(StatusEffectId.Malfunction, 1f);   // certain failure
+            yield return _arena.Tick(1);
+
+            Assert.Greater(_arena.Attacker.IntervalTicks, baseInterval, "기능고장 did not slow it.");
+            Assert.IsTrue(_arena.Player.RollChance(100f), "A certain chance must be certain.");
+        }
+
+        [UnityTest]
+        public IEnumerator ACertainMalfunctionStopsShotsBeingProduced()
+        {
+            _arena = PrototypeArena.Build(new Vector3(6f, 0.7f, 0f));
+            _arena.WithoutPlugins();
+            yield return _arena.Tick(2);
+
+            // Aim at the enemy and let the weapon run.
+            _arena.PlayerObject.transform.rotation = Quaternion.LookRotation(Vector3.right, Vector3.up);
+            _arena.Player.ApplyStatus(StatusEffectId.Malfunction, 1f);
+            _arena.Attacker.enabled = true;
+            yield return _arena.Tick(120);
+
+            Assert.IsNull(
+                Object.FindFirstObjectByType<CombatProjectile>(),
+                "A weapon that always malfunctions still produced a shot.");
+        }
+
+        [UnityTest]
+        public IEnumerator PierceLetsOneShotReachTwoEnemies()
+        {
+            // 관통 with the ledger still forbidding the same enemy twice, which is the half of
+            // docs/02 section 5 that this number must not be mistaken for.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f), new Vector3(7f, 0.7f, 0f));
+            _arena.WithoutPlugins();
+            CombatActor first = _arena.Enemies[0];
+            CombatActor second = _arena.Enemies[1];
+            yield return _arena.Tick(2);
+
+            _arena.Player.ApplyStatus(StatusEffectId.Pierce, 1f);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(2, _arena.Attacker.EffectiveMaxTargets, "관통 did not raise the target count.");
+
+            float secondBefore = second.Health.Current;
+            _arena.FireAt(first, maxTargets: _arena.Attacker.EffectiveMaxTargets);
+            yield return _arena.Tick(60);
+
+            Assert.Less(first.Health.Current, first.Health.Max);
+            Assert.Less(second.Health.Current, secondBefore, "The shot stopped at the first enemy.");
+        }
+
+        [UnityTest]
+        public IEnumerator ProjectileSpeedUpMakesAShotArriveSooner()
+        {
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            float baseSpeed = _arena.Attacker.EffectiveProjectileSpeed;
+            _arena.Player.ApplyStatus(StatusEffectId.ProjectileSpeedUp, 0.5f);
+            yield return _arena.Tick(1);
+
+            Assert.Greater(_arena.Attacker.EffectiveProjectileSpeed, baseSpeed, "탄환속도 증가 did nothing.");
+        }
 
         // --- damage and healing over time --------------------------------------------------
 
