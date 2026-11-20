@@ -65,6 +65,13 @@ namespace NeonVoid.Missions.Generation
         /// <summary>[초안] cells the entrance is held away from any objective device.</summary>
         public const int DraftMinStartToObjectiveCells = 4;
 
+        /// <summary>
+        /// [초안] cells the entrance is held away from any enemy. docs/01 section 6 check 2:
+        /// 초반 화면 밖 즉시 피해 금지 - the player has to be able to see what is coming before it
+        /// arrives.
+        /// </summary>
+        public const int DraftMinStartToEnemyCells = 6;
+
         /// <summary>[초안] cells between the boss, the 정화 콘솔 and the 철수 패드.</summary>
         public const int DraftMinBossRoomSpacingCells = 2;
 
@@ -214,6 +221,18 @@ namespace NeonVoid.Missions.Generation
                     return AreaLayoutVerdict.Invalid(
                         $"objective {i} is {toObjective} steps from the entrance, closer than the drafted " +
                         $"{DraftMinStartToObjectiveCells}");
+                }
+            }
+
+            for (int i = 0; i < layout.Enemies.Count; ++i)
+            {
+                AreaEnemySpawn enemy = layout.Enemies[i];
+                int toEnemy = layout.Grid.DistanceAt(field, enemy.Cell);
+                if (toEnemy < DraftMinStartToEnemyCells)
+                {
+                    return AreaLayoutVerdict.Invalid(
+                        $"{enemy} is {toEnemy} steps from the entrance, closer than the drafted " +
+                        $"{DraftMinStartToEnemyCells} (초반 화면 밖 즉시 피해 금지)");
                 }
             }
 

@@ -22,6 +22,7 @@ namespace NeonVoid.Missions.Generation
     {
         private readonly List<AreaCell> _objectives;
         private readonly List<AreaRoom> _rooms;
+        private readonly List<AreaEnemySpawn> _enemies;
 
         public AreaLayout(
             in AreaSpec spec,
@@ -34,7 +35,8 @@ namespace NeonVoid.Missions.Generation
             List<AreaCell> objectives,
             AreaCell boss,
             AreaCell purification,
-            AreaCell extraction)
+            AreaCell extraction,
+            List<AreaEnemySpawn> enemies = null)
         {
             if (grid == null)
                 throw new ArgumentNullException(nameof(grid));
@@ -58,6 +60,7 @@ namespace NeonVoid.Missions.Generation
             Boss = boss;
             Purification = purification;
             Extraction = extraction;
+            _enemies = enemies ?? new List<AreaEnemySpawn>();
         }
 
         public AreaSpec Spec { get; }
@@ -101,7 +104,30 @@ namespace NeonVoid.Missions.Generation
         /// </summary>
         public AreaCell Extraction { get; }
 
-        /// <summary>Every placed spawn, for the separation and reachability checks.</summary>
+        /// <summary>The enemies, each tagged with the room whose gate holds it.</summary>
+        public IReadOnlyList<AreaEnemySpawn> Enemies => _enemies;
+
+        /// <summary>정예 among them. GDD v1 section 5.4 budgets three per area.</summary>
+        public int EliteCount
+        {
+            get
+            {
+                int elites = 0;
+                for (int i = 0; i < _enemies.Count; ++i)
+                {
+                    if (_enemies[i].IsElite)
+                        ++elites;
+                }
+
+                return elites;
+            }
+        }
+
+        /// <summary>
+        /// Every placed cell, for the separation and reachability checks - the enemies among
+        /// them, because docs/01 section 6 check 2 names 적 스폰 in the same breath as everything
+        /// else, and an enemy inside a wall is as broken as a boss inside one.
+        /// </summary>
         public IEnumerable<AreaCell> AllSpawns
         {
             get
@@ -113,6 +139,9 @@ namespace NeonVoid.Missions.Generation
                 yield return Boss;
                 yield return Purification;
                 yield return Extraction;
+
+                for (int i = 0; i < _enemies.Count; ++i)
+                    yield return _enemies[i].Cell;
             }
         }
 
@@ -133,7 +162,8 @@ namespace NeonVoid.Missions.Generation
         /// </summary>
         public string ReceiptLine() =>
             $"gen=v{Spec.GeneratorVersion};key={Spec.GenerationKey};effectiveSeed={EffectiveSeed};" +
-            $"attempts={AttemptsUsed};rooms={_rooms.Count};walkable={Grid.WalkableCount}";
+            $"attempts={AttemptsUsed};rooms={_rooms.Count};walkable={Grid.WalkableCount};" +
+            $"enemies={_enemies.Count};elites={EliteCount}";
 
         public override string ToString() => ReceiptLine();
     }

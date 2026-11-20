@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NeonVoid.Combat.AI;
 using NeonVoid.Missions;
 using NeonVoid.Missions.Generation;
 using NUnit.Framework;
@@ -145,6 +146,160 @@ namespace NeonVoid.Tests
             Assert.Greater(large, small, "a 160% area is not bigger than a 60% one");
         }
 
+        // --- 적 배치 -----------------------------------------------------------------------
+
+        [Test]
+        public void EverySweptSeedPlacesTheEnemyBudgetItWasGiven()
+        {
+            // GDD v1 section 5.4 budgets 48 일반 and 3 정예 per area. A map quietly short of them
+            // is an area whose XP table cannot be reached, and nothing else would say so.
+            for (uint seed = 1; seed <= SweptSeeds; ++seed)
+            {
+                AreaSpec spec = Spec(seed);
+                AreaLayout layout = Generate(spec);
+
+                Assert.AreEqual(
+                    AreaGenerator.NormalEnemiesFor(spec) + AreaGenerator.ElitesFor(spec),
+                    layout.Enemies.Count, $"seed {seed}: wrong number of enemies");
+                Assert.AreEqual(AreaGenerator.ElitesFor(spec), layout.EliteCount, $"seed {seed}: wrong elites");
+            }
+        }
+
+        [Test]
+        public void TheEnemyBudgetIsTheDocumentsCountAtNominalSize()
+        {
+            AreaSpec spec = Spec(1u);
+
+            Assert.AreEqual(48, AreaGenerator.NormalEnemiesFor(spec));
+            Assert.AreEqual(3, AreaGenerator.ElitesFor(spec));
+            Assert.Less(
+                AreaGenerator.NormalEnemiesFor(spec.AtSize(AreaSpec.DraftMinSizeModifierPercent)), 48,
+                "a 60% area holds as many enemies as a full one");
+        }
+
+        [Test]
+        public void NoEnemyStandsInTheEntranceRoomOrTheBossRoom()
+        {
+            // The entrance is 초반 화면 밖 즉시 피해 금지, and a dozen chasers in the boss's room
+            // would make docs/01 section 3's telegraphs unreadable.
+            for (uint seed = 1; seed <= 60; ++seed)
+            {
+                AreaLayout layout = Generate(Spec(seed));
+                AreaRoom entrance = layout.Rooms[0];
+
+                int bossRoom = -1;
+                for (int i = 0; i < layout.Rooms.Count; ++i)
+                {
+                    if (layout.Rooms[i].Contains(layout.Boss))
+                        bossRoom = i;
+                }
+
+                Assert.GreaterOrEqual(bossRoom, 0, $"seed {seed}: the boss is in no room");
+
+                for (int i = 0; i < layout.Enemies.Count; ++i)
+                {
+                    AreaEnemySpawn enemy = layout.Enemies[i];
+                    Assert.AreNotEqual(0, enemy.RoomIndex, $"seed {seed}: {enemy} is in the entrance");
+                    Assert.AreNotEqual(bossRoom, enemy.RoomIndex, $"seed {seed}: {enemy} is in the boss's room");
+                    Assert.IsFalse(entrance.Contains(enemy.Cell), $"seed {seed}: {enemy} stands in the entrance");
+                    Assert.IsTrue(
+                        layout.Rooms[enemy.RoomIndex].Contains(enemy.Cell),
+                        $"seed {seed}: {enemy} is not in the room it claims");
+                }
+            }
+        }
+
+        [Test]
+        public void NoEnemyStandsCloseEnoughToHitThePlayerOnArrival()
+        {
+            // docs/01 section 6 check 2: 초반 화면 밖 즉시 피해 금지, measured in walking steps.
+            for (uint seed = 1; seed <= 60; ++seed)
+            {
+                AreaLayout layout = Generate(Spec(seed));
+                int[] field = layout.Grid.DistanceField(layout.Start);
+
+                for (int i = 0; i < layout.Enemies.Count; ++i)
+                {
+                    int steps = layout.Grid.DistanceAt(field, layout.Enemies[i].Cell);
+                    Assert.GreaterOrEqual(
+                        steps, AreaLayoutValidator.DraftMinStartToEnemyCells,
+                        $"seed {seed}: {layout.Enemies[i]} is {steps} steps from the entrance");
+                }
+            }
+        }
+
+        [Test]
+        public void NoTwoEnemiesShareACellWithEachOtherOrWithAnythingElse()
+        {
+            for (uint seed = 1; seed <= 60; ++seed)
+            {
+                AreaLayout layout = Generate(Spec(seed));
+                var seen = new HashSet<AreaCell>();
+
+                foreach (AreaCell cell in layout.AllSpawns)
+                    Assert.IsTrue(seen.Add(cell), $"seed {seed}: two things stand on {cell}");
+            }
+        }
+
+        [Test]
+        public void EachHardwareDrawsFromItsOwnArchetypes()
+        {
+            // CLAUDE.md: 5개 하드웨어를 한 개의 복붙 맵으로 취급하지 말 것. The same enemies in a
+            // different colour is exactly what that forbids, so the mixes must differ.
+            var mixes = new HashSet<string>();
+            for (int i = 0; i < HardwareIds.All.Length; ++i)
+                mixes.Add(string.Join(",", AreaGenerator.DraftArchetypeMixFor(HardwareIds.All[i])));
+
+            Assert.AreEqual(HardwareIds.All.Length, mixes.Count, "two hardware areas draw from the same mix");
+            Assert.Throws<ArgumentOutOfRangeException>(() => AreaGenerator.DraftArchetypeMixFor(HardwareId.None));
+        }
+
+        [Test]
+        public void EveryPlacedEnemyComesFromItsHardwaresMix()
+        {
+            for (int h = 0; h < HardwareIds.All.Length; ++h)
+            {
+                HardwareId hardware = HardwareIds.All[h];
+                var allowed = new HashSet<EnemyArchetypeId>(AreaGenerator.DraftArchetypeMixFor(hardware));
+
+                for (uint seed = 1; seed <= 20; ++seed)
+                {
+                    var spec = new AreaSpec(hardware, seed, 3);
+                    AreaLayout layout = Generate(spec);
+
+                    for (int i = 0; i < layout.Enemies.Count; ++i)
+                    {
+                        Assert.IsTrue(
+                            allowed.Contains(layout.Enemies[i].Archetype),
+                            $"{hardware} seed {seed}: {layout.Enemies[i]} is not in its mix");
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void TheCpuDrawsMostlyChasersAsItsDocumentSays()
+        {
+            // docs/01 section 2, CPU 적 성향: 다수 접근형·지원형.
+            var counts = new Dictionary<EnemyArchetypeId, int>();
+            for (uint seed = 1; seed <= 30; ++seed)
+            {
+                AreaLayout layout = Generate(Spec(seed));
+                for (int i = 0; i < layout.Enemies.Count; ++i)
+                {
+                    counts.TryGetValue(layout.Enemies[i].Archetype, out int count);
+                    counts[layout.Enemies[i].Archetype] = count + 1;
+                }
+            }
+
+            counts.TryGetValue(EnemyArchetypeId.Chaser, out int chasers);
+            counts.TryGetValue(EnemyArchetypeId.Support, out int supports);
+
+            Assert.Greater(chasers, supports * 2, "the CPU is not 다수 접근형");
+            Assert.Greater(supports, 0, "the CPU has no 지원형 at all");
+            Assert.IsFalse(counts.ContainsKey(EnemyArchetypeId.Ranged), "a ranged enemy appeared in the CPU");
+        }
+
         // --- check 4: reproducibility ------------------------------------------------------
 
         [Test]
@@ -165,6 +320,15 @@ namespace NeonVoid.Tests
                 Assert.AreEqual(first.Purification, second.Purification);
                 Assert.AreEqual(first.Extraction, second.Extraction);
                 Assert.AreEqual(first.Objectives, second.Objectives);
+                Assert.AreEqual(first.Enemies.Count, second.Enemies.Count);
+                for (int i = 0; i < first.Enemies.Count; ++i)
+                {
+                    Assert.AreEqual(first.Enemies[i].Cell, second.Enemies[i].Cell, $"seed {seed}: enemy {i} moved");
+                    Assert.AreEqual(first.Enemies[i].Archetype, second.Enemies[i].Archetype);
+                    Assert.AreEqual(first.Enemies[i].IsElite, second.Enemies[i].IsElite);
+                    Assert.AreEqual(first.Enemies[i].RoomIndex, second.Enemies[i].RoomIndex);
+                }
+
                 Assert.AreEqual(first.Grid.Width, second.Grid.Width);
                 Assert.AreEqual(first.Grid.WalkableCount, second.Grid.WalkableCount);
 

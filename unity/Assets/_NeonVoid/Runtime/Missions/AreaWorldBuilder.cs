@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using NeonVoid.Combat;
+using NeonVoid.Combat.AI;
 using NeonVoid.Missions.Generation;
 using UnityEngine;
 
@@ -17,6 +18,7 @@ namespace NeonVoid.Missions
             AreaBossGate bossGate,
             Transform purificationConsole,
             Transform extractionPad,
+            AreaRoomGate[] roomGates,
             int floorSlabs,
             int wallSlabs)
         {
@@ -27,6 +29,7 @@ namespace NeonVoid.Missions
             BossGate = bossGate;
             PurificationConsole = purificationConsole;
             ExtractionPad = extractionPad;
+            RoomGates = roomGates;
             FloorSlabs = floorSlabs;
             WallSlabs = wallSlabs;
         }
@@ -46,14 +49,31 @@ namespace NeonVoid.Missions
 
         public Transform ExtractionPad { get; }
 
+        /// <summary>One per room holding enemies, each held shut until the player walks in.</summary>
+        public AreaRoomGate[] RoomGates { get; }
+
         /// <summary>Boxes the floor was built from, after merging. For the performance report.</summary>
         public int FloorSlabs { get; }
 
         /// <summary>Boxes the wall was built from, after merging.</summary>
         public int WallSlabs { get; }
 
+        /// <summary>Enemies placed, across every room.</summary>
+        public int EnemyCount
+        {
+            get
+            {
+                int enemies = 0;
+                for (int i = 0; i < RoomGates.Length; ++i)
+                    enemies += RoomGates[i].HeldCount;
+
+                return enemies;
+            }
+        }
+
         public override string ToString() =>
-            $"{Layout.Spec.Hardware}: {Devices.Length} objectives, {FloorSlabs} floor + {WallSlabs} wall slabs";
+            $"{Layout.Spec.Hardware}: {Devices.Length} objectives, {EnemyCount} enemies in " +
+            $"{RoomGates.Length} rooms, {FloorSlabs} floor + {WallSlabs} wall slabs";
     }
 
     /// <summary>
@@ -104,6 +124,17 @@ namespace NeonVoid.Missions
 
         [Tooltip("Boss prefab. A Prototype primitive is built when empty.")]
         [SerializeField] private GameObject bossPrefab;
+
+        [Tooltip("Enemy prefab. A Prototype primitive with an EnemyAgent is built when empty.")]
+        [SerializeField] private GameObject enemyPrefab;
+
+        [Tooltip(
+            "[초안] a 정예's health, as a multiple of its archetype's. docs/01 calls enemy.elite " +
+            "환경 변이·강인함 and neither exists, so this stands in for it.")]
+        [SerializeField, Min(1f)] private float draftEliteHealthMultiplier = 2.5f;
+
+        [Tooltip("[초안] a 정예's attack damage, as a multiple of its archetype's.")]
+        [SerializeField, Min(1f)] private float draftEliteDamageMultiplier = 1.5f;
 
         [Tooltip("Team the devices and the boss belong to, so the player's fire can reach them.")]
         [SerializeField] private int hostileTeamId = 1;
@@ -203,20 +234,134 @@ namespace NeonVoid.Missions
             Transform console = Marker("정화 콘솔", layout, layout.Purification, root.transform);
             Transform pad = Marker("철수 패드", layout, layout.Extraction, root.transform);
 
+            AreaRoomGate[] roomGates = BuildEnemies(layout, root.transform);
+
             if (player != null)
-                player.position = PositionOf(layout, layout.Start) + (Vector3.up * PlayerStandingLiftUnits);
+                PlaceAtEntrance(player, PositionOf(layout, layout.Start));
 
             HardwareAreaRuntime runtime = AddAsleep<HardwareAreaRuntime>(
                 "Area Runtime", root.transform,
-                r => r.Configure(layout.Spec.Hardware, mission, player, devices, bossGate, console, pad));
+                r => r.Configure(layout.Spec.Hardware, mission, player, devices, bossGate, console, pad, roomGates));
 
             Debug.Log(
                 $"Built {layout.Spec.Hardware} from {layout.ReceiptLine()}: " +
-                $"{floorSlabs} floor slab(s), {wallSlabs} wall slab(s), {devices.Length} objective(s).",
+                $"{floorSlabs} floor slab(s), {wallSlabs} wall slab(s), {devices.Length} objective(s), " +
+                $"{layout.Enemies.Count} enemy/enemies in {roomGates.Length} gated room(s).",
                 root);
 
             return new AreaBuildResult(
-                root, layout, runtime, devices, bossGate, console, pad, floorSlabs, wallSlabs);
+                root, layout, runtime, devices, bossGate, console, pad, roomGates, floorSlabs, wallSlabs);
+        }
+
+        /// <summary>
+        /// Places the layout's enemies and puts each room's share behind its own
+        /// <see cref="AreaRoomGate"/>.
+        /// </summary>
+        private AreaRoomGate[] BuildEnemies(AreaLayout layout, Transform parent)
+        {
+            var perRoom = new Dictionary<int, List<AreaRoomOccupant>>();
+
+            for (int i = 0; i < layout.Enemies.Count; ++i)
+            {
+                AreaEnemySpawn spawn = layout.Enemies[i];
+                CombatActor actor = SpawnEnemy(spawn, layout, parent, i);
+
+                if (!perRoom.TryGetValue(spawn.RoomIndex, out List<AreaRoomOccupant> occupants))
+                {
+                    occupants = new List<AreaRoomOccupant>();
+                    perRoom[spawn.RoomIndex] = occupants;
+                }
+
+                occupants.Add(new AreaRoomOccupant(actor, spawn.IsElite));
+            }
+
+            var gates = new List<AreaRoomGate>(perRoom.Count);
+            foreach (KeyValuePair<int, List<AreaRoomOccupant>> room in perRoom)
+            {
+                AreaRoom shape = layout.Rooms[room.Key];
+                float cell = layout.CellSizeUnits;
+
+                Vector3 min = PositionOf(layout, new AreaCell(shape.MinX, shape.MinY));
+                Vector3 max = PositionOf(layout, new AreaCell(shape.MaxX, shape.MaxY));
+                var centre = new Vector3((min.x + max.x) * 0.5f, min.y, (min.z + max.z) * 0.5f);
+
+                // Half a cell past the outermost cell centres, so the footprint is the room and
+                // not the box joining its corner cells' middles.
+                float halfX = ((shape.Width * cell) * 0.5f);
+                float halfZ = ((shape.Height * cell) * 0.5f);
+
+                List<AreaRoomOccupant> occupants = room.Value;
+                gates.Add(AddAsleep<AreaRoomGate>(
+                    $"Room {room.Key} Gate", parent, g => g.Configure(centre, halfX, halfZ, occupants)));
+            }
+
+            return gates.ToArray();
+        }
+
+        /// <summary>
+        /// One enemy: the prefab if there is one, otherwise a Prototype primitive carrying an
+        /// <see cref="EnemyAgent"/>.
+        /// <para>
+        /// A 정예 is the same archetype with its health and damage multiplied, and the
+        /// multiplication is done to the <b>archetype</b> rather than to the actor: EnemyAgent
+        /// writes the archetype's stats onto the actor again in its own Start, so boosting the
+        /// actor would be silently undone on the frame the room opens.
+        /// </para>
+        /// </summary>
+        private CombatActor SpawnEnemy(in AreaEnemySpawn spawn, AreaLayout layout, Transform parent, int index)
+        {
+            EnemyArchetype archetype = EnemyArchetypeCatalog.Of(spawn.Archetype);
+            if (spawn.IsElite)
+            {
+                archetype.DocumentId = $"enemy.elite({archetype.DocumentId})";
+                archetype.MaxHealth *= draftEliteHealthMultiplier;
+                archetype.AttackDamage *= draftEliteDamageMultiplier;
+            }
+
+            string name = $"{(spawn.IsElite ? "정예 " : string.Empty)}{spawn.Archetype} {index + 1}";
+            Vector3 position = PositionOf(layout, spawn.Cell);
+
+            GameObject body;
+            if (enemyPrefab != null)
+            {
+                body = Instantiate(enemyPrefab, position, Quaternion.identity, parent);
+                body.name = name;
+            }
+            else
+            {
+                body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                body.name = $"{name} (Prototype)";
+                body.transform.SetParent(parent, worldPositionStays: false);
+                body.transform.position = position + (Vector3.up * 0.7f);
+                body.transform.localScale = Vector3.one * 1.4f;
+
+                // The CharacterController replaces the primitive's collider, as the enemy has to
+                // move: it is a collider too, so a shot's SphereCastAll still finds it.
+                UnityEngine.Object.Destroy(body.GetComponent<SphereCollider>());
+                CharacterController controller = body.AddComponent<CharacterController>();
+                controller.center = Vector3.zero;
+                controller.height = 1f;
+                controller.radius = 0.5f;
+            }
+
+            var actor = body.GetComponentInChildren<CombatActor>();
+            if (actor == null)
+            {
+                actor = body.AddComponent<CombatActor>();
+                body.AddComponent<ActorDeathReaction>();
+            }
+
+            // The team before the agent: EnemyAgent.ApplyArchetype keeps the actor's existing
+            // team and only writes the stats, so an actor still on the default team would become
+            // an enemy of nobody.
+            actor.Configure(hostileTeamId, archetype.Stats());
+
+            var agent = body.GetComponentInChildren<EnemyAgent>();
+            if (agent == null)
+                agent = body.AddComponent<EnemyAgent>();
+
+            agent.ApplyArchetype(archetype);
+            return actor;
         }
 
         /// <summary>
@@ -224,6 +369,38 @@ namespace NeonVoid.Missions
         /// exactly on the surface starts the frame intersecting it and is pushed somewhere.
         /// </summary>
         public const float PlayerStandingLiftUnits = 1.1f;
+
+        /// <summary>
+        /// Puts the player at the entrance, <b>through the motion simulation</b> when there is
+        /// one.
+        /// <para>
+        /// Writing <c>transform.position</c> is not enough and
+        /// <see cref="Player.PlayerSimulationDriver.TeleportTo"/> says why: the rules keep their
+        /// own position ledger, and a transform moved behind their back leaves the next tick
+        /// resolving facing and the dash dead zone against where the player used to be - and the
+        /// CharacterController, which is not switched off for the jump, is free to put them back.
+        /// It did: the player arrived at the origin instead of the entrance, which is how this
+        /// was found.
+        /// </para>
+        /// <para>
+        /// The height is set on the transform first, because TeleportTo keeps the current one -
+        /// it is for a blink across the floor, not for being dropped onto it.
+        /// </para>
+        /// </summary>
+        private static void PlaceAtEntrance(Transform player, Vector3 entrance)
+        {
+            Vector3 standing = entrance + (Vector3.up * PlayerStandingLiftUnits);
+            var driver = player.GetComponent<Player.PlayerSimulationDriver>();
+
+            if (driver == null)
+            {
+                player.position = standing;
+                return;
+            }
+
+            player.position = new Vector3(player.position.x, standing.y, player.position.z);
+            driver.TeleportTo(new Vector2(standing.x, standing.z));
+        }
 
         private int BuildFloor(AreaLayout layout, Transform parent)
         {

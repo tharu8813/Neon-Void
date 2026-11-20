@@ -119,6 +119,12 @@ namespace NeonVoid.Missions
         /// </summary>
         public int ObjectivesCompletedInMission { get; private set; }
 
+        /// <summary>Normal enemies killed this mission, for the pacing report.</summary>
+        public int EnemiesKilledInMission { get; private set; }
+
+        /// <summary>정예 killed this mission.</summary>
+        public int ElitesKilledInMission { get; private set; }
+
         /// <summary>Areas purified in this mission, in the order they were.</summary>
         public IReadOnlyList<HardwareId> PurifiedAreas => _purified;
 
@@ -154,6 +160,8 @@ namespace NeonVoid.Missions
 
             _purified.Clear();
             ObjectivesCompletedInMission = 0;
+            EnemiesKilledInMission = 0;
+            ElitesKilledInMission = 0;
             ClearArea();
             Phase = MissionFlowPhase.Motherboard;
             return Accept();
@@ -212,8 +220,45 @@ namespace NeonVoid.Missions
             _objectivesInArea++;
             ObjectivesCompletedInMission++;
 
+            // 주요 목표 달성 40 XP (GDD v1 section 5.4). Awarded per cause rather than as a lump
+            // on purification: the document gives the area a table of 지급 원인 that adds up to
+            // its budget, so an area half-cleared is worth less than one cleared out, which is
+            // the point of having a table.
+            _run.TryAwardMissionXp(MissionXpBudget.XpForObjective(_purified.Count));
+
             if (_objectivesInArea >= _objectivesRequired)
                 AreaPhase = AreaProgressPhase.Boss;
+
+            return Accept();
+        }
+
+        /// <summary>
+        /// One of the area's enemies died. Awards its 의뢰 XP and nothing else.
+        /// <para>
+        /// Not a <c>Try</c>: a kill has already happened and cannot be refused. What this can do
+        /// is decline to <i>pay</i> for one - after a death, or outside an area - which is why it
+        /// reports whether the XP was awarded.
+        /// </para>
+        /// </summary>
+        /// <param name="elite">
+        /// Whether it counted as a 정예. GDD v1 section 5.4 pays 32 for one and 8 for a normal.
+        /// </param>
+        public bool NotifyEnemyKilled(bool elite)
+        {
+            if (Phase != MissionFlowPhase.InArea)
+                return Refuse($"an enemy died outside an area ({Phase}), so nothing was paid for it");
+
+            long xp = elite
+                ? MissionXpBudget.XpForEliteKill(_purified.Count)
+                : MissionXpBudget.XpForNormalKill(_purified.Count);
+
+            if (!_run.TryAwardMissionXp(xp))
+                return Refuse("the mission is not running, so the kill paid nothing");
+
+            if (elite)
+                ElitesKilledInMission++;
+            else
+                EnemiesKilledInMission++;
 
             return Accept();
         }
@@ -236,6 +281,9 @@ namespace NeonVoid.Missions
             if (AreaPhase != AreaProgressPhase.Boss)
                 return Refuse($"{_area}'s boss is already down ({AreaPhase})");
 
+            // 보스 처치 120 XP (GDD v1 section 5.4).
+            _run.TryAwardMissionXp(MissionXpBudget.XpForBoss(_purified.Count));
+
             AreaPhase = AreaProgressPhase.Purification;
             return Accept();
         }
@@ -243,9 +291,10 @@ namespace NeonVoid.Missions
         /// <summary>
         /// 정화. Commits the purification to permanent state and only then counts it.
         /// <para>
-        /// The 의뢰 XP for the area is awarded here rather than by the caller, because the XP and
-        /// the purification are one event; awarding it outside would let a committed purification
-        /// pay twice, or not at all.
+        /// <b>No 의뢰 XP of its own.</b> GDD v1 section 5.4 breaks an area's budget into kills,
+        /// objectives and the boss, and has no line for the purification - the XP is what the
+        /// player did on the way here, and it has already been paid. A lump on top would double
+        /// every area's budget.
         /// </para>
         /// </summary>
         public bool TryPurify()
@@ -256,10 +305,6 @@ namespace NeonVoid.Missions
                 return Refuse($"{_area}'s boss is still standing, so 정화 is not active");
             if (AreaPhase != AreaProgressPhase.Purification)
                 return Refuse($"{_area} is already purified");
-
-            // Read before the commit: the 의뢰 XP budget is a function of the areas already
-            // purified, and the commit is about to make this one of them.
-            int alreadyPurified = _purified.Count;
 
             MissionCommitResult commit = _commits.CommitPurification(
                 _run.Identity.RunId, HardwareIds.SaveKeyFor(_area));
@@ -273,7 +318,6 @@ namespace NeonVoid.Missions
 
             _purified.Add(_area);
             _run.TryRecordPurification();
-            _run.TryAwardMissionXp(MissionXpBudget.XpForArea(alreadyPurified));
             AreaPhase = AreaProgressPhase.Purified;
             return Accept();
         }

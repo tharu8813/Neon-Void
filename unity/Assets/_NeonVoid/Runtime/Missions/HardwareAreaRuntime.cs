@@ -47,6 +47,9 @@ namespace NeonVoid.Missions
         [Tooltip("The area's boss, held inactive until the objectives are done.")]
         [SerializeField] private AreaBossGate bossGate;
 
+        [Tooltip("One per room that holds enemies. Opened when the player walks in.")]
+        [SerializeField] private AreaRoomGate[] roomGates = new AreaRoomGate[0];
+
         [Tooltip("Where 정화 is performed. Stood on once the boss is down.")]
         [SerializeField] private Transform purificationConsole;
 
@@ -130,7 +133,8 @@ namespace NeonVoid.Missions
             AreaObjectiveDevice[] objectiveDevices,
             AreaBossGate boss,
             Transform console,
-            Transform pad)
+            Transform pad,
+            AreaRoomGate[] rooms = null)
         {
             area = areaId;
             mission = missionDirector;
@@ -139,6 +143,7 @@ namespace NeonVoid.Missions
             bossGate = boss;
             purificationConsole = console;
             extractionPad = pad;
+            roomGates = rooms ?? new AreaRoomGate[0];
         }
 
         /// <summary>[초안] overrides the dwell shapes, for a test that does not want to wait.</summary>
@@ -187,6 +192,12 @@ namespace NeonVoid.Missions
             if (bossGate != null)
                 bossGate.Defeated += OnBossDefeated;
 
+            for (int i = 0; i < roomGates.Length; ++i)
+            {
+                if (roomGates[i] != null)
+                    roomGates[i].EnemyKilled += OnEnemyKilled;
+            }
+
             if (enterOnEnable)
                 TryEnter();
         }
@@ -204,6 +215,12 @@ namespace NeonVoid.Missions
 
             if (bossGate != null)
                 bossGate.Defeated -= OnBossDefeated;
+
+            for (int i = 0; i < roomGates.Length; ++i)
+            {
+                if (roomGates[i] != null)
+                    roomGates[i].EnemyKilled -= OnEnemyKilled;
+            }
         }
 
         /// <summary>
@@ -299,9 +316,46 @@ namespace NeonVoid.Missions
             if (flow == null || !_entered)
                 return;
 
+            OpenTheRoomThePlayerIsIn();
             SyncBossGate(flow);
             TickPurificationConsole(flow);
             TickExtractionPad(flow);
+        }
+
+        /// <summary>
+        /// Wakes the room the player has walked into, and no other.
+        /// <para>
+        /// Checked every tick rather than on a trigger volume: a trigger fires between ticks and
+        /// a fight that began on a different tick than the one the simulation thinks it did is
+        /// not reproducible from the seed. This reads the position the player's own tick put them
+        /// at, which is deterministic.
+        /// </para>
+        /// </summary>
+        private void OpenTheRoomThePlayerIsIn()
+        {
+            if (player == null)
+                return;
+
+            Vector3 position = player.position;
+            for (int i = 0; i < roomGates.Length; ++i)
+            {
+                AreaRoomGate gate = roomGates[i];
+                if (gate == null || gate.IsOpen)
+                    continue;
+
+                if (gate.Contains(position))
+                    gate.Open();
+            }
+        }
+
+        private void OnEnemyKilled(AreaRoomGate gate, bool elite)
+        {
+            MissionFlow flow = Flow;
+            if (flow == null)
+                return;
+
+            if (!flow.NotifyEnemyKilled(elite))
+                Debug.LogWarning($"{name}: a kill in {gate.name} paid nothing: {flow.LastRefusal}", this);
         }
 
         /// <summary>

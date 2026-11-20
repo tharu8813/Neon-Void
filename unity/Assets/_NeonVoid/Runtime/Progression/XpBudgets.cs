@@ -27,11 +27,80 @@ namespace NeonVoid.Progression
         /// <summary>[초안 v0.1] the 0.18 of the scaling formula, as a percentage.</summary>
         public const long DraftScalingPercentPerPurification = 18L;
 
+        // --- GDD v1 section 5.4's breakdown of the 720 -------------------------------------
+        //
+        // The document does not give the area a lump sum; it gives a table of 지급 원인 that adds
+        // up to one. So the XP is awarded per cause - a kill, an objective, the boss - and
+        // XpForArea is the budget those causes are supposed to sum to, not something handed over
+        // on arrival. DraftBudgetAddsUp holds the arithmetic.
+
+        /// <summary>[초안 v0.1] 일반 적 처치 8 XP.</summary>
+        public const long DraftXpPerNormalKill = 8L;
+
+        /// <summary>[초안 v0.1] 예상 횟수 48 - the normal enemies one area is budgeted for.</summary>
+        public const int DraftNormalKillsPerArea = 48;
+
+        /// <summary>[초안 v0.1] 정예 적 처치 32 XP.</summary>
+        public const long DraftXpPerEliteKill = 32L;
+
+        /// <summary>[초안 v0.1] 예상 횟수 3.</summary>
+        public const int DraftElitesPerArea = 3;
+
+        /// <summary>[초안 v0.1] 주요 목표 달성 40 XP.</summary>
+        public const long DraftXpPerObjective = 40L;
+
+        /// <summary>[초안 v0.1] 예상 횟수 3, which is also docs/01's 2~3개 소목표.</summary>
+        public const int DraftObjectivesInBudget = 3;
+
+        /// <summary>[초안 v0.1] 보스 처치 120 XP.</summary>
+        public const long DraftXpPerBoss = 120L;
+
         /// <summary>
-        /// The 의뢰 XP one more area is worth to a mission that has already purified
+        /// The breakdown's own total, so the table and the budget can be held against each other
+        /// by a test rather than by a reader adding up a document.
+        /// </summary>
+        public static long DraftBudgetBreakdownAtNominalSize =>
+            (DraftXpPerNormalKill * DraftNormalKillsPerArea)
+            + (DraftXpPerEliteKill * DraftElitesPerArea)
+            + (DraftXpPerObjective * DraftObjectivesInBudget)
+            + DraftXpPerBoss;
+
+        /// <summary>의뢰 XP for one normal enemy, at this point in the mission.</summary>
+        public static long XpForNormalKill(int areasAlreadyPurified) =>
+            Scaled(DraftXpPerNormalKill, areasAlreadyPurified);
+
+        /// <summary>의뢰 XP for one 정예.</summary>
+        public static long XpForEliteKill(int areasAlreadyPurified) =>
+            Scaled(DraftXpPerEliteKill, areasAlreadyPurified);
+
+        /// <summary>의뢰 XP for one 주요 목표.</summary>
+        public static long XpForObjective(int areasAlreadyPurified) =>
+            Scaled(DraftXpPerObjective, areasAlreadyPurified);
+
+        /// <summary>의뢰 XP for the area's boss.</summary>
+        public static long XpForBoss(int areasAlreadyPurified) =>
+            Scaled(DraftXpPerBoss, areasAlreadyPurified);
+
+        /// <summary>
+        /// The 의뢰 XP budget one more area is worth to a mission that has already purified
         /// <paramref name="areasAlreadyPurified"/> of them.
+        /// <para>
+        /// A <b>budget</b>, not an award. Nothing hands this over: it is what the area's kills,
+        /// objectives and boss add up to when the player clears all of it, and a test holds the
+        /// two together. An area the player half-clears is worth less, which is the point.
+        /// </para>
         /// </summary>
         public static long XpForArea(int areasAlreadyPurified)
+        {
+            return Scaled(DraftFirstAreaXp, areasAlreadyPurified);
+        }
+
+        /// <summary>
+        /// A nominal figure at this point in the mission, by the same formula the whole budget
+        /// scales with. Rounded half up in integers, because the save document forbids floats and
+        /// an XP award must not be the exception.
+        /// </summary>
+        private static long Scaled(long nominal, int areasAlreadyPurified)
         {
             if (areasAlreadyPurified < 0)
             {
@@ -51,7 +120,7 @@ namespace NeonVoid.Progression
             }
 
             long percent = 100L + (DraftScalingPercentPerPurification * areasAlreadyPurified);
-            return ((DraftFirstAreaXp * percent) + 50L) / 100L;
+            return ((nominal * percent) + 50L) / 100L;
         }
     }
 

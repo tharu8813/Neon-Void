@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using NeonVoid.Combat.AI;
 using NeonVoid.Core;
+using NeonVoid.Progression;
 
 namespace NeonVoid.Missions.Generation
 {
@@ -64,6 +66,77 @@ namespace NeonVoid.Missions.Generation
 
         /// <summary>Seeds tried before the generator gives up on a spec.</summary>
         public const int MaxAttempts = 12;
+
+        /// <summary>
+        /// Normal enemies this area is budgeted for. GDD v1 section 5.4 counts 일반 적 처치
+        /// 예상 횟수 48 at nominal size, scaled with the map so a 60% area is not a crowd.
+        /// </summary>
+        public static int NormalEnemiesFor(in AreaSpec spec) =>
+            AreaLayoutValidator.Scale(MissionXpBudget.DraftNormalKillsPerArea, spec.SizeModifierPercent);
+
+        /// <summary>정예 this area is budgeted for. GDD v1 section 5.4 counts 3.</summary>
+        public static int ElitesFor(in AreaSpec spec) =>
+            AreaLayoutValidator.Scale(MissionXpBudget.DraftElitesPerArea, spec.SizeModifierPercent);
+
+        /// <summary>
+        /// [초안] the archetypes a hardware area draws from, repeated for weight.
+        /// <para>
+        /// Straight from docs/01 section 2's 적 성향 column, which is the whole reason this is a
+        /// per-hardware table and not one list: CLAUDE.md forbids treating the five areas as one
+        /// copy-pasted map, and "the same enemies in a different colour" is exactly what that
+        /// means. Only the four implemented archetypes appear - 분열, 복제, 속박 and 중장갑 are
+        /// named by the document and do not exist, so they are absent rather than faked with a
+        /// chaser.
+        /// </para>
+        /// </summary>
+        public static EnemyArchetypeId[] DraftArchetypeMixFor(HardwareId hardware)
+        {
+            switch (hardware)
+            {
+                // 다수 접근형·지원형.
+                case HardwareId.Cpu:
+                    return new[]
+                    {
+                        EnemyArchetypeId.Chaser, EnemyArchetypeId.Chaser, EnemyArchetypeId.Chaser,
+                        EnemyArchetypeId.Support,
+                    };
+
+                // 원거리·탄막. 분열 does not exist.
+                case HardwareId.Gpu:
+                    return new[]
+                    {
+                        EnemyArchetypeId.Ranged, EnemyArchetypeId.Ranged, EnemyArchetypeId.Ranged,
+                        EnemyArchetypeId.Chaser,
+                    };
+
+                // 지원형 heavy. 복제·속박 do not exist.
+                case HardwareId.Ram:
+                    return new[]
+                    {
+                        EnemyArchetypeId.Support, EnemyArchetypeId.Support,
+                        EnemyArchetypeId.Chaser, EnemyArchetypeId.Ranged,
+                    };
+
+                // 돌격·고속 원거리.
+                case HardwareId.Ssd:
+                    return new[]
+                    {
+                        EnemyArchetypeId.Charger, EnemyArchetypeId.Charger, EnemyArchetypeId.Charger,
+                        EnemyArchetypeId.Ranged,
+                    };
+
+                // 지역 점유. 중장갑 does not exist, so the elite multipliers carry that weight.
+                case HardwareId.Hdd:
+                    return new[]
+                    {
+                        EnemyArchetypeId.Chaser, EnemyArchetypeId.Chaser,
+                        EnemyArchetypeId.Charger, EnemyArchetypeId.Support,
+                    };
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(hardware), hardware, "Not a hardware area.");
+            }
+        }
 
         /// <summary>Placements tried for one room before the attempt is abandoned.</summary>
         private const int PlacementTriesPerRoom = 64;
@@ -203,21 +276,110 @@ namespace NeonVoid.Missions.Generation
                 objectives.Add(rooms[objectiveRooms[i]].Centre);
 
             AreaRoom boss = rooms[bossRoom];
+
+            // Opposite corners of the boss's room, so the console and the pad are as far from
+            // each other and from the boss as that room allows.
+            var purification = new AreaCell(boss.MinX, boss.MinY);
+            var extraction = new AreaCell(boss.MaxX, boss.MaxY);
+
+            var taken = new HashSet<AreaCell> { start, boss.Centre, purification, extraction };
+            for (int i = 0; i < objectives.Count; ++i)
+                taken.Add(objectives[i]);
+
+            List<AreaEnemySpawn> enemies = PlaceEnemies(spec, rng, grid, rooms, field, bossRoom, taken);
+
             refusal = string.Empty;
             return new AreaLayout(
-                spec,
-                seed,
-                attempt,
-                DraftCellSizeUnits,
-                grid,
-                rooms,
-                start,
-                objectives,
-                boss.Centre,
-                // Opposite corners of the boss's room, so the console and the pad are as far from
-                // each other and from the boss as that room allows.
-                new AreaCell(boss.MinX, boss.MinY),
-                new AreaCell(boss.MaxX, boss.MaxY));
+                spec, seed, attempt, DraftCellSizeUnits, grid, rooms, start, objectives,
+                boss.Centre, purification, extraction, enemies);
+        }
+
+        /// <summary>
+        /// Scatters the area's enemies through every room except the entrance and the boss's.
+        /// <para>
+        /// <b>Not the entrance room.</b> docs/01 section 6 check 2 forbids 초반 화면 밖 즉시 피해,
+        /// and the room the player materialises in is where that would happen. docs/01's CPU
+        /// opening - 진입 0~90초: 접근형 적 - is the room <i>after</i> this one, which is where
+        /// they are.
+        /// </para>
+        /// <para>
+        /// <b>Not the boss's room either.</b> docs/01 section 3 wants a boss fight with
+        /// telegraphs that can be read and dodged; a dozen chasers in the same room would make
+        /// every pattern unreadable, and the area's 2분 보스 segment would be a brawl that
+        /// happens to contain a boss.
+        /// </para>
+        /// <para>
+        /// Candidates are gathered and then shuffled, rather than filled room by room: a room
+        /// too small for its share would otherwise leave the area short of enemies without
+        /// anything saying so.
+        /// </para>
+        /// </summary>
+        private static List<AreaEnemySpawn> PlaceEnemies(
+            in AreaSpec spec,
+            DeterministicRng rng,
+            AreaGrid grid,
+            List<AreaRoom> rooms,
+            int[] distancesFromStart,
+            int bossRoom,
+            HashSet<AreaCell> taken)
+        {
+            var spawns = new List<AreaEnemySpawn>();
+            var candidates = new List<AreaEnemySpawn>();
+
+            for (int room = 0; room < rooms.Count; ++room)
+            {
+                if (room == 0 || room == bossRoom)
+                    continue;
+
+                AreaRoom shape = rooms[room];
+                for (int y = shape.MinY; y <= shape.MaxY; ++y)
+                {
+                    for (int x = shape.MinX; x <= shape.MaxX; ++x)
+                    {
+                        var cell = new AreaCell(x, y);
+                        if (taken.Contains(cell) || !grid.IsWalkable(cell))
+                            continue;
+
+                        int steps = grid.DistanceAt(distancesFromStart, cell);
+                        if (steps == AreaGrid.Unreachable || steps < AreaLayoutValidator.DraftMinStartToEnemyCells)
+                            continue;
+
+                        candidates.Add(new AreaEnemySpawn(cell, EnemyArchetypeId.Chaser, false, room));
+                    }
+                }
+            }
+
+            Shuffle(candidates, rng);
+
+            EnemyArchetypeId[] mix = DraftArchetypeMixFor(spec.Hardware);
+            int elites = ElitesFor(spec);
+            int wanted = NormalEnemiesFor(spec) + elites;
+            int place = wanted < candidates.Count ? wanted : candidates.Count;
+
+            for (int i = 0; i < place; ++i)
+            {
+                AreaEnemySpawn candidate = candidates[i];
+
+                // The elites are the first drawn, and the draw was already shuffled, so they are
+                // spread rather than all standing in the last room.
+                bool elite = i < elites;
+                EnemyArchetypeId archetype = mix[rng.NextInt(0, mix.Length)];
+                spawns.Add(new AreaEnemySpawn(candidate.Cell, archetype, elite, candidate.RoomIndex));
+            }
+
+            return spawns;
+        }
+
+        /// <summary>Fisher-Yates on the run's own generator, so the scatter is reproducible.</summary>
+        private static void Shuffle(List<AreaEnemySpawn> items, DeterministicRng rng)
+        {
+            for (int i = items.Count - 1; i > 0; --i)
+            {
+                int j = rng.NextInt(0, i + 1);
+                AreaEnemySpawn swap = items[i];
+                items[i] = items[j];
+                items[j] = swap;
+            }
         }
 
         private static List<AreaRoom> PlaceRooms(DeterministicRng rng, int roomCount, int side)

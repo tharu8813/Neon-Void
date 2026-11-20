@@ -5,6 +5,7 @@ using System.Reflection;
 using NeonVoid.Combat;
 using NeonVoid.Missions;
 using NeonVoid.Missions.Generation;
+using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using NUnit.Framework;
 using UnityEngine;
@@ -102,12 +103,31 @@ namespace NeonVoid.Tests.PlayModeTests
 
         private Vector3 WorldOf(AreaCell cell) => AreaOrigin + _area.Layout.WorldPositionOf(cell);
 
-        /// <summary>Puts the player on a cell. A CharacterController teleports when moved.</summary>
-        private void StandOn(AreaCell cell) =>
-            _arena.PlayerObject.transform.position =
-                WorldOf(cell) + (Vector3.up * AreaWorldBuilder.PlayerStandingLiftUnits);
+        /// <summary>
+        /// Puts the player on a cell, through the motion simulation. Writing the transform is not
+        /// enough - PlayerSimulationDriver keeps its own position ledger, and the
+        /// CharacterController puts the player back where that ledger says they are.
+        /// </summary>
+        private void StandOn(AreaCell cell)
+        {
+            Vector3 destination = WorldOf(cell) + (Vector3.up * AreaWorldBuilder.PlayerStandingLiftUnits);
+            Transform player = _arena.PlayerObject.transform;
+            player.position = new Vector3(player.position.x, destination.y, player.position.z);
+            _arena.Driver.TeleportTo(new Vector2(destination.x, destination.z));
+        }
 
         private static readonly string[] NoLearns = new string[0];
+
+        /// <summary>
+        /// Refills the health pool to something a room full of enemies cannot empty. Configure is
+        /// the only revive this project has, and it is what the combat tests use.
+        /// </summary>
+        private static void MakeUnkillable(CombatActor actor)
+        {
+            CombatStats stats = PrototypeArena.PlayerStats();
+            stats.MaxHealth = 1_000_000f;
+            actor.Configure(PrototypeArena.PlayerTeam, stats);
+        }
 
         // --- the room ----------------------------------------------------------------------
 
@@ -284,6 +304,122 @@ namespace NeonVoid.Tests.PlayModeTests
             yield return _arena.Tick(30);
 
             Assert.Less(device.Health.Current, before, "the player's shot never reached the device");
+        }
+
+        // --- 적 배치 -----------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator TheRoomsEnemiesWaitUntilThePlayerWalksIn()
+        {
+            // A nominal area is budgeted for fifty-one enemies. Spawning them awake means
+            // fifty-one AI agents walking at the player from the moment the area loads, which is
+            // not the 5.5분 of 일반 전투 docs/01 section 7 budgets - it is one mob.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            Assert.Greater(area.EnemyCount, 0, "the area was built with no enemies");
+            Assert.Greater(area.RoomGates.Length, 1, "every enemy ended up in one room");
+
+            for (int i = 0; i < area.RoomGates.Length; ++i)
+            {
+                Assert.IsFalse(area.RoomGates[i].IsOpen, $"{area.RoomGates[i].name} was open on arrival");
+                Assert.IsFalse(
+                    area.RoomGates[i].Contains(_arena.PlayerObject.transform.position),
+                    "a gated room contains the entrance");
+            }
+
+            // Walk into one of them.
+            AreaEnemySpawn first = area.Layout.Enemies[0];
+            StandOn(first.Cell);
+            yield return _arena.Tick(1);
+
+            int open = 0;
+            for (int i = 0; i < area.RoomGates.Length; ++i)
+            {
+                if (area.RoomGates[i].IsOpen)
+                    ++open;
+            }
+
+            Assert.AreEqual(1, open, "walking into one room woke more than one");
+        }
+
+        [UnityTest]
+        public IEnumerator AKillInAnOpenedRoomPaysItsMissionXp()
+        {
+            // GDD v1 section 5.4's 일반 적 처치 8 XP, through the gate, the runtime and the flow.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            AreaEnemySpawn target = default;
+            bool found = false;
+            for (int i = 0; i < area.Layout.Enemies.Count && !found; ++i)
+            {
+                if (!area.Layout.Enemies[i].IsElite)
+                {
+                    target = area.Layout.Enemies[i];
+                    found = true;
+                }
+            }
+
+            Assert.IsTrue(found, "the area holds no ordinary enemy");
+
+            // The player is about to stand in the middle of a woken room. Sixteen enemies hitting
+            // them is correct behaviour and it is also how this test went flaky: a player who
+            // dies fails the mission, and a failed mission pays for no kills. The test is about
+            // the XP, so the player is taken out of the equation rather than the enemies.
+            MakeUnkillable(_arena.Player);
+
+            StandOn(target.Cell);
+            yield return _arena.Tick(1);
+
+            AreaRoomGate gate = null;
+            for (int i = 0; i < area.RoomGates.Length; ++i)
+            {
+                if (area.RoomGates[i].IsOpen)
+                    gate = area.RoomGates[i];
+            }
+
+            Assert.IsNotNull(gate, "no room woke up");
+            int aliveBefore = gate.AliveCount;
+            Assert.Greater(aliveBefore, 0);
+
+            long xpBefore = Flow.Run.MissionXp;
+            int killsBefore = Flow.EnemiesKilledInMission;
+
+            // One of the room's enemies, found by where it stands rather than by reaching into
+            // the gate - and killed through the normal damage pipeline, so the gate's own
+            // subscription is what reports it.
+            CombatActor victim = null;
+            CombatActor[] everyActor = UnityEngine.Object.FindObjectsByType<CombatActor>(FindObjectsSortMode.None);
+            for (int i = 0; i < everyActor.Length && victim == null; ++i)
+            {
+                if (everyActor[i].TeamId == 1
+                    && everyActor[i].IsAlive
+                    && everyActor[i].gameObject.activeInHierarchy
+                    && gate.Contains(everyActor[i].transform.position)
+                    && everyActor[i].GetComponent<NeonVoid.Combat.AI.EnemyAgent>() != null)
+                {
+                    victim = everyActor[i];
+                }
+            }
+
+            Assert.IsNotNull(victim, "no live enemy was found in the opened room");
+            string victimName = victim.name;
+            PrototypeArena.Kill(victim);
+            yield return _arena.Tick(1);
+
+            Assert.IsFalse(victim.IsAlive, $"{victimName} survived a lethal hit");
+            Assert.AreEqual(
+                aliveBefore - 1, gate.AliveCount,
+                $"{gate.name} does not hold {victimName}, so its death was nobody's");
+            Assert.AreEqual(killsBefore + 1, Flow.EnemiesKilledInMission, "the kill was not counted");
+            Assert.AreEqual(
+                xpBefore + MissionXpBudget.XpForNormalKill(0), Flow.Run.MissionXp,
+                "the kill did not pay its 의뢰 XP");
         }
 
         [UnityTest]

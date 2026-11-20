@@ -1,4 +1,5 @@
 using System;
+using NeonVoid.Core;
 using NeonVoid.Progression;
 using NUnit.Framework;
 
@@ -54,6 +55,51 @@ namespace NeonVoid.Tests
                 Assert.AreEqual(publishedCumulative[area], running, $"cumulative after {area + 1} areas");
                 Assert.AreEqual(
                     publishedLevels[area], mission.LevelFor(running), $"mission level after {area + 1} areas");
+            }
+        }
+
+        [Test]
+        public void TheCausesAddUpToTheAreasBudgetExactly()
+        {
+            // GDD v1 section 5.4 prints the table and its total: 8×48 + 32×3 + 40×3 + 120 = 720.
+            // The area is paid cause by cause, so if the two ever disagree an area clears out for
+            // more or less than its own budget and the whole pacing table is off.
+            Assert.AreEqual(
+                MissionXpBudget.DraftFirstAreaXp, MissionXpBudget.DraftBudgetBreakdownAtNominalSize,
+                "the breakdown and the budget disagree");
+
+            Assert.AreEqual(8L, MissionXpBudget.DraftXpPerNormalKill);
+            Assert.AreEqual(48, MissionXpBudget.DraftNormalKillsPerArea);
+            Assert.AreEqual(32L, MissionXpBudget.DraftXpPerEliteKill);
+            Assert.AreEqual(3, MissionXpBudget.DraftElitesPerArea);
+            Assert.AreEqual(40L, MissionXpBudget.DraftXpPerObjective);
+            Assert.AreEqual(3, MissionXpBudget.DraftObjectivesInBudget);
+            Assert.AreEqual(120L, MissionXpBudget.DraftXpPerBoss);
+        }
+
+        [Test]
+        public void EveryCauseScalesWithTheAreaAndStaysCloseToTheBudget()
+        {
+            // Each cause is rounded on its own, so the scaled parts cannot sum to the scaled
+            // total exactly - and the biggest component is an 8 XP kill, which an integer cannot
+            // step by 18% without a few percent of error (8 → 9 is 12.5%, not 18%). The measured
+            // worst case is the second area, 2.5% low. The band is therefore 4%, and what it
+            // still catches is a cause that stopped scaling at all, which would be a gap of
+            // tens of percent rather than a rounding one.
+            for (int area = 0; area < DesignConstants.HardwareCount; ++area)
+            {
+                long causes =
+                    (MissionXpBudget.XpForNormalKill(area) * MissionXpBudget.DraftNormalKillsPerArea)
+                    + (MissionXpBudget.XpForEliteKill(area) * MissionXpBudget.DraftElitesPerArea)
+                    + (MissionXpBudget.XpForObjective(area) * MissionXpBudget.DraftObjectivesInBudget)
+                    + MissionXpBudget.XpForBoss(area);
+
+                long budget = MissionXpBudget.XpForArea(area);
+                long drift = causes > budget ? causes - budget : budget - causes;
+
+                Assert.LessOrEqual(
+                    drift, budget / 25L,
+                    $"area {area + 1}: the causes add to {causes} against a budget of {budget}");
             }
         }
 

@@ -295,13 +295,16 @@ namespace NeonVoid.Tests
             for (int i = 0; i < Objectives; ++i)
                 _flow.TryCompleteObjective();
             _flow.TryDefeatBoss();
+            long xpEarnedSoFar = _run.MissionXp;
 
             Assert.IsFalse(_flow.TryPurify());
 
             Assert.AreEqual(AreaProgressPhase.Purification, _flow.AreaPhase, "the area advanced anyway");
             Assert.AreEqual(0, _flow.PurifiedAreas.Count);
             Assert.AreEqual(0, _run.PurificationsCompleted);
-            Assert.AreEqual(0L, _run.MissionXp, "a refused purification paid its 의뢰 XP");
+            Assert.AreEqual(
+                xpEarnedSoFar, _run.MissionXp,
+                "a refused purification moved the 의뢰 XP the objectives and the boss had earned");
             Assert.IsFalse(_flow.CanExtract);
             StringAssert.Contains("was not committed", _flow.LastRefusal);
 
@@ -312,21 +315,109 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void EachPurificationPaysItsOwnAreasMissionXp()
+        public void ThePurificationItselfPaysNoMissionXp()
         {
-            // The budget rises with the areas already cleared, so the second area is worth more
-            // than the first - and taking the figure after the increment would pay the first at
-            // the second's rate.
+            // GDD v1 section 5.4 gives an area a table of 지급 원인 - kills, objectives, the boss -
+            // that adds up to its budget, and has no line for the purification. A lump on top
+            // would double every area.
+            Begin();
+            _flow.TryEnterArea(HardwareId.Cpu, Objectives);
+            for (int i = 0; i < Objectives; ++i)
+                _flow.TryCompleteObjective();
+            _flow.TryDefeatBoss();
+
+            long before = _run.MissionXp;
+            Assert.IsTrue(_flow.TryPurify(), _flow.LastRefusal);
+
+            Assert.AreEqual(before, _run.MissionXp, "the purification paid a lump of its own");
+            Assert.Greater(before, 0L, "the objectives and the boss paid nothing either");
+        }
+
+        [Test]
+        public void ObjectivesAndTheBossPayTheDocumentsFigures()
+        {
+            Begin();
+            _flow.TryEnterArea(HardwareId.Cpu, Objectives);
+
+            _flow.TryCompleteObjective();
+            Assert.AreEqual(MissionXpBudget.XpForObjective(0), _run.MissionXp);
+
+            _flow.TryCompleteObjective();
+            _flow.TryCompleteObjective();
+            Assert.AreEqual(MissionXpBudget.XpForObjective(0) * 3L, _run.MissionXp);
+
+            _flow.TryDefeatBoss();
+            Assert.AreEqual(
+                (MissionXpBudget.XpForObjective(0) * 3L) + MissionXpBudget.XpForBoss(0), _run.MissionXp);
+        }
+
+        [Test]
+        public void TheSecondAreaPaysMoreForTheSameWork()
+        {
+            // 구역 XP = round(720 × (1 + 0.18 × 정화 수)), so every cause scales with it. Reading
+            // the figure after the purification instead of before would pay the first area at the
+            // second's rate.
             Begin();
             ClearArea(HardwareId.Cpu);
-            Assert.AreEqual(MissionXpBudget.XpForArea(0), _run.MissionXp);
+            long first = _run.MissionXp;
 
             _flow.TryReturnToMotherboard();
             ClearArea(HardwareId.Gpu);
+            long second = _run.MissionXp - first;
 
-            Assert.AreEqual(
-                MissionXpBudget.XpForArea(0) + MissionXpBudget.XpForArea(1), _run.MissionXp);
+            Assert.Greater(second, first, "the second area paid no more than the first");
             Assert.Greater(_run.MissionLevel, 1, "의뢰 레벨 did not move on all that XP");
+        }
+
+        [Test]
+        public void AKillPaysItsOwnFigureAndAnElitePaysMore()
+        {
+            // GDD v1 section 5.4: 일반 적 처치 8, 정예 적 처치 32.
+            Begin();
+            _flow.TryEnterArea(HardwareId.Cpu, Objectives);
+
+            Assert.IsTrue(_flow.NotifyEnemyKilled(elite: false), _flow.LastRefusal);
+            Assert.AreEqual(MissionXpBudget.XpForNormalKill(0), _run.MissionXp);
+            Assert.AreEqual(1, _flow.EnemiesKilledInMission);
+
+            Assert.IsTrue(_flow.NotifyEnemyKilled(elite: true), _flow.LastRefusal);
+            Assert.AreEqual(
+                MissionXpBudget.XpForNormalKill(0) + MissionXpBudget.XpForEliteKill(0), _run.MissionXp);
+            Assert.AreEqual(1, _flow.ElitesKilledInMission);
+            Assert.Greater(MissionXpBudget.XpForEliteKill(0), MissionXpBudget.XpForNormalKill(0));
+        }
+
+        [Test]
+        public void AKillOutsideAnAreaPaysNothing()
+        {
+            // Not refusing the kill - it happened - but refusing to pay for it. A mission that
+            // banked XP from the motherboard or after a death would be banking it from nowhere.
+            Begin();
+            Assert.IsFalse(_flow.NotifyEnemyKilled(elite: false), "a kill on the motherboard paid");
+            Assert.AreEqual(0L, _run.MissionXp);
+
+            _flow.TryEnterArea(HardwareId.Cpu, Objectives);
+            _flow.TryFail();
+
+            Assert.IsFalse(_flow.NotifyEnemyKilled(elite: false), "a kill after a death paid");
+            Assert.AreEqual(0, _flow.EnemiesKilledInMission);
+        }
+
+        [Test]
+        public void ANewMissionForgetsItsKills()
+        {
+            Begin();
+            ClearArea(HardwareId.Cpu);
+            _flow.NotifyEnemyKilled(elite: false);
+            _flow.NotifyEnemyKilled(elite: true);
+            _flow.TryFail();
+            _flow.TryReturnToHub();
+
+            Assert.IsTrue(Begin(runId: 2L), _flow.LastRefusal);
+
+            Assert.AreEqual(0, _flow.EnemiesKilledInMission);
+            Assert.AreEqual(0, _flow.ElitesKilledInMission);
+            Assert.AreEqual(0L, _run.MissionXp);
         }
 
         [Test]
