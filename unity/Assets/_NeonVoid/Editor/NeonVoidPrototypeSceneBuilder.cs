@@ -6,6 +6,7 @@ using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Player;
+using NeonVoid.Plugins;
 using NeonVoid.Presentation;
 using NeonVoid.Progression;
 using UnityEditor;
@@ -104,6 +105,12 @@ namespace NeonVoid.EditorTools
             AssignSerialized(caster, "motionDriver", driver);
             AssignSerialized(caster, "fieldMaterial", fieldMat);
             AssignSerializedObjectArray(caster, "slotSkills", NeonVoidPrototypeSkills.Load(skillPaths));
+
+            // P2: plugin procs. Three of docs/03's 27 are granted at startup so the proc queue
+            // has something to judge; the three-card reward screen that really grants them
+            // needs the save commit behind it.
+            PluginProcDirector procs = player.AddComponent<PluginProcDirector>();
+            AssignSerialized(procs, "owner", playerActor);
 
             // The body stops colliding and looks dead. Without this a corpse stays a solid,
             // invisible wall that can corner the player and stop their shots.

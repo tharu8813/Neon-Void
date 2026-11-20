@@ -101,6 +101,10 @@ namespace NeonVoid.Combat.Projectiles
                 if (_attacker != null && outcome.Lifesteal.Total > 0f)
                     _attacker.Heal(outcome.Lifesteal.Total);
 
+                // 탄환 적중: the trigger G10 and G17 are written against.
+                if (_attacker != null)
+                    _attacker.NotifyHitLanded(actor, _damage, outcome, HitOrigin.Projectile);
+
                 if (_ledger.IsSpent)
                 {
                     Despawn();

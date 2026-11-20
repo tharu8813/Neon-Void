@@ -110,6 +110,9 @@ namespace NeonVoid.Combat.Skills
                 if (_owner != null && outcome.Lifesteal.Total > 0f)
                     _owner.Heal(outcome.Lifesteal.Total);
 
+                if (_owner != null)
+                    _owner.NotifyHitLanded(actor, _damage, outcome, HitOrigin.Skill);
+
                 if (_status.Applies)
                     actor.ApplyStatus(_status.Id, _status.Magnitude, 0f, _status.DurationTicksOverride);
             }

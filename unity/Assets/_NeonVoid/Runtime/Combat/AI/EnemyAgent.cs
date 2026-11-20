@@ -189,6 +189,10 @@ namespace NeonVoid.Combat.AI
                 DamageOutcome outcome = target.ReceiveDamage(request, _self.Stats, critRolled: false);
                 if (outcome.Lifesteal.Total > 0f)
                     _self.Heal(outcome.Lifesteal.Total);
+
+                // Enemies report their hits too. Nothing listens yet, but an enemy that could
+                // never trigger an effect would be a rule that applies to one side only.
+                _self.NotifyHitLanded(target, request, outcome, HitOrigin.Contact);
                 return;
             }
         }

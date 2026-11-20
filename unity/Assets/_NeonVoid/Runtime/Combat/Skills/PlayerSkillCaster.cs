@@ -203,6 +203,8 @@ namespace NeonVoid.Combat.Skills
                 if (outcome.Lifesteal.Total > 0f)
                     _actor.Heal(outcome.Lifesteal.Total);
 
+                _actor.NotifyHitLanded(actor, asset.Definition.Damage, outcome, HitOrigin.Skill);
+
                 SkillStatusEffect status = asset.AppliedStatus;
                 if (status.Applies)
                     actor.ApplyStatus(status.Id, status.Magnitude, 0f, status.DurationTicksOverride);

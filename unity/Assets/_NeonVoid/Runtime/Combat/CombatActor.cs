@@ -70,6 +70,18 @@ namespace NeonVoid.Combat
         /// <summary>Raised for every landed hit, for HUD and VFX. Read-only information.</summary>
         public event Action<CombatActor, DamageOutcome> DamageTaken;
 
+        /// <summary>
+        /// Raised on the <b>attacker</b> when one of its hits lands, which is what plugin
+        /// triggers are written against: docs/03 phrases them as 탄환 적중 시 and 타격 시,
+        /// both from the attacker's point of view.
+        /// <para>
+        /// Raised by the code that delivered the hit rather than by ReceiveDamage, because only
+        /// the delivering code knows what delivered it - a projectile, a skill, a field tick or
+        /// a contact attack - and that classification is what the triggers match on.
+        /// </para>
+        /// </summary>
+        public event Action<HitReport> HitLanded;
+
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Actors;
 
         private void Awake()
@@ -177,6 +189,32 @@ namespace NeonVoid.Combat
                 return SkillCastResult.Refused(SkillCastRejection.CasterIsDead);
 
             return _skills.TryCast(slotIndex, ref _mana, _stats, SkillGate.FromStatus(_status));
+        }
+
+        /// <summary>
+        /// Reports that this actor landed a hit, for plugin triggers and presentation.
+        /// <para>
+        /// A hit that removed no health is still reported; whether it may trigger anything is
+        /// decided by <see cref="HitReport.Landed"/>, in one place, rather than by each caller
+        /// remembering to check.
+        /// </para>
+        /// </summary>
+        public void NotifyHitLanded(in HitReport report) => HitLanded?.Invoke(report);
+
+        /// <summary>
+        /// Builds and raises the report for a hit this actor just delivered, so the four places
+        /// that deal damage cannot each assemble it slightly differently.
+        /// </summary>
+        public void NotifyHitLanded(
+            CombatActor target, in DamageRequest request, in DamageOutcome outcome, HitOrigin origin)
+        {
+            if (target == null)
+                return;
+
+            NotifyHitLanded(new HitReport(
+                ActorId, target.ActorId, origin, request.Type,
+                request.IsArea, request.IsPeriodic, outcome.Resolution.IsCritical,
+                outcome.Killed, outcome.HealthRemoved));
         }
 
         /// <summary>Heals this actor, e.g. from its own lifesteal.</summary>
