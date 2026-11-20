@@ -29,6 +29,18 @@ namespace NeonVoid.Combat.Status
 
         public StatusStackPolicy StackPolicy;
 
+        /// <summary>
+        /// Ticks between this effect's periodic events, or 0 for an effect that does nothing
+        /// on a schedule.
+        /// <para>
+        /// 재생 heals and 무결성 공격 damages over time, and both were tracked with a duration
+        /// and a magnitude that nothing ever read: applying either changed no health at all.
+        /// The interval lives in the catalogue rather than in the code that fires it, so the
+        /// rate is data like every other number here.
+        /// </para>
+        /// </summary>
+        public int PeriodicIntervalTicks;
+
         /// <summary>Upper bound for AdditiveStacks. Ignored by the unbounded policy.</summary>
         public int MaxStacks;
 
@@ -39,6 +51,16 @@ namespace NeonVoid.Combat.Status
         {
             if (Id == StatusEffectId.None)
                 throw new InvalidOperationException("A status definition needs a real id.");
+            if (PeriodicIntervalTicks < 0)
+                throw new InvalidOperationException(
+                    $"{Id}: {nameof(PeriodicIntervalTicks)} must not be negative.");
+
+            // An interval longer than the effect would fire once at most, or never, which is a
+            // periodic effect that is not periodic - and reads in play as one that is broken.
+            if (PeriodicIntervalTicks > 0 && PeriodicIntervalTicks > BaseDurationTicks)
+                throw new InvalidOperationException(
+                    $"{Id}: a {PeriodicIntervalTicks} tick interval does not fit inside a {BaseDurationTicks} tick duration.");
+
             if (BaseDurationTicks < 1)
                 throw new InvalidOperationException($"{Id}: duration must be at least one tick.");
             if (StackPolicy == StatusStackPolicy.AdditiveStacks && MaxStacks < 1)
@@ -83,7 +105,9 @@ namespace NeonVoid.Combat.Status
         {
             var catalog = new Dictionary<StatusEffectId, StatusEffectDefinition>();
 
-            void Add(StatusEffectId id, bool isBuff, StatusStackPolicy policy, int maxStacks, int durationTicks)
+            void Add(
+                StatusEffectId id, bool isBuff, StatusStackPolicy policy, int maxStacks, int durationTicks,
+                int periodicIntervalTicks = 0)
             {
                 var definition = new StatusEffectDefinition
                 {
@@ -93,6 +117,7 @@ namespace NeonVoid.Combat.Status
                     StackPolicy = policy,
                     MaxStacks = maxStacks,
                     BaseDurationTicks = durationTicks,
+                    PeriodicIntervalTicks = periodicIntervalTicks,
                 };
                 definition.Validate();
                 catalog.Add(id, definition);
@@ -104,7 +129,9 @@ namespace NeonVoid.Combat.Status
             Add(StatusEffectId.ProjectileSpeedUp, true, StatusStackPolicy.RefreshDuration, 1, 300);
             Add(StatusEffectId.AttackSpeedUp, true, StatusStackPolicy.AdditiveStacks, 5, 300);
             Add(StatusEffectId.SkillHaste, true, StatusStackPolicy.AdditiveStacks, 10, 300);
-            Add(StatusEffectId.Regeneration, true, StatusStackPolicy.IndependentStacks, 1, 300);
+            // [초안] 재생 heals twice a second. The magnitude is health per event, so the rate
+            // and the amount are separate numbers and either can be retuned alone.
+            Add(StatusEffectId.Regeneration, true, StatusStackPolicy.IndependentStacks, 1, 300, 30);
             // Unique: a second invulnerability must not extend the first, which would make
             // overlapping sources into near-permanent immunity.
             Add(StatusEffectId.Invulnerable, true, StatusStackPolicy.Unique, 1, 30);
@@ -118,7 +145,8 @@ namespace NeonVoid.Combat.Status
             Add(StatusEffectId.Silence, false, StatusStackPolicy.RefreshDuration, 1, 90);
             Add(StatusEffectId.Root, false, StatusStackPolicy.RefreshDuration, 1, 60);
             Add(StatusEffectId.Stun, false, StatusStackPolicy.RefreshDuration, 1, 45);
-            Add(StatusEffectId.IntegrityAttack, false, StatusStackPolicy.IndependentStacks, 1, 180);
+            // [초안] 무결성 공격 damages twice a second, on the same footing.
+            Add(StatusEffectId.IntegrityAttack, false, StatusStackPolicy.IndependentStacks, 1, 180, 30);
             // The named unbounded case from docs/02 section 6.
             Add(StatusEffectId.FirewallBreach, false, StatusStackPolicy.UnboundedAggregated, 0, 300);
 

@@ -17,8 +17,35 @@ namespace NeonVoid.Combat.Status
         /// <summary>Magnitude of a single stack.</summary>
         public float MagnitudePerStack;
 
+        /// <summary>
+        /// Ticks until this instance's next periodic event, or 0 when it has none.
+        /// <para>
+        /// Set to a full interval when the effect is applied rather than firing straight away.
+        /// A status can be reapplied continuously - 무결성 공격 refreshes from every hit - and
+        /// an effect that fired on application would deal its damage every tick to anyone
+        /// reapplying it quickly. The field in a skill is placed once and deliberately, which
+        /// is why that one does fire immediately; this one cannot.
+        /// </para>
+        /// </summary>
+        public int TicksUntilNextEvent;
+
         /// <summary>Combined magnitude of this instance.</summary>
         public float TotalMagnitude => MagnitudePerStack * Stacks;
+    }
+
+    /// <summary>One periodic effect firing: how much, and of what.</summary>
+    public readonly struct StatusPeriodicEvent
+    {
+        public readonly StatusEffectId Id;
+
+        /// <summary>The instance's combined magnitude at the moment it fired.</summary>
+        public readonly float Magnitude;
+
+        public StatusPeriodicEvent(StatusEffectId id, float magnitude)
+        {
+            Id = id;
+            Magnitude = magnitude;
+        }
     }
 
     /// <summary>What an application did. Useful for the HUD and for asserting in tests.</summary>
@@ -189,32 +216,65 @@ namespace NeonVoid.Combat.Status
         /// Advances every instance by one logic tick and removes those that ended. Returns the
         /// effects that expired on this tick, in application order.
         /// </summary>
-        public IReadOnlyList<StatusEffectId> Tick()
+        public IReadOnlyList<StatusEffectId> Tick() => Tick(null);
+
+        /// <summary>
+        /// Advances every instance by one tick, collecting any periodic events into
+        /// <paramref name="periodicEvents"/>.
+        /// <para>
+        /// Duration is spent before a periodic event is considered, so the tick an effect
+        /// expires on does not also fire one. That is the same rule the skill field plays by,
+        /// and it matters for the same reason: an extra event at the end is a silent damage or
+        /// healing increase that no number in the data accounts for.
+        /// </para>
+        /// <para>
+        /// Both lists come back in application order. Removal needs a second pass rather than
+        /// a backwards walk, which is a small price for events that arrive in the order the
+        /// effects were applied rather than the reverse.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<StatusEffectId> Tick(List<StatusPeriodicEvent> periodicEvents)
         {
             List<StatusEffectId> expired = null;
+            List<int> removeAt = null;
 
-            for (int i = _instances.Count - 1; i >= 0; --i)
+            for (int i = 0; i < _instances.Count; ++i)
             {
                 StatusInstance instance = _instances[i];
                 instance.RemainingTicks--;
 
-                if (instance.RemainingTicks > 0)
+                if (instance.RemainingTicks <= 0)
                 {
-                    _instances[i] = instance;
+                    (expired ??= new List<StatusEffectId>()).Add(instance.Id);
+                    (removeAt ??= new List<int>()).Add(i);
                     continue;
                 }
 
-                (expired ??= new List<StatusEffectId>()).Add(instance.Id);
-                _instances.RemoveAt(i);
+                if (instance.TicksUntilNextEvent > 0)
+                {
+                    instance.TicksUntilNextEvent--;
+                    if (instance.TicksUntilNextEvent <= 0)
+                    {
+                        periodicEvents?.Add(new StatusPeriodicEvent(instance.Id, instance.TotalMagnitude));
+                        instance.TicksUntilNextEvent = IntervalOf(instance.Id);
+                    }
+                }
+
+                _instances[i] = instance;
             }
 
-            if (expired == null)
-                return Array.Empty<StatusEffectId>();
+            if (removeAt != null)
+                for (int i = removeAt.Count - 1; i >= 0; --i)
+                    _instances.RemoveAt(removeAt[i]);
 
-            // Removal ran backwards for safety; report in application order.
-            expired.Reverse();
-            return expired;
+            return expired ?? (IReadOnlyList<StatusEffectId>)Array.Empty<StatusEffectId>();
         }
+
+        /// <summary>The catalogue interval for an effect, or 0 when it has none.</summary>
+        private int IntervalOf(StatusEffectId id) =>
+            _catalog.TryGetValue(id, out StatusEffectDefinition definition)
+                ? definition.PeriodicIntervalTicks
+                : 0;
 
         /// <summary>Removes every instance of an effect, e.g. on a cleanse.</summary>
         public int Remove(StatusEffectId id)
@@ -248,6 +308,7 @@ namespace NeonVoid.Combat.Status
                 RemainingTicks = duration,
                 Stacks = stacks,
                 MagnitudePerStack = magnitude,
+                TicksUntilNextEvent = IntervalOf(id),
             });
             return StatusApplyOutcome.Applied;
         }
@@ -255,6 +316,11 @@ namespace NeonVoid.Combat.Status
         private StatusApplyOutcome Replace(
             int index, int duration, int stacks, float magnitude, StatusApplyOutcome outcome)
         {
+            // TicksUntilNextEvent is deliberately NOT touched. Reapplying refreshes the
+            // duration and may add a stack, but it must not move the periodic countdown:
+            // resetting it would let a debuff reapplied every tick never fire at all, and
+            // zeroing it would make the same reapplication fire every tick. Leaving it alone
+            // is the only behaviour where the rate is the rate.
             StatusInstance instance = _instances[index];
             instance.RemainingTicks = duration;
             instance.Stacks = stacks;

@@ -403,6 +403,94 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+        // --- damage and healing over time --------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator DamageOverTimeActuallyRemovesHealth()
+        {
+            // 무결성 공격 was tracked with a duration and a magnitude that nothing read, so
+            // applying it changed no health at all.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            _arena.WithoutPlugins();
+            yield return _arena.Tick(2);
+
+            float before = enemy.Health.Current;
+            enemy.ApplyStatus(StatusEffectId.IntegrityAttack, 2f);
+            yield return _arena.Tick(StatusCatalog.Draft()[StatusEffectId.IntegrityAttack].PeriodicIntervalTicks + 2);
+
+            Assert.Less(enemy.Health.Current, before, "The damage over time did nothing.");
+        }
+
+        [UnityTest]
+        public IEnumerator DamageOverTimeIsReducedByResistanceRatherThanBypassingIt()
+        {
+            // It is magic damage with no attacker, not true damage: the magnitude is the
+            // damage, and the target's own resistance still applies.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f), new Vector3(5f, 0.7f, 8f));
+            _arena.WithoutPlugins();
+            CombatActor soft = _arena.Enemies[0];
+            CombatActor armoured = _arena.Enemies[1];
+            yield return _arena.Tick(2);
+
+            CombatStats softStats = soft.BaseStats;
+            softStats.MagicResistance = 0f;
+            soft.Configure(PrototypeArena.EnemyTeam, softStats);
+
+            CombatStats hardStats = armoured.BaseStats;
+            hardStats.MagicResistance = 100f;
+            armoured.Configure(PrototypeArena.EnemyTeam, hardStats);
+
+            float softBefore = soft.Health.Current;
+            float hardBefore = armoured.Health.Current;
+            soft.ApplyStatus(StatusEffectId.IntegrityAttack, 4f);
+            armoured.ApplyStatus(StatusEffectId.IntegrityAttack, 4f);
+            yield return _arena.Tick(StatusCatalog.Draft()[StatusEffectId.IntegrityAttack].PeriodicIntervalTicks + 2);
+
+            float softLost = softBefore - soft.Health.Current;
+            float hardLost = hardBefore - armoured.Health.Current;
+
+            Assert.Greater(softLost, 0f);
+            Assert.Less(hardLost, softLost, "Resistance did not reduce the damage over time.");
+        }
+
+        [UnityTest]
+        public IEnumerator RegenerationActuallyRestoresHealth()
+        {
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            _arena.WithoutPlugins();
+            yield return _arena.Tick(2);
+
+            enemy.ReceiveDamage(
+                new DamageRequest { Flat = 20f, Type = DamageType.True }, CombatStats.StartingVaccine());
+            float wounded = enemy.Health.Current;
+
+            enemy.ApplyStatus(StatusEffectId.Regeneration, 3f);
+            yield return _arena.Tick(StatusCatalog.Draft()[StatusEffectId.Regeneration].PeriodicIntervalTicks + 2);
+
+            Assert.Greater(enemy.Health.Current, wounded, "Regeneration healed nothing.");
+        }
+
+        [UnityTest]
+        public IEnumerator DamageOverTimeCanKillAndTheDeathPathStillRuns()
+        {
+            // It goes through ReceiveDamage like everything else, so death handling applies -
+            // including the corpse no longer being a wall.
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            _arena.WithoutPlugins();
+            yield return _arena.Tick(2);
+
+            enemy.ApplyStatus(StatusEffectId.IntegrityAttack, enemy.Health.Max * 2f);
+            yield return _arena.Tick(StatusCatalog.Draft()[StatusEffectId.IntegrityAttack].PeriodicIntervalTicks + 4);
+
+            Assert.IsFalse(enemy.IsAlive, "It survived a tick larger than its own health.");
+            Assert.IsFalse(enemy.GetComponent<CharacterController>().enabled,
+                "The death path did not run, so the corpse is still solid.");
+        }
+
         // --- crits -------------------------------------------------------------------------
 
         [UnityTest]

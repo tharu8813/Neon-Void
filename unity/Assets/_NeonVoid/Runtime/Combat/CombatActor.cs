@@ -85,6 +85,7 @@ namespace NeonVoid.Combat
         private StatCaps _caps;
         private readonly List<StatModifier> _temporaryModifiers = new List<StatModifier>();
         private readonly List<StatModifier> _passiveModifiers = new List<StatModifier>();
+        private readonly List<StatusPeriodicEvent> _periodicEvents = new List<StatusPeriodicEvent>();
         private float _passiveMoveSpeedFraction;
         private bool _statsDirty = true;
 
@@ -248,9 +249,12 @@ namespace NeonVoid.Combat
                 return;
 
             // An expiry changes what the stat snapshot should say, so the next read recomputes.
-            IReadOnlyList<StatusEffectId> expired = _status.Tick();
+            _periodicEvents.Clear();
+            IReadOnlyList<StatusEffectId> expired = _status.Tick(_periodicEvents);
             if (expired != null && expired.Count > 0)
                 _statsDirty = true;
+
+            ApplyPeriodicStatusEvents();
 
             _mana.Tick();
             _skills.Tick();
@@ -357,6 +361,56 @@ namespace NeonVoid.Combat
                 ActorId, target.ActorId, origin, request.Type,
                 request.IsArea, request.IsPeriodic, outcome.Resolution.IsCritical,
                 outcome.Killed, outcome.HealthRemoved));
+        }
+
+        /// <summary>
+        /// Heals or damages this actor for the status effects that fired this tick.
+        /// <para>
+        /// 재생 and 무결성 공격 were tracked with a duration, a stack count and a magnitude that
+        /// nothing read, so applying either changed no health whatsoever. This is where they
+        /// finally do something.
+        /// </para>
+        /// <para>
+        /// The damage goes through <see cref="ReceiveDamage"/> like everything else, so
+        /// resistance, 무적 and the death path all apply. It carries no attacker: nobody is
+        /// credited, so there is no lifesteal to pay and no crit to roll - the magnitude on the
+        /// instance IS the damage. A tick that tried to credit its applier would have to keep a
+        /// reference to an actor that may be dead by then, which is the stale-reference problem
+        /// HealthPool exists to avoid.
+        /// </para>
+        /// </summary>
+        private void ApplyPeriodicStatusEvents()
+        {
+            for (int i = 0; i < _periodicEvents.Count; ++i)
+            {
+                StatusPeriodicEvent fired = _periodicEvents[i];
+                if (fired.Magnitude <= 0f)
+                    continue;
+
+                switch (fired.Id)
+                {
+                    case StatusEffectId.Regeneration:
+                        Heal(fired.Magnitude);
+                        break;
+
+                    case StatusEffectId.IntegrityAttack:
+                        ReceiveDamage(
+                            new DamageRequest
+                            {
+                                Flat = fired.Magnitude,
+                                Type = DamageType.Magic,
+                                CanCrit = false,
+                                IsPeriodic = true,
+                            },
+                            // A neutral attacker: the magnitude is the damage, and no stat of
+                            // anybody else's scales it. Resistance still applies, which is why
+                            // this is not true damage.
+                            CombatStats.StartingVaccine(),
+                            critRolled: false,
+                            isOnHitEvent: false);
+                        break;
+                }
+            }
         }
 
         /// <summary>
