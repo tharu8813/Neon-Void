@@ -182,6 +182,13 @@ namespace NeonVoid.Progression.Save
 
             _prepared = true;
 
+            // Taken before any of the early returns. A session that is not writing anything
+            // still has to be able to say which session it is: the mission derives the key it
+            // would retry under from this, and an empty one threw on the first mission of a
+            // scene playing with permanent writes switched off - the one mode that exists so a
+            // run can be walked without consequences.
+            _sessionNonce = Guid.NewGuid().ToString("N");
+
             if (!writeToRealSaveDirectory)
             {
                 Result = VaccineSlotBootstrap.NotConnected("permanent writes are switched off");
@@ -206,7 +213,6 @@ namespace NeonVoid.Progression.Save
                 return;
             }
 
-            _sessionNonce = Guid.NewGuid().ToString("N");
             Result = VaccineSlotBootstrap.Prepare(
                 Store,
                 sessionNonce: _sessionNonce,

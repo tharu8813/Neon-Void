@@ -46,6 +46,18 @@ namespace NeonVoid.Presentation
             "visible in the world. Found automatically when left empty.")]
         [SerializeField] private VaccineSaveDirector saveDirector;
 
+        [Tooltip(
+            "The 디펜더 허브, in a scene that has one. Shown because which phase the mission " +
+            "is in decides what every terminal and portal in the world will do, and none of " +
+            "that is readable from the geometry. Found automatically when left empty.")]
+        [SerializeField] private NeonVoid.Missions.HubRuntime hub;
+
+        [Tooltip("The 메인보드, in a scene that has one. Found automatically when left empty.")]
+        [SerializeField] private NeonVoid.Missions.MotherboardDirector motherboard;
+
+        [Tooltip("The mission itself: run id, seed, 의뢰 레벨. Found automatically when left empty.")]
+        [SerializeField] private NeonVoid.Missions.MissionRunDirector mission;
+
         [Header("Display")]
         [Tooltip("Seconds between rescans of the actor list. OnGUI runs several times a frame, " +
                  "so the scan must not happen there.")]
@@ -84,6 +96,12 @@ namespace NeonVoid.Presentation
                 worldCamera = Camera.main;
             if (saveDirector == null)
                 saveDirector = FindFirstObjectByType<VaccineSaveDirector>();
+            if (mission == null)
+                mission = FindFirstObjectByType<NeonVoid.Missions.MissionRunDirector>();
+            if (hub == null)
+                hub = FindFirstObjectByType<NeonVoid.Missions.HubRuntime>();
+            if (motherboard == null)
+                motherboard = FindFirstObjectByType<NeonVoid.Missions.MotherboardDirector>();
         }
 
         private void Update()
@@ -120,7 +138,7 @@ namespace NeonVoid.Presentation
 
         private void DrawPanel()
         {
-            var box = new Rect(12f, 12f, 360f, 272f);
+            var box = new Rect(12f, 12f, 360f, 332f);
             GUI.Box(box, GUIContent.none);
             GUILayout.BeginArea(new Rect(box.x + 10f, box.y + 8f, box.width - 20f, box.height - 16f));
 
@@ -135,6 +153,16 @@ namespace NeonVoid.Presentation
             // permanent.
             if (saveDirector != null)
                 GUILayout.Label(saveDirector.StatusLine(), _panelLabel);
+
+            // Where the player is in the loop. In a scene with a hub this is the difference
+            // between 'nothing is happening' and 'you are standing in the hub and have not
+            // started a mission', which the geometry cannot show.
+            if (mission != null)
+                GUILayout.Label(mission.StatusLine(), _panelLabel);
+            if (hub != null)
+                GUILayout.Label(hub.StatusLine(), _panelLabel);
+            if (motherboard != null)
+                GUILayout.Label(motherboard.StatusLine(), _panelLabel);
 
             if (player != null)
             {

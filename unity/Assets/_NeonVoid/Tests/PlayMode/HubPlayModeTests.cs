@@ -169,6 +169,86 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.IsNotNull(_motherboard.CurrentArea, $"{hardware}'s portal never opened");
         }
 
+        /// <summary>
+        /// The same hub, with a save director that is deliberately not writing anything.
+        /// <para>
+        /// This is a supported way to play - the scene says so on the component - and it is how
+        /// anyone measuring the 8~12분 target will run it, because an exploratory death must not
+        /// cost a clone that [확정] docs/04 section 2 says can never be recovered.
+        /// </para>
+        /// </summary>
+        private IEnumerator HubWithoutPermanentWrites()
+        {
+            _saveObject = new GameObject("Vaccine Save Director");
+            _saveObject.SetActive(false);
+            VaccineSaveDirector director = _saveObject.AddComponent<VaccineSaveDirector>();
+            typeof(VaccineSaveDirector)
+                .GetField("writeToRealSaveDirectory", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(director, false);
+            _saveObject.SetActive(true);
+            Assert.IsFalse(director.CanCommit);
+
+            _arena = PrototypeArena.BuildWaitingInTheHub(SessionSeed);
+
+            _hubObject = new GameObject("Defender Hub");
+            _hubObject.SetActive(false);
+            _hubObject.transform.position = HubAt;
+            _hub = _hubObject.AddComponent<HubRuntime>();
+            _hub.Configure(_arena.Mission, null, _arena.PlayerObject.transform);
+            _hubObject.SetActive(true);
+
+            StandOn(HubAt);
+            yield return _arena.Tick(1);
+        }
+
+        [UnityTest]
+        public IEnumerator AMissionStillBeginsWhenPermanentWritesAreSwitchedOff()
+        {
+            // Found by playing the generated scene: with writes off the save director took no
+            // session nonce, and the first mission threw on the key it would have retried a run
+            // id allocation under. The one mode that exists so a run can be walked without
+            // consequences was the one mode that crashed.
+            yield return HubWithoutPermanentWrites();
+
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("motherboard"));
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission), "the mission did not begin");
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(MissionFlowPhase.Motherboard, Flow.Phase);
+            Assert.Greater(Flow.Run.Identity.RunId, 0L, "a mission began with no run id at all");
+
+            // And nothing permanent is claimed: the prototype gate refuses 철수, whose whole
+            // product is permanent. docs/04 section 7: 저장 실패 → 보상 미확정.
+            Assert.IsTrue(Flow.TryEnterArea(HardwareId.Cpu, 2));
+            Assert.IsTrue(Flow.TryCompleteObjective());
+            Assert.IsTrue(Flow.TryCompleteObjective());
+            Assert.IsTrue(Flow.TryDefeatBoss());
+            Assert.IsTrue(Flow.TryPurify(), Flow.LastRefusal);
+            Assert.IsFalse(Flow.TryExtract(NoLearns), "an uncommitted session settled an extraction");
+        }
+
+        [UnityTest]
+        public IEnumerator TwoMissionsWithoutASaveStillGetDifferentRunIds()
+        {
+            // Nothing is committed under a fallback id, so the only thing it has to do is
+            // differ - a repeated one would make the in-memory flow look like a 중복 시작.
+            yield return HubWithoutPermanentWrites();
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            long first = Flow.Run.Identity.RunId;
+
+            Assert.IsTrue(Flow.TryEnterArea(HardwareId.Cpu, 1));
+            Assert.IsTrue(Flow.TryCompleteObjective());
+            Assert.IsTrue(Flow.TryDefeatBoss());
+            Assert.IsTrue(Flow.TryPurify());
+            Assert.IsTrue(Flow.TryFail());
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase);
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            Assert.AreNotEqual(first, Flow.Run.Identity.RunId);
+        }
+
         // --- standing in the hub ------------------------------------------------------------
 
         [UnityTest]

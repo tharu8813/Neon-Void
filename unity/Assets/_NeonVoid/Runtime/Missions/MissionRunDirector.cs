@@ -180,6 +180,18 @@ namespace NeonVoid.Missions
             // first.
             _saveDirector.EnsurePrepared();
 
+            if (!_saveDirector.CanCommit)
+            {
+                // Permanent writes are off, or the slot is halted. Asking for an id would mean
+                // committing a command through a store that is not there. This is a supported
+                // way to play - the scene says so on the component - so it is a fallback id and
+                // a line in the log, not a refusal.
+                Debug.Log(
+                    $"{name}: the save is not committing ({_saveDirector.Result.Verdict}), so mission " +
+                    $"{ordinal} plays under a fallback id and nothing will be written.", this);
+                return FallbackRunId(ordinal);
+            }
+
             // The slot bootstrap already took an id while it was preparing the slot. The first
             // mission plays under that one rather than leaving it unused and taking another:
             // run ids are a monotonic counter in permanent state, and a session that burned one

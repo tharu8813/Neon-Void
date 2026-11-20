@@ -16,6 +16,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
+using static NeonVoid.EditorTools.NeonVoidSceneWiring;
 
 namespace NeonVoid.EditorTools
 {
@@ -50,7 +51,6 @@ namespace NeonVoid.EditorTools
         }
 
         private static bool AsksQuestions => !Application.isBatchMode && !_automated;
-        private const string MaterialDirectory = "Assets/_NeonVoid/Content/PrototypeMaterials";
 
         [MenuItem("Tools/Neon Void/Generate Prototype Scene")]
         public static void CreateScene()
@@ -70,16 +70,16 @@ namespace NeonVoid.EditorTools
             Directory.CreateDirectory(MaterialDirectory);
             AssetDatabase.Refresh();
 
-            Material floor = GetOrCreateMaterial("NV_Floor", new Color(0.065f, 0.09f, 0.16f));
-            Material wall = GetOrCreateMaterial("NV_Wall", new Color(0.17f, 0.27f, 0.37f));
-            Material playerMat = GetOrCreateMaterial("NV_Player", new Color(0.3f, 0.95f, 0.96f));
+            PrototypePalette palette = PrototypePalette.Create();
+            Material floor = palette.Floor;
+            Material wall = palette.Wall;
+            Material playerMat = palette.Player;
+            Material corpseMat = palette.Corpse;
+            Material enemyShotMat = palette.EnemyShot;
             Material enemyMat = GetOrCreateMaterial("NV_Dummy", new Color(1f, 0.23f, 0.42f));
-            Material corpseMat = GetOrCreateMaterial("NV_Corpse", new Color(0.21f, 0.13f, 0.19f));
-            Material fieldMat = GetOrCreateMaterial("NV_Field", new Color(0.95f, 0.55f, 0.15f));
             Material rangedMat = GetOrCreateMaterial("NV_Ranged", new Color(0.72f, 0.3f, 0.95f));
             Material chargerMat = GetOrCreateMaterial("NV_Charger", new Color(1f, 0.62f, 0.2f));
             Material supportMat = GetOrCreateMaterial("NV_Support", new Color(0.35f, 0.9f, 0.6f));
-            Material enemyShotMat = GetOrCreateMaterial("NV_EnemyShot", new Color(1f, 0.45f, 0.75f));
 
             // docs/03 section 6: two or three prototype skills, as replaceable assets. Only
             // the files are written here; the references are loaded after the scene exists,
@@ -97,16 +97,6 @@ namespace NeonVoid.EditorTools
             CreateBox("Cover A", new Vector3(-5f, 0.75f, 3f), new Vector3(3f, 1.5f, 1f), wall);
             CreateBox("Cover B", new Vector3(5f, 0.75f, -4f), new Vector3(2f, 1.5f, 2f), wall);
 
-            GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            player.name = "Vaccine Player (Prototype)";
-            player.transform.position = new Vector3(0f, 1f, 0f);
-            SetMaterial(player, playerMat);
-            CapsuleCollider temporaryCollider = player.GetComponent<CapsuleCollider>();
-            Object.DestroyImmediate(temporaryCollider);
-            CharacterController character = player.AddComponent<CharacterController>();
-            character.center = Vector3.zero;
-            character.height = 2f;
-            character.radius = 0.45f;
             // Every tick in the scene comes from this one clock. Two accumulators would drift.
             var simulation = new GameObject("Simulation Runner");
             simulation.AddComponent<SimulationRunner>();
@@ -118,50 +108,15 @@ namespace NeonVoid.EditorTools
             var missionObject = new GameObject("Mission Run Director (Prototype)");
             missionObject.AddComponent<MissionRunDirector>();
 
-            // P0-02: movement, dash and aim run on the deterministic 60 Hz simulation.
-            PlayerInputRouter router = player.AddComponent<PlayerInputRouter>();
-            PlayerSimulationDriver driver = player.AddComponent<PlayerSimulationDriver>();
-            AssignInputAsset(router);
-            AssignSerialized(driver, "inputRouter", router);
-
-            // P1: the player is a real combat actor and shoots through the damage pipeline.
-            CombatActor playerActor = player.AddComponent<CombatActor>();
-            AutoAttacker attacker = player.AddComponent<AutoAttacker>();
-            AssignSerialized(attacker, "projectileMaterial", playerMat);
-
-            // [초안] prototype stats, set here so the skill rules are observable rather than
-            // multiplied by zero: the starting block has no ability power, which would make
-            // every magic skill deal its flat component only, and no omnivamp, which would
-            // hide the 0.33 area efficiency the field exists to demonstrate.
-            AssignSerializedFloat(playerActor, "abilityPower", 20f);
-            AssignSerializedFloat(playerActor, "omnivampPercent", 15f);
-            // [초안] a crit chance above zero, so the roll has something to decide. Every
-            // caller used to pass critRolled: false, and with a chance of 0 the stat would
-            // still look identical to nothing being rolled at all.
-            AssignSerializedFloat(playerActor, "critChancePercent", 20f);
-
-            // P2: Q/E/R cast the three prototype skills through the tested cast rules.
-            PlayerSkillCaster caster = player.AddComponent<PlayerSkillCaster>();
-            AssignSerialized(caster, "inputRouter", router);
-            AssignSerialized(caster, "motionDriver", driver);
-            AssignSerialized(caster, "fieldMaterial", fieldMat);
-            // Three slots, six assets: the rest are authored and sitting in the project for a
-            // slot to be pointed at, which is how docs/00 describes skills changing.
+            // P0-02 and P1-P2 in one object: deterministic motion, a real combat actor, the
+            // three skill slots and the proc queue. Shared with the loop scene, which needs the
+            // same vaccine standing in a hub instead of an arena.
             SkillAsset[] authored = NeonVoidPrototypeSkills.Load(skillPaths);
-            var equipped = new SkillAsset[Mathf.Min(DesignConstants.ActiveSkillSlots, authored.Length)];
-            System.Array.Copy(authored, equipped, equipped.Length);
-            AssignSerializedObjectArray(caster, "slotSkills", equipped);
-
-            // P2: plugin procs. Three of docs/03's 27 are granted at startup so the proc queue
-            // has something to judge; the three-card reward screen that really grants them
-            // needs the save commit behind it.
-            PluginProcDirector procs = player.AddComponent<PluginProcDirector>();
-            AssignSerialized(procs, "owner", playerActor);
-
-            // The body stops colliding and looks dead. Without this a corpse stays a solid,
-            // invisible wall that can corner the player and stop their shots.
-            ActorDeathReaction playerDeath = player.AddComponent<ActorDeathReaction>();
-            AssignSerialized(playerDeath, "corpseMaterial", corpseMat);
+            VaccinePlayer vaccine = CreateVaccinePlayer(new Vector3(0f, 1f, 0f), palette, authored);
+            GameObject player = vaccine.Object;
+            PlayerInputRouter router = vaccine.Router;
+            CombatActor playerActor = vaccine.Actor;
+            PluginProcDirector procs = vaccine.Procs;
 
             // One of each implemented archetype, so the arena is not three copies of one enemy.
             // CLAUDE.md: the five hardware zones are not one map pasted five times, and that
@@ -225,12 +180,7 @@ namespace NeonVoid.EditorTools
             AssignSerialized(overlay, "worldCamera", camera);
             AssignSerialized(overlay, "saveDirector", saveDirector);
 
-            GameObject lightObject = new GameObject("Directional Light");
-            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
-            Light light = lightObject.AddComponent<Light>();
-            light.type = LightType.Directional;
-            light.color = new Color(0.68f, 0.85f, 1f);
-            light.intensity = 1.5f;
+            CreateDirectionalLight();
 
             bool saved = EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.SaveAssets();
@@ -245,160 +195,6 @@ namespace NeonVoid.EditorTools
                     "Graybox scene saved. This proves only the bootstrap. " +
                     "P0 must verify input, URP, 60 Hz game architecture and Windows play.", "OK");
             Debug.Log("Neon Void prototype generated: " + ScenePath);
-        }
-
-        private const string InputAssetPath = "Assets/_NeonVoid/Content/Input/NeonVoidControls.inputactions";
-
-        /// <summary>
-        /// Wires the generated action asset into the router. A missing asset is reported
-        /// loudly: the scene would still open and still look correct, but nothing would
-        /// respond to the keyboard, which is the exact failure this build step exists to
-        /// prevent.
-        /// </summary>
-        private static void AssignInputAsset(PlayerInputRouter router)
-        {
-            var asset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
-            if (asset == null)
-            {
-                Debug.LogError($"Input actions not found at {InputAssetPath}; the player will not respond to input.");
-                return;
-            }
-            AssignSerialized(router, "actions", asset);
-        }
-
-        /// <summary>
-        /// Sets a private [SerializeField] through SerializedObject so the value is written
-        /// into the scene file. Assigning a backing field directly would not survive the save.
-        /// </summary>
-        private static void AssignSerialized(Object target, string fieldName, Object value)
-        {
-            var serialized = new SerializedObject(target);
-            SerializedProperty property = serialized.FindProperty(fieldName);
-            if (property == null)
-            {
-                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
-                return;
-            }
-            property.objectReferenceValue = value;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        private static void AssignSerializedInt(Object target, string fieldName, int value)
-        {
-            SerializedProperty property = FindField(target, fieldName);
-            if (property == null)
-                return;
-            property.intValue = value;
-            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        private static void AssignSerializedFloat(Object target, string fieldName, float value)
-        {
-            SerializedProperty property = FindField(target, fieldName);
-            if (property == null)
-                return;
-            property.floatValue = value;
-            property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        /// <summary>
-        /// Fills a serialized array of object references.
-        /// <para>
-        /// The resize is applied and the property re-fetched before the elements are written.
-        /// Setting <c>arraySize</c> and then writing into element properties fetched from the
-        /// same handle silently produced an array of nulls: the scene saved with three empty
-        /// skill slots, every log line was clean, and the only symptom was that nothing
-        /// happened in play. Hence also the read-back below - a wiring step that can fail
-        /// quietly is worse than one that fails loudly.
-        /// </para>
-        /// </summary>
-        private static void AssignSerializedObjectArray(Object target, string fieldName, Object[] values)
-        {
-            int count = values != null ? values.Length : 0;
-            var serialized = new SerializedObject(target);
-            SerializedProperty property = serialized.FindProperty(fieldName);
-            if (property == null)
-            {
-                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
-                return;
-            }
-
-            if (!property.isArray)
-            {
-                Debug.LogError($"{target.GetType().Name}.{fieldName} is not an array; scene wiring is incomplete.");
-                return;
-            }
-
-            // An object that is not a saved asset has no guid to write, so the reference would
-            // serialize as a null however correct it looks in memory.
-            for (int i = 0; i < count; ++i)
-                if (values[i] != null && !AssetDatabase.Contains(values[i]))
-                    Debug.LogError(
-                        $"{target.GetType().Name}.{fieldName}[{i}] was handed an object the AssetDatabase does not hold; the reference will be lost on save.");
-
-            property.arraySize = count;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-
-            serialized.Update();
-            property = serialized.FindProperty(fieldName);
-            for (int i = 0; i < count; ++i)
-                property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-
-            serialized.Update();
-            property = serialized.FindProperty(fieldName);
-            for (int i = 0; i < count; ++i)
-            {
-                if (values[i] == null)
-                {
-                    Debug.LogError($"{target.GetType().Name}.{fieldName}[{i}] was handed nothing; the slot will be empty.");
-                    continue;
-                }
-
-                if (property.GetArrayElementAtIndex(i).objectReferenceValue == null)
-                    Debug.LogError(
-                        $"{target.GetType().Name}.{fieldName}[{i}] did not take the reference to '{values[i].name}'; scene wiring is incomplete.");
-            }
-        }
-
-        private static SerializedProperty FindField(Object target, string fieldName)
-        {
-            var serialized = new SerializedObject(target);
-            SerializedProperty property = serialized.FindProperty(fieldName);
-            if (property == null)
-                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
-            return property;
-        }
-
-        private static Material GetOrCreateMaterial(string name, Color color)
-        {
-            string path = MaterialDirectory + "/" + name + ".mat";
-            Material asset = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (asset != null)
-                return asset;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null)
-                shader = Shader.Find("Standard");
-            if (shader == null)
-                shader = Shader.Find("Unlit/Color");
-            Material material = new Material(shader);
-            material.name = name;
-            if (material.HasProperty("_BaseColor"))
-                material.SetColor("_BaseColor", color);
-            else if (material.HasProperty("_Color"))
-                material.SetColor("_Color", color);
-            AssetDatabase.CreateAsset(material, path);
-            return material;
-        }
-
-        private static GameObject CreateBox(string name, Vector3 position, Vector3 scale, Material material)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = name;
-            go.transform.position = position;
-            go.transform.localScale = scale;
-            SetMaterial(go, material);
-            return go;
         }
 
         private static GameObject CreateDummy(
@@ -448,12 +244,6 @@ namespace NeonVoid.EditorTools
             return dummy;
         }
 
-        private static void SetMaterial(GameObject obj, Material material)
-        {
-            Renderer renderer = obj.GetComponent<Renderer>();
-            if (renderer != null)
-                renderer.sharedMaterial = material;
-        }
     }
 }
 #endif
