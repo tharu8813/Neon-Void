@@ -22,7 +22,10 @@ namespace NeonVoid.Missions
     public sealed class MissionRunDirector : MonoBehaviour
     {
         [Header("Prototype run")]
-        [Tooltip("Run id this session plays as. A real campaign takes it from permanent state.")]
+        [Tooltip(
+            "Fallback run id, used only when no save is connected. A connected save allocates " +
+            "the id from permanent state instead, because two runs sharing an id mint the same " +
+            "death receipt.")]
         [SerializeField, Min(1)] private long runId = 1L;
 
         [Tooltip("Seed. 0 picks one at startup and logs it, so a run can be reproduced.")]
@@ -42,7 +45,7 @@ namespace NeonVoid.Missions
         private void Awake()
         {
             uint chosen = seed != 0u ? seed : PickSeed();
-            var identity = new RunIdentity(runId < 1L ? 1L : runId, chosen);
+            var identity = new RunIdentity(ResolveRunId(), chosen);
 
             if (!State.TryBegin(identity, onTick: 0L))
             {
@@ -61,6 +64,39 @@ namespace NeonVoid.Missions
                 $"Mission begun: {identity} (mission stream {identity.SeedFor(RandomStream.Mission)}, " +
                 $"combat {identity.SeedFor(RandomStream.Combat)}, reward {identity.SeedFor(RandomStream.Reward)}).",
                 this);
+        }
+
+        /// <summary>
+        /// The run id, from permanent state when a save is connected.
+        /// <para>
+        /// A serialized constant was the original, and it was wrong in a way nothing showed: a
+        /// death receipt is keyed on its run, so every launch's first death minted the same id
+        /// and the save - correctly - refused the second launch's as a death it had already
+        /// settled. No clone would ever be charged again. docs/04 section 5 names runId a
+        /// 중복 방지용 불변 키 and forbids 같은 runId 중복 시작, which only permanent state can
+        /// enforce.
+        /// </para>
+        /// <para>
+        /// The fallback is kept for a scene with no save connected, where nothing is committed
+        /// and the id only has to exist. It says so rather than looking like a real run id.
+        /// </para>
+        /// </summary>
+        private long ResolveRunId()
+        {
+            var saveDirector = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
+            if (saveDirector == null)
+                return runId < 1L ? 1L : runId;
+
+            // Asked for rather than waited for, so this does not depend on which Awake ran
+            // first.
+            saveDirector.EnsurePrepared();
+            if (saveDirector.RunId > 0L)
+                return saveDirector.RunId;
+
+            Debug.LogWarning(
+                $"{name}: a save is in the scene but allocated no run id ({saveDirector.Result.Verdict}), " +
+                $"so this run uses the fallback id {runId} and nothing will be committed.", this);
+            return runId < 1L ? 1L : runId;
         }
 
         /// <summary>

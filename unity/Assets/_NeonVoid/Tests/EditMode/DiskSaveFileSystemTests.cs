@@ -266,6 +266,7 @@ namespace NeonVoid.Tests
             // 사망 직후 앱 강제 종료 → 마지막 확정 사망영수증으로 1회 복구. 금지: 복제 2회 차감.
             SaveStore store = OpenedStore();
             store.CreateSlot("vaccine-1", "create:1");
+            store.Commit(new AllocateRunIdCommand("session-1"));
             var service = new SaveDeathCommitService(store);
             var report = new DeathReport(DeathId.For(1L, 1, 1), 600L);
             service.RequestDeathCommit(report);

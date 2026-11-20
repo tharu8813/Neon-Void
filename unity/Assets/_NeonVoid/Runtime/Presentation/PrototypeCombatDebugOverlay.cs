@@ -5,6 +5,7 @@ using NeonVoid.Combat.Skills;
 using NeonVoid.Combat.Status;
 using NeonVoid.Core;
 using NeonVoid.Plugins;
+using NeonVoid.Progression.Save;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -38,6 +39,12 @@ namespace NeonVoid.Presentation
         [SerializeField] private PluginProcDirector procDirector;
         [SerializeField] private SimulationRunner runner;
         [SerializeField] private Camera worldCamera;
+
+        [Tooltip(
+            "Permanent state, when a save is connected. Shown because a death now spends a " +
+            "clone that cannot be recovered, and a halted save writes nothing - neither is " +
+            "visible in the world. Found automatically when left empty.")]
+        [SerializeField] private VaccineSaveDirector saveDirector;
 
         [Header("Display")]
         [Tooltip("Seconds between rescans of the actor list. OnGUI runs several times a frame, " +
@@ -75,6 +82,8 @@ namespace NeonVoid.Presentation
                 runner = FindFirstObjectByType<SimulationRunner>();
             if (worldCamera == null)
                 worldCamera = Camera.main;
+            if (saveDirector == null)
+                saveDirector = FindFirstObjectByType<VaccineSaveDirector>();
         }
 
         private void Update()
@@ -111,7 +120,7 @@ namespace NeonVoid.Presentation
 
         private void DrawPanel()
         {
-            var box = new Rect(12f, 12f, 330f, 250f);
+            var box = new Rect(12f, 12f, 360f, 272f);
             GUI.Box(box, GUIContent.none);
             GUILayout.BeginArea(new Rect(box.x + 10f, box.y + 8f, box.width - 20f, box.height - 16f));
 
@@ -120,6 +129,12 @@ namespace NeonVoid.Presentation
             if (runner != null)
                 GUILayout.Label(
                     $"tick {runner.TickIndex}   dropped {runner.DroppedTicks}", _panelLabel);
+
+            // Above the combat numbers on purpose: how many clones are left and whether the
+            // save is writing at all are the only things on this panel that a death makes
+            // permanent.
+            if (saveDirector != null)
+                GUILayout.Label(saveDirector.StatusLine(), _panelLabel);
 
             if (player != null)
             {

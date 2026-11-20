@@ -10,6 +10,7 @@ using NeonVoid.Player;
 using NeonVoid.Plugins;
 using NeonVoid.Presentation;
 using NeonVoid.Progression;
+using NeonVoid.Progression.Save;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -111,8 +112,9 @@ namespace NeonVoid.EditorTools
             simulation.AddComponent<SimulationRunner>();
 
             // The run's identity, which the death receipt is keyed on and the reward rolls are
-            // seeded from. Nothing here is saved; docs/04 puts 의뢰 상태 behind an approved
-            // save commit that does not exist yet.
+            // seeded from. The run id now comes from permanent state through the save director
+            // below; the run SNAPSHOT is still not saved, because docs/04's run fields are
+            // undecided (D-017).
             var missionObject = new GameObject("Mission Run Director (Prototype)");
             missionObject.AddComponent<MissionRunDirector>();
 
@@ -177,13 +179,23 @@ namespace NeonVoid.EditorTools
                 EnemyArchetypeId.Support, enemyShotMat);
 
             // The player's death ends the run. The director records it and commands a save
-            // service; none exists yet, so the run honestly sits in AwaitingCommit and the
-            // banner says so rather than showing invented losses.
+            // service; the banner shows nothing until that service acknowledges a verified
+            // write, so a failed save never reads as a settled loss.
             var deathObject = new GameObject("Run Death Director (Prototype)");
             RunDeathDirector director = deathObject.AddComponent<RunDeathDirector>();
             AssignSerialized(director, "playerActor", playerActor);
             PrototypeDeathBanner banner = deathObject.AddComponent<PrototypeDeathBanner>();
             AssignSerialized(banner, "deathDirector", director);
+
+            // Permanent state, approved and connected: a death here spends a clone in the real
+            // save under Application.persistentDataPath, and [확정] docs/04 section 2 says
+            // 복제 회복은 어떤 수단으로도 불가. It allocates this run's id too, because a run id
+            // from a serialized constant mints the same death receipt every launch and the save
+            // would refuse every death after the first one. Turn off 'Write To Real Save
+            // Directory' on this component to play without permanent consequences.
+            var saveObject = new GameObject("Vaccine Save Director");
+            VaccineSaveDirector saveDirector = saveObject.AddComponent<VaccineSaveDirector>();
+            AssignSerialized(saveDirector, "deathDirector", director);
 
             GameObject cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
@@ -211,6 +223,7 @@ namespace NeonVoid.EditorTools
             AssignSerialized(overlay, "procDirector", procs);
             AssignSerialized(overlay, "runner", simulation.GetComponent<SimulationRunner>());
             AssignSerialized(overlay, "worldCamera", camera);
+            AssignSerialized(overlay, "saveDirector", saveDirector);
 
             GameObject lightObject = new GameObject("Directional Light");
             lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);

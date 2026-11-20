@@ -27,12 +27,26 @@ namespace NeonVoid.Tests
             _store = new SaveStore(_files, _layout);
             _store.Open();
             _store.CreateSlot("vaccine-1", "create:vaccine-1");
+
+            // A death belongs to a run the slot began, so the run id comes from the allocator
+            // here exactly as it does in the game. Hardcoding one would test a state the save
+            // now refuses.
+            _store.Commit(new AllocateRunIdCommand("session-1"));
         }
 
         private SaveCommitResult Die(int sequence, DeathSettlement settlement = default) =>
             _store.Commit(new RegisterDeathCommand(DeathId.For(1L, 1, sequence), settlement));
 
         private VaccineSaveState Vaccine => _store.Snapshot.vaccine;
+
+        /// <summary>
+        /// The committed receipt for one death, found by its id. Looked up rather than indexed:
+        /// the receipt log holds every command, so a position is only right until another one
+        /// is added - which is how this quietly started asserting about the wrong receipt.
+        /// </summary>
+        private string ReceiptFor(int sequence) =>
+            _store.Snapshot.FindReceipt(
+                RegisterDeathCommand.ReceiptIdFor(DeathId.For(1L, 1, sequence))).result;
 
         // --- the clone table ---------------------------------------------------------------
 
@@ -70,7 +84,7 @@ namespace NeonVoid.Tests
 
             Assert.AreEqual(0, Vaccine.copiesRemaining);
             Assert.IsTrue(Vaccine.alive, "복제 0 was treated as destruction.");
-            StringAssert.Contains("destroyed=false", _store.Snapshot.receipts[3].result);
+            StringAssert.Contains("destroyed=false", ReceiptFor(3));
         }
 
         [Test]
@@ -150,8 +164,8 @@ namespace NeonVoid.Tests
 
             Assert.AreEqual(1300L, Vaccine.permanentXp);
             Assert.AreEqual(2, Vaccine.unusedStatPoints);
-            StringAssert.Contains("settledXp=300", _store.Snapshot.receipts[1].result);
-            StringAssert.Contains("purifications=3", _store.Snapshot.receipts[1].result);
+            StringAssert.Contains("settledXp=300", ReceiptFor(1));
+            StringAssert.Contains("purifications=3", ReceiptFor(1));
         }
 
         [Test]

@@ -152,6 +152,22 @@ namespace NeonVoid.Progression.Save
             if (!vaccine.alive)
                 return SaveCommandOutcome.Reject($"vaccine {vaccine.id} was already destroyed");
 
+            // docs/04 section 5's precondition for RegisterDeath is 실제 전투 사망, 런 활성, and
+            // this is as much of it as permanent state can check: the death has to belong to a
+            // run this slot actually began.
+            //
+            // It earns its place by turning the worst failure mode here into a loud one. A run
+            // id that was never allocated is one another run may also be using, and then this
+            // death's receipt id is a receipt id that already exists - so the save answers
+            // AlreadyApplied, reports success, and silently charges no clone for the rest of the
+            // game. A refusal is visible; that is not.
+            if (_deathId.RunId > next.runsStarted)
+            {
+                return SaveCommandOutcome.Reject(
+                    $"run {_deathId.RunId} was never begun in this slot (it has begun " +
+                    $"{next.runsStarted}), so this death's receipt id is not unique");
+            }
+
             int deaths = vaccine.deathCount + 1;
             int expectedCopiesBefore = VaccineSaveState.DesignStartingCopies - vaccine.deathCount;
             if (vaccine.copiesRemaining != expectedCopiesBefore)

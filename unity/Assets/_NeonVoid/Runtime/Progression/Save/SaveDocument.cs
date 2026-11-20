@@ -267,6 +267,31 @@ namespace NeonVoid.Progression.Save
         /// <summary>Committed receipts, oldest first.</summary>
         public List<SaveReceiptRecord> receipts = new List<SaveReceiptRecord>();
 
+        /// <summary>
+        /// How many runs this slot has ever begun. The next run's id is this plus one.
+        /// <para>
+        /// <b>Why a counter in permanent state rather than a field on a component.</b> A death
+        /// receipt is keyed on its run (see <see cref="DeathId"/>), so two runs that call
+        /// themselves the same thing mint the same receipt id - and the save, correctly, refuses
+        /// the second one as a death it has already settled. The prototype's run id was a
+        /// serialized 1, which meant every launch's first death would be deduped against the
+        /// first launch's and no clone would ever be charged again. The dedupe was right; the id
+        /// was not unique. docs/04 section 5 says it directly: runId is a 중복 방지용 불변 키 and
+        /// 같은 runId 중복 시작 금지.
+        /// </para>
+        /// <para>
+        /// It sits on the document rather than on the vaccine, and <b>최종 파기 does not reset
+        /// it</b>, so ids stay unique across generations too. A per-vaccine counter would hand
+        /// run 1 to the vaccine that replaced a destroyed one, and its first death would be
+        /// answered from the dead vaccine's receipt.
+        /// </para>
+        /// <para>
+        /// Ids may be skipped - a process that dies after allocating one and before using it
+        /// simply leaves a gap - because uniqueness is what the key needs, not density.
+        /// </para>
+        /// </summary>
+        public int runsStarted;
+
         /// <summary>Monotonic. Revision 1 is the created slot; every commit adds one.</summary>
         public int snapshotRevision;
 
@@ -292,6 +317,7 @@ namespace NeonVoid.Progression.Save
                 saveSlotId = saveSlotId,
                 vaccine = vaccine.Clone(),
                 receipts = new List<SaveReceiptRecord>(receipts.Count),
+                runsStarted = runsStarted,
                 snapshotRevision = snapshotRevision,
                 snapshotChecksum = snapshotChecksum,
             };
@@ -328,6 +354,8 @@ namespace NeonVoid.Progression.Save
                 throw new InvalidOperationException("A save document needs its slot id.");
             if (snapshotRevision < 1)
                 throw new InvalidOperationException("Revisions start at 1.");
+            if (runsStarted < 0)
+                throw new InvalidOperationException("Runs are counted upwards from 0.");
             if (vaccine == null)
                 throw new InvalidOperationException("A save document without a vaccine holds nothing.");
 

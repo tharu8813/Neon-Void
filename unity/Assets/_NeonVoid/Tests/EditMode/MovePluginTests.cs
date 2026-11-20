@@ -25,6 +25,11 @@ namespace NeonVoid.Tests
             _store = new SaveStore(_files, _layout);
             _store.Open();
             _store.CreateSlot("vaccine-1", "create:vaccine-1");
+
+            // A death belongs to a run the slot began, so the run id comes from the allocator
+            // here exactly as it does in the game. Hardcoding one would test a state the save
+            // now refuses.
+            _store.Commit(new AllocateRunIdCommand("session-1"));
         }
 
         private VaccineSaveState Vaccine => _store.Snapshot.vaccine;
