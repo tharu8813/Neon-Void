@@ -86,6 +86,14 @@ namespace NeonVoid.Tests.PlayModeTests
             return agent;
         }
 
+        /// <summary>Gives an enemy the support archetype, stats included.</summary>
+        public static EnemyAgent MakeSupport(CombatActor enemy)
+        {
+            EnemyAgent agent = enemy.gameObject.AddComponent<EnemyAgent>();
+            agent.ApplyArchetype(EnemyArchetypeCatalog.Support());
+            return agent;
+        }
+
         /// <summary>Drops a solid wall into the arena, tracked so teardown removes it.</summary>
         public GameObject Wall(Vector3 center, Vector3 size)
         {

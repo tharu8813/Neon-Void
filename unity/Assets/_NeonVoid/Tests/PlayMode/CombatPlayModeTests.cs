@@ -399,6 +399,63 @@ namespace NeonVoid.Tests.PlayModeTests
 
 
 
+
+        // --- the support -------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator ASupportRaisesItsAlliesDamageAndNotItsOwn()
+        {
+            // 우선 처치 only means something if its help is real. This is also the first time
+            // anything other than the player applies a status to an actor.
+            _arena = PrototypeArena.Build(new Vector3(4f, 0.7f, 0f), new Vector3(6f, 0.7f, 2f));
+            CombatActor ally = _arena.Enemies[0];
+            CombatActor support = _arena.Enemies[1];
+            PrototypeArena.MakeChaser(ally);
+            PrototypeArena.MakeSupport(support);
+            yield return _arena.Tick(5);
+
+            float allyBase = ally.BaseStats.AttackDamage;
+
+            Assert.IsTrue(ally.Status.Has(StatusEffectId.Empower), "The ally was never buffed.");
+            Assert.Greater(ally.Stats.AttackDamage, allyBase,
+                "The buff was applied and changed nothing, which is the bug this archetype would hide.");
+            Assert.IsFalse(support.Status.Has(StatusEffectId.Empower),
+                "It buffed itself, which makes it a tougher enemy rather than a support.");
+        }
+
+        [UnityTest]
+        public IEnumerator ASupportDoesNotBuffThePlayer()
+        {
+            _arena = PrototypeArena.Build(new Vector3(4f, 0.7f, 0f));
+            PrototypeArena.MakeSupport(_arena.Enemies[0]);
+            yield return _arena.Tick(5);
+
+            Assert.IsFalse(_arena.Player.Status.Has(StatusEffectId.Empower),
+                "It handed the player its own buff.");
+        }
+
+        [UnityTest]
+        public IEnumerator KillingTheSupportStopsTheBuffComingBack()
+        {
+            // The whole tactical point: the help has to stop arriving.
+            _arena = PrototypeArena.Build(new Vector3(4f, 0.7f, 0f), new Vector3(6f, 0.7f, 2f));
+            CombatActor ally = _arena.Enemies[0];
+            CombatActor support = _arena.Enemies[1];
+            PrototypeArena.MakeChaser(ally);
+            EnemyAgent supportAgent = PrototypeArena.MakeSupport(support);
+            yield return _arena.Tick(5);
+            Assert.IsTrue(ally.Status.Has(StatusEffectId.Empower));
+
+            PrototypeArena.Kill(support);
+            int duration = ally.Status.RemainingTicksOf(StatusEffectId.Empower);
+            yield return _arena.Tick(duration + 2);
+
+            Assert.IsFalse(ally.Status.Has(StatusEffectId.Empower),
+                "The buff was refreshed by a corpse.");
+            Assert.AreEqual(ally.BaseStats.AttackDamage, ally.Stats.AttackDamage, 1e-3f,
+                "The ally kept its raised damage after the support died.");
+        }
+
         // --- the charger -------------------------------------------------------------------
 
         [UnityTest]

@@ -76,6 +76,7 @@ namespace NeonVoid.EditorTools
             Material fieldMat = GetOrCreateMaterial("NV_Field", new Color(0.95f, 0.55f, 0.15f));
             Material rangedMat = GetOrCreateMaterial("NV_Ranged", new Color(0.72f, 0.3f, 0.95f));
             Material chargerMat = GetOrCreateMaterial("NV_Charger", new Color(1f, 0.62f, 0.2f));
+            Material supportMat = GetOrCreateMaterial("NV_Support", new Color(0.35f, 0.9f, 0.6f));
             Material enemyShotMat = GetOrCreateMaterial("NV_EnemyShot", new Color(1f, 0.45f, 0.75f));
 
             // docs/03 section 6: two or three prototype skills, as replaceable assets. Only
@@ -154,6 +155,10 @@ namespace NeonVoid.EditorTools
                 EnemyArchetypeId.Charger, enemyShotMat);
             CreateDummy("Ranged C", new Vector3(9f, 0.7f, -6f), rangedMat, corpseMat,
                 EnemyArchetypeId.Ranged, enemyShotMat);
+            // Well back, where reaching it costs the player something. Its 강화 reaches the
+            // other three, so killing it first is a decision rather than an obvious move.
+            CreateDummy("Support D", new Vector3(-12f, 0.7f, 8f), supportMat, corpseMat,
+                EnemyArchetypeId.Support, enemyShotMat);
 
             // The player's death ends the run. The director records it and commands a save
             // service; none exists yet, so the run honestly sits in AwaitingCommit and the

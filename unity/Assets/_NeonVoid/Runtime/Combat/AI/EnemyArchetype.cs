@@ -1,4 +1,5 @@
 using System;
+using NeonVoid.Combat.Status;
 
 namespace NeonVoid.Combat.AI
 {
@@ -18,6 +19,7 @@ namespace NeonVoid.Combat.AI
         Chaser = 0,
         Ranged = 1,
         Charger = 2,
+        Support = 3,
     }
 
     /// <summary>
@@ -54,6 +56,15 @@ namespace NeonVoid.Combat.AI
 
         /// <summary>Ticks before its projectile despawns.</summary>
         public int ProjectileLifetimeTicks;
+
+        /// <summary>The buff a support hands its allies, or None.</summary>
+        public StatusEffectId SupportStatus;
+
+        /// <summary>[초안] strength of that buff.</summary>
+        public float SupportMagnitude;
+
+        /// <summary>[초안] how far its help reaches.</summary>
+        public float SupportRadiusUnits;
 
         public float MaxHealth;
         public float AttackDamage;
@@ -102,6 +113,25 @@ namespace NeonVoid.Combat.AI
                         $"{DocumentId}: its projectile travels {reach:0.#} units before expiring but it fires at up to {Brain.AttackRange:0.#}.");
             }
 
+            if (Brain.UsesSupport)
+            {
+                if (SupportStatus == StatusEffectId.None)
+                    throw new InvalidOperationException(
+                        $"{DocumentId}: a support must name the buff it hands out, or killing it first changes nothing.");
+                if (SupportRadiusUnits <= 0f)
+                    throw new InvalidOperationException(
+                        $"{DocumentId}: its help needs a radius above zero to reach anybody.");
+
+                // Its help has to outlive the gap between rounds, or the buff lapses and the
+                // group is unbuffed for most of the fight - which makes 우선 처치 pointless
+                // because the support was barely doing anything to begin with.
+                StatusEffectDefinition definition = StatusCatalog.Draft()[SupportStatus];
+                if (definition.BaseDurationTicks < Brain.SupportIntervalTicks)
+                    throw new InvalidOperationException(
+                        $"{DocumentId}: {SupportStatus} lasts {definition.BaseDurationTicks} ticks but is reapplied every " +
+                        $"{Brain.SupportIntervalTicks}, so its allies spend most of the fight unbuffed.");
+            }
+
             if (!Brain.RequiresLineOfSight && AttackMode == EnemyAttackMode.Projectile)
                 throw new InvalidOperationException(
                     $"{DocumentId}: a firing archetype must require line of sight, or it shoots through walls (docs/01 section 4).");
@@ -120,6 +150,7 @@ namespace NeonVoid.Combat.AI
         {
             EnemyArchetypeId.Ranged => Ranged(),
             EnemyArchetypeId.Charger => Charger(),
+            EnemyArchetypeId.Support => Support(),
             _ => Chaser(),
         };
 
@@ -155,6 +186,36 @@ namespace NeonVoid.Combat.AI
             AttackDamage = 4f,
             PhysicalArmor = 4f,
             MagicResistance = 4f,
+        };
+
+        /// <summary>
+        /// `enemy.support` - 버프, answered by 우선 처치.
+        /// <para>
+        /// Only the buff half of docs/01's 버프/복제/소환. 복제 and 소환 are left out on purpose:
+        /// the document's own memo for this archetype is 소환체 XP 중복 제한, which is reward
+        /// accounting, and rewards sit behind the approved save commit this project has not got.
+        /// A summoner without that rule is how one enemy becomes an XP fountain.
+        /// </para>
+        /// <para>
+        /// Frail and nearly harmless by itself. Its danger is entirely what it does to the
+        /// others, which is what makes going out of the way to kill it a decision rather than
+        /// an obvious move.
+        /// </para>
+        /// </summary>
+        public static EnemyArchetype Support() => new EnemyArchetype
+        {
+            DocumentId = "enemy.support",
+            Brain = EnemyBrainConfig.Support(),
+            MoveSpeedUnitsPerSecond = 2.4f,
+            AttackMode = EnemyAttackMode.Contact,
+            AdRatio = 0.5f,
+            SupportStatus = StatusEffectId.Empower,     // 강화: raises its allies' damage
+            SupportMagnitude = 0.3f,                    // [초안] +30% of base per stack
+            SupportRadiusUnits = 9f,                    // [초안]
+            MaxHealth = 24f,
+            AttackDamage = 3f,
+            PhysicalArmor = 2f,
+            MagicResistance = 8f,
         };
 
         /// <summary>

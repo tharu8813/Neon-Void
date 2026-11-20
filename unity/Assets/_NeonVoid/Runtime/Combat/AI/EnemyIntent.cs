@@ -64,13 +64,22 @@ namespace NeonVoid.Combat.AI
         /// <summary>Which part of a charge this is, for both movement and the telegraph.</summary>
         public readonly EnemyChargePhase ChargePhase;
 
+        /// <summary>
+        /// True when the enemy wants to help its allies this tick. Still intent and nothing
+        /// more: the brain does not know what the buff is, who gets it or how long it lasts,
+        /// only that now is the moment - exactly as it decides when to attack without deciding
+        /// what that costs.
+        /// </summary>
+        public readonly bool WantsSupport;
+
         public EnemyIntent(
             Vector2 moveXZ,
             float speedMultiplier,
             Vector2 faceXZ,
             bool wantsAttack,
             int targetActorId,
-            EnemyChargePhase chargePhase = EnemyChargePhase.None)
+            EnemyChargePhase chargePhase = EnemyChargePhase.None,
+            bool wantsSupport = false)
         {
             MoveXZ = moveXZ;
             SpeedMultiplier = speedMultiplier;
@@ -78,6 +87,7 @@ namespace NeonVoid.Combat.AI
             WantsAttack = wantsAttack;
             TargetActorId = targetActorId;
             ChargePhase = chargePhase;
+            WantsSupport = wantsSupport;
         }
 
         /// <summary>Nothing this tick: no movement, no attack, no target.</summary>

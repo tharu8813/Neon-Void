@@ -48,6 +48,7 @@ namespace NeonVoid.Combat.AI
         private EnemyArchetype _archetype;
         private readonly List<CombatActor> _knownActors = new List<CombatActor>();
         private PerceivedActor[] _perceptionBuffer = System.Array.Empty<PerceivedActor>();
+        private readonly HashSet<int> _supportedThisRound = new HashSet<int>();
 
         /// <summary>Last decision, for inspection and debugging.</summary>
         public EnemyIntent LastIntent { get; private set; }
@@ -165,6 +166,45 @@ namespace NeonVoid.Combat.AI
 
             if (intent.WantsAttack)
                 ExecuteAttack(intent.TargetActorId);
+
+            if (intent.WantsSupport)
+                SupportAllies();
+        }
+
+        /// <summary>
+        /// Hands the archetype's buff to every living ally in reach, itself excluded.
+        /// <para>
+        /// Excluded on purpose. A support that buffed itself would just be a tougher enemy,
+        /// while one whose entire contribution is other people's damage makes killing it first
+        /// a real decision - which is the 우선 처치 docs/01 asks this archetype to teach.
+        /// </para>
+        /// <para>
+        /// The buff goes through <c>CombatActor.ApplyStatus</c>, the same entry point the
+        /// player's skills use, so an ally's own tenacity and the catalogue's stacking policy
+        /// apply exactly as they would to anything else.
+        /// </para>
+        /// </summary>
+        private void SupportAllies()
+        {
+            if (_archetype.SupportStatus == StatusEffectId.None || _archetype.SupportRadiusUnits <= 0f)
+                return;
+
+            _supportedThisRound.Clear();
+            Collider[] nearby = Physics.OverlapSphere(
+                transform.position, _archetype.SupportRadiusUnits, ~0, QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < nearby.Length; ++i)
+            {
+                var ally = nearby[i].GetComponentInParent<CombatActor>();
+                if (ally == null || ally == _self || !ally.IsAlive)
+                    continue;
+                if (_self.IsHostileTo(ally))
+                    continue;
+                if (!_supportedThisRound.Add(ally.ActorId))
+                    continue;
+
+                ally.ApplyStatus(_archetype.SupportStatus, _archetype.SupportMagnitude);
+            }
         }
 
         private EnemyPerception BuildPerception()

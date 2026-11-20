@@ -64,6 +64,12 @@ namespace NeonVoid.Combat.AI
         /// <summary>Distance at which it begins a wind-up.</summary>
         public float ChargeTriggerRange;
 
+        /// <summary>Whether this archetype helps its allies.</summary>
+        public bool UsesSupport;
+
+        /// <summary>Ticks between one round of support and the next.</summary>
+        public int SupportIntervalTicks;
+
         public static EnemyBrainConfig Chaser() => new EnemyBrainConfig
         {
             AggroRadius = 12f,
@@ -110,6 +116,23 @@ namespace NeonVoid.Combat.AI
             ChargeTriggerRange = 8f,
         };
 
+        /// <summary>
+        /// [초안] `enemy.support` from docs/01: 버프/복제/소환, answered by 우선 처치. It stands
+        /// well back, because the whole point is that the player has to go out of their way to
+        /// reach it rather than killing it incidentally.
+        /// </summary>
+        public static EnemyBrainConfig Support() => new EnemyBrainConfig
+        {
+            AggroRadius = 15f,
+            LeashRadius = 21f,
+            PreferredRange = 10f,
+            RangeToleranceUnits = 1.5f,
+            AttackIntervalTicks = 120,
+            AttackRange = 2.2f,
+            UsesSupport = true,
+            SupportIntervalTicks = 180,      // every 3 s
+        };
+
         public void Validate()
         {
             if (AggroRadius <= 0f)
@@ -126,6 +149,20 @@ namespace NeonVoid.Combat.AI
                 throw new InvalidOperationException($"{nameof(AttackIntervalTicks)} must be at least one tick.");
             if (AttackRange <= 0f)
                 throw new InvalidOperationException($"{nameof(AttackRange)} must be above zero.");
+
+            if (UsesSupport)
+            {
+                if (SupportIntervalTicks < 1)
+                    throw new InvalidOperationException(
+                        $"{nameof(SupportIntervalTicks)} must be at least one tick, or a support would buff every tick of the fight.");
+
+                // One special behaviour at a time. A charging support would need its support
+                // window and its charge phases to agree about which one owns a tick, and
+                // nothing in docs/01 asks for that combination.
+                if (UsesCharge)
+                    throw new InvalidOperationException(
+                        $"{nameof(UsesSupport)} and {nameof(UsesCharge)} together are not defined.");
+            }
 
             if (!UsesCharge)
                 return;
@@ -164,6 +201,9 @@ namespace NeonVoid.Combat.AI
         /// <summary>Ticks left in the current charge phase.</summary>
         public int ChargePhaseTicksRemaining;
 
+        /// <summary>Ticks until this enemy may help its allies again.</summary>
+        public int SupportCooldownTicks;
+
         /// <summary>
         /// The direction the dash is locked to, chosen when the wind-up began.
         /// <para>
@@ -185,6 +225,7 @@ namespace NeonVoid.Combat.AI
             ChargePhaseTicksRemaining = 0,
             ChargeDirectionXZ = Vector2.zero,
             ChargeHasHit = false,
+            SupportCooldownTicks = 0,
         };
     }
 
@@ -267,7 +308,24 @@ namespace NeonVoid.Combat.AI
             if (wantsAttack)
                 state.AttackCooldownTicks = config.AttackIntervalTicks;
 
-            return new EnemyIntent(move, perception.SpeedMultiplier, facing, wantsAttack, targetId);
+            // Support is on its own interval, independent of the attack: a support that had to
+            // choose between helping and hitting would spend a fight doing neither well, and
+            // 우선 처치 only means something if its help keeps arriving while the player decides
+            // whether to go after it.
+            bool wantsSupport = false;
+            if (config.UsesSupport)
+            {
+                if (state.SupportCooldownTicks > 0)
+                    state.SupportCooldownTicks--;
+
+                wantsSupport = state.SupportCooldownTicks <= 0;
+                if (wantsSupport)
+                    state.SupportCooldownTicks = config.SupportIntervalTicks;
+            }
+
+            return new EnemyIntent(
+                move, perception.SpeedMultiplier, facing, wantsAttack, targetId,
+                EnemyChargePhase.None, wantsSupport);
         }
 
         /// <summary>
