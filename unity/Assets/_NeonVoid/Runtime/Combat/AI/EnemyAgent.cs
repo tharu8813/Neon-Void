@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using NeonVoid.Combat.Projectiles;
 using NeonVoid.Combat.Status;
 using NeonVoid.Core;
 using UnityEngine;
@@ -10,9 +11,15 @@ namespace NeonVoid.Combat.AI
     /// brain asked for, and turns an attack intent into a real hit.
     /// <para>
     /// [확정] docs/02 section 8: the attack goes through <c>CombatActor.ReceiveDamage</c>, the
-    /// same entry point the player's own shots use. That is what makes an enemy hit respect the
+    /// same entry point the player's own shots use - directly for a contact attacker, and
+    /// through a projectile for a firing one. That is what makes an enemy hit respect the
     /// player's armour, invulnerability and status exactly as a player hit respects an enemy's.
-    /// An enemy that subtracted health directly would silently bypass all of it.
+    /// </para>
+    /// <para>
+    /// Everything that differs between archetypes is data: <see cref="EnemyArchetype"/> says how
+    /// it thinks, how fast it moves and how it attacks. CLAUDE.md forbids treating the five
+    /// hardware zones as one copy-pasted map, and that starts with the enemies not all being
+    /// the same enemy.
     /// </para>
     /// <para>
     /// Movement runs on the logic tick through <see cref="SimulationRunner"/>, so enemies close
@@ -23,34 +30,30 @@ namespace NeonVoid.Combat.AI
     [RequireComponent(typeof(CharacterController))]
     public sealed class EnemyAgent : MonoBehaviour, ISimulationTickReceiver
     {
-        [Header("Behaviour")]
-        [Tooltip("All values are [초안]; none is approved balance.")]
-        [SerializeField] private EnemyBrainConfig brain = new EnemyBrainConfig
-        {
-            AggroRadius = 12f,
-            LeashRadius = 18f,
-            PreferredRange = 1.8f,
-            RangeToleranceUnits = 0.4f,
-            AttackIntervalTicks = 60,
-            AttackRange = 2.4f,
-        };
+        [Header("Archetype")]
+        [Tooltip("Which of docs/01's archetypes this is. All values are [초안].")]
+        [SerializeField] private EnemyArchetypeId archetypeId = EnemyArchetypeId.Chaser;
 
-        [Tooltip("[초안] units per second.")]
-        [SerializeField, Min(0f)] private float moveSpeedUnitsPerSecond = 2.6f;
+        [Tooltip("Apply the archetype's stat block to this actor on spawn.")]
+        [SerializeField] private bool applyArchetypeStats = true;
 
-        [Header("Attack")]
-        [Tooltip("[초안] AD ratio of the contact attack.")]
-        [SerializeField] private float adRatio = 1f;
+        [Header("Presentation")]
+        [Tooltip("Material for this enemy's projectiles, where it fires any.")]
+        [SerializeField] private Material projectileMaterial;
 
         private CombatActor _self;
         private CharacterController _character;
         private SimulationRunner _runner;
         private EnemyBrainState _state;
+        private EnemyArchetype _archetype;
         private readonly List<CombatActor> _knownActors = new List<CombatActor>();
         private PerceivedActor[] _perceptionBuffer = System.Array.Empty<PerceivedActor>();
 
         /// <summary>Last decision, for inspection and debugging.</summary>
         public EnemyIntent LastIntent { get; private set; }
+
+        /// <summary>What this enemy is, for tests and for the debug overlay.</summary>
+        public EnemyArchetype Archetype => _archetype;
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Actors + 1;
 
@@ -60,14 +63,45 @@ namespace NeonVoid.Combat.AI
             _character = GetComponent<CharacterController>();
             _state = EnemyBrainState.Fresh();
 
+            // Resolved here so the brain config exists before the first tick, but the stats
+            // are NOT written yet: Awake order between components on one GameObject is not
+            // guaranteed, so CombatActor.Awake could run afterwards and overwrite them from
+            // the serialized fields - silently discarding the archetype.
+            _archetype = Validated(EnemyArchetypeCatalog.Of(archetypeId));
+        }
+
+        /// <summary>Stats are applied here, where every Awake in the scene has already run.</summary>
+        private void Start()
+        {
+            if (applyArchetypeStats && _self != null)
+                _self.Configure(_self.TeamId, _archetype.Stats());
+        }
+
+        /// <summary>
+        /// Becomes an archetype, stats included. Public because a spawner picks the archetype
+        /// per mission, and the scene's own enemies are only the prototype's stand-ins. Safe to
+        /// call at any point after construction, unlike the serialized path above.
+        /// </summary>
+        public void ApplyArchetype(in EnemyArchetype archetype)
+        {
+            _archetype = Validated(archetype);
+
+            if (_self != null)
+                _self.Configure(_self.TeamId, _archetype.Stats());
+        }
+
+        private EnemyArchetype Validated(in EnemyArchetype archetype)
+        {
             try
             {
-                brain.Validate();
+                archetype.Validate();
+                return archetype;
             }
             catch (System.InvalidOperationException error)
             {
-                Debug.LogError($"{name}: brain config rejected ({error.Message}). Falling back to the chaser defaults.", this);
-                brain = EnemyBrainConfig.Chaser();
+                Debug.LogError(
+                    $"{name}: archetype rejected ({error.Message}). Falling back to the chaser.", this);
+                return EnemyArchetypeCatalog.Chaser();
             }
         }
 
@@ -114,13 +148,13 @@ namespace NeonVoid.Combat.AI
             if (_self == null || !_self.IsAlive)
                 return;
 
-            EnemyIntent intent = EnemyBrain.Decide(ref _state, BuildPerception(), brain);
+            EnemyIntent intent = EnemyBrain.Decide(ref _state, BuildPerception(), _archetype.Brain);
             LastIntent = intent;
 
-            if (intent.MoveXZ.sqrMagnitude > 1e-6f && moveSpeedUnitsPerSecond > 0f)
+            if (intent.MoveXZ.sqrMagnitude > 1e-6f && _archetype.MoveSpeedUnitsPerSecond > 0f)
             {
                 Vector2 step = intent.MoveXZ.normalized
-                               * (moveSpeedUnitsPerSecond * intent.SpeedMultiplier
+                               * (_archetype.MoveSpeedUnitsPerSecond * intent.SpeedMultiplier
                                   * (float)SimulationClock.TickDeltaSeconds);
                 _character.Move(new Vector3(step.x, 0f, step.y));
             }
@@ -135,7 +169,9 @@ namespace NeonVoid.Combat.AI
 
         private EnemyPerception BuildPerception()
         {
+            bool needsSight = _archetype.Brain.RequiresLineOfSight;
             int written = 0;
+
             for (int i = 0; i < _knownActors.Count; ++i)
             {
                 CombatActor actor = _knownActors[i];
@@ -143,8 +179,13 @@ namespace NeonVoid.Combat.AI
                     continue;
 
                 Vector3 p = actor.transform.position;
+
+                // Only cast when the archetype's decision depends on it. A contact attacker is
+                // already limited by having to reach its target, so the ray would be waste.
+                bool visible = !needsSight || HasLineOfSight(actor);
+
                 _perceptionBuffer[written++] = new PerceivedActor(
-                    actor.ActorId, new Vector2(p.x, p.z), actor.IsAlive);
+                    actor.ActorId, new Vector2(p.x, p.z), actor.IsAlive, visible);
             }
 
             // Destroyed actors leave gaps; hand the brain only the part that is filled.
@@ -169,9 +210,43 @@ namespace NeonVoid.Combat.AI
         }
 
         /// <summary>
-        /// Turns the intent into a hit through the shared damage entry point. The brain decided
-        /// to attack; it did not decide how much that costs the target, and nothing here
-        /// touches health directly either.
+        /// Whether nothing solid stands between this enemy and the target.
+        /// <para>
+        /// The ray starts past this enemy's own radius: a ray beginning inside a collider is
+        /// not reliably reported, so an enemy would decide it could not see anything, itself
+        /// included, and stand there closing in forever.
+        /// </para>
+        /// </summary>
+        private bool HasLineOfSight(CombatActor target)
+        {
+            Vector3 origin = transform.position;
+            Vector3 toTarget = target.transform.position - origin;
+            float distance = toTarget.magnitude;
+            if (distance <= 1e-3f)
+                return true;
+
+            Vector3 direction = toTarget / distance;
+            float skip = (_character != null ? _character.radius : 0f) + 0.05f;
+            if (distance <= skip)
+                return true;
+
+            if (!Physics.Raycast(
+                    origin + direction * skip, direction, out RaycastHit hit,
+                    distance - skip, ~0, QueryTriggerInteraction.Ignore))
+                return true;     // nothing in between at all
+
+            // The first thing the ray meets has to be the target. Another enemy in the way
+            // counts as blocking, which is deliberately STRICTER than the projectile itself -
+            // a shot passes through friendly actors. An archetype that fired anyway would be
+            // shooting past its own, and the brain's answer to a blocked line is to reposition,
+            // which is the behaviour worth having.
+            var blocker = hit.collider.GetComponentInParent<CombatActor>();
+            return blocker != null && blocker.ActorId == target.ActorId;
+        }
+
+        /// <summary>
+        /// Turns the intent into a hit. The brain decided to attack; it did not decide how much
+        /// that costs the target, and nothing here touches health directly either.
         /// </summary>
         private void ExecuteAttack(int targetActorId)
         {
@@ -183,20 +258,71 @@ namespace NeonVoid.Combat.AI
 
                 var request = new DamageRequest
                 {
-                    AdRatio = adRatio,
+                    AdRatio = _archetype.AdRatio,
                     Type = DamageType.Physical,
                     CanCrit = false,
                 };
 
-                DamageOutcome outcome = target.ReceiveDamage(request, _self.Stats, critRolled: false);
-                if (outcome.Lifesteal.Total > 0f)
-                    _self.Heal(outcome.Lifesteal.Total);
+                if (_archetype.AttackMode == EnemyAttackMode.Projectile)
+                    Fire(target, request);
+                else
+                    Strike(target, request);
 
-                // Enemies report their hits too. Nothing listens yet, but an enemy that could
-                // never trigger an effect would be a rule that applies to one side only.
-                _self.NotifyHitLanded(target, request, outcome, HitOrigin.Contact);
                 return;
             }
+        }
+
+        private void Strike(CombatActor target, in DamageRequest request)
+        {
+            DamageOutcome outcome = target.ReceiveDamage(request, _self.Stats, critRolled: false);
+            if (outcome.Lifesteal.Total > 0f)
+                _self.Heal(outcome.Lifesteal.Total);
+
+            // Enemies report their hits too. Nothing listens yet, but an enemy that could
+            // never trigger an effect would be a rule that applies to one side only.
+            _self.NotifyHitLanded(target, request, outcome, HitOrigin.Contact);
+        }
+
+        /// <summary>
+        /// Fires a shot, through the same <see cref="CombatProjectile"/> the player uses - so it
+        /// sweeps rather than tunnelling, stops on walls, and cannot hit the same target twice.
+        /// <para>
+        /// docs/01 also asks for 탄환 pooling on this archetype. Not done: one shot every 90
+        /// ticks from a handful of enemies allocates far less than the thousands of enemies
+        /// docs/02 section 9 has pooling in mind for, and a pool that is written before anything
+        /// measures it is a guess with a lifetime. It is noted, not forgotten.
+        /// </para>
+        /// </summary>
+        private void Fire(CombatActor target, in DamageRequest request)
+        {
+            Vector3 direction = target.transform.position - transform.position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 1e-4f)
+                return;
+
+            direction.Normalize();
+
+            var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            orb.name = $"NV Shot ({_archetype.DocumentId})";
+            orb.transform.position = transform.position + direction * 0.8f;
+            orb.transform.localScale = Vector3.one * 0.3f;
+
+            // The visual must not take part in physics: the projectile does its own sweep, and
+            // a collider here would shove the shooter and block its own line of sight.
+            Object.Destroy(orb.GetComponent<Collider>());
+
+            if (projectileMaterial != null)
+            {
+                var renderer = orb.GetComponent<Renderer>();
+                if (renderer != null)
+                    renderer.sharedMaterial = projectileMaterial;
+            }
+
+            orb.AddComponent<CombatProjectile>().Launch(
+                _self, request, direction,
+                _archetype.ProjectileSpeedUnitsPerSecond,
+                _archetype.ProjectileLifetimeTicks,
+                maxTargets: 1);
         }
     }
 }

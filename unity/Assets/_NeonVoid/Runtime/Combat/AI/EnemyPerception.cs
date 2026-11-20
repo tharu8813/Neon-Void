@@ -13,11 +13,22 @@ namespace NeonVoid.Combat.AI
         public readonly Vector2 PositionXZ;
         public readonly bool IsAlive;
 
-        public PerceivedActor(int actorId, Vector2 positionXZ, bool isAlive)
+        /// <summary>
+        /// Whether anything solid stands between the two. docs/01 lists LOS as what
+        /// `enemy.ranged` has to implement, and it is the difference between a ranged enemy
+        /// taking cover seriously and one that shoots the player through a wall.
+        /// <para>
+        /// Defaults to true, so a brain tested without geometry behaves as if it can see.
+        /// </para>
+        /// </summary>
+        public readonly bool HasLineOfSight;
+
+        public PerceivedActor(int actorId, Vector2 positionXZ, bool isAlive, bool hasLineOfSight = true)
         {
             ActorId = actorId;
             PositionXZ = positionXZ;
             IsAlive = isAlive;
+            HasLineOfSight = hasLineOfSight;
         }
     }
 

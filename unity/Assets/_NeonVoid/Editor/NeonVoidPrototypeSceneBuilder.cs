@@ -74,6 +74,8 @@ namespace NeonVoid.EditorTools
             Material enemyMat = GetOrCreateMaterial("NV_Dummy", new Color(1f, 0.23f, 0.42f));
             Material corpseMat = GetOrCreateMaterial("NV_Corpse", new Color(0.21f, 0.13f, 0.19f));
             Material fieldMat = GetOrCreateMaterial("NV_Field", new Color(0.95f, 0.55f, 0.15f));
+            Material rangedMat = GetOrCreateMaterial("NV_Ranged", new Color(0.72f, 0.3f, 0.95f));
+            Material enemyShotMat = GetOrCreateMaterial("NV_EnemyShot", new Color(1f, 0.45f, 0.75f));
 
             // docs/03 section 6: two or three prototype skills, as replaceable assets. Only
             // the files are written here; the references are loaded after the scene exists,
@@ -141,9 +143,16 @@ namespace NeonVoid.EditorTools
             ActorDeathReaction playerDeath = player.AddComponent<ActorDeathReaction>();
             AssignSerialized(playerDeath, "corpseMaterial", corpseMat);
 
-            CreateDummy("Dummy A", new Vector3(6f, 0.7f, 5f), enemyMat, corpseMat);
-            CreateDummy("Dummy B", new Vector3(-7f, 0.7f, -5f), enemyMat, corpseMat);
-            CreateDummy("Dummy C", new Vector3(8f, 0.7f, -3f), enemyMat, corpseMat);
+            // Two chasers and one ranged, so the arena is not three copies of one enemy.
+            // CLAUDE.md: the five hardware zones are not one map pasted five times, and that
+            // starts here. The ranged one sits behind cover B, where its line of sight has
+            // something to be blocked by.
+            CreateDummy("Chaser A", new Vector3(6f, 0.7f, 5f), enemyMat, corpseMat,
+                EnemyArchetypeId.Chaser, enemyShotMat);
+            CreateDummy("Chaser B", new Vector3(-7f, 0.7f, -5f), enemyMat, corpseMat,
+                EnemyArchetypeId.Chaser, enemyShotMat);
+            CreateDummy("Ranged C", new Vector3(9f, 0.7f, -6f), rangedMat, corpseMat,
+                EnemyArchetypeId.Ranged, enemyShotMat);
 
             // The player's death ends the run. The director records it and commands a save
             // service; none exists yet, so the run honestly sits in AwaitingCommit and the
@@ -357,7 +366,13 @@ namespace NeonVoid.EditorTools
             return go;
         }
 
-        private static GameObject CreateDummy(string name, Vector3 position, Material material, Material corpseMaterial)
+        private static GameObject CreateDummy(
+            string name,
+            Vector3 position,
+            Material material,
+            Material corpseMaterial,
+            EnemyArchetypeId archetype,
+            Material projectileMaterial)
         {
             GameObject dummy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             dummy.name = name;
@@ -386,7 +401,9 @@ namespace NeonVoid.EditorTools
 
             // P2: it chases and attacks. The brain only forms intent; the hit itself goes
             // through CombatActor.ReceiveDamage, the same entry point the player's shots use.
-            dummy.AddComponent<EnemyAgent>();
+            EnemyAgent agent = dummy.AddComponent<EnemyAgent>();
+            AssignSerializedInt(agent, "archetypeId", (int)archetype);
+            AssignSerialized(agent, "projectileMaterial", projectileMaterial);
 
             // Killing one must leave something visibly dead that no longer blocks the arena.
             // The body is parked rather than destroyed: what a kill drops is reward policy,

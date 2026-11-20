@@ -35,6 +35,13 @@ namespace NeonVoid.Combat.AI
         /// <summary>Distance within which an attack may be attempted.</summary>
         public float AttackRange;
 
+        /// <summary>
+        /// Whether this archetype needs to see its target to attack it. True for anything that
+        /// fires: docs/01 lists LOS as an implementation requirement for `enemy.ranged`.
+        /// A contact attacker is already limited by having to reach the target.
+        /// </summary>
+        public bool RequiresLineOfSight;
+
         public static EnemyBrainConfig Chaser() => new EnemyBrainConfig
         {
             AggroRadius = 12f,
@@ -43,6 +50,22 @@ namespace NeonVoid.Combat.AI
             RangeToleranceUnits = 0.4f,
             AttackIntervalTicks = 60,
             AttackRange = 2.4f,
+        };
+
+        /// <summary>
+        /// [초안] `enemy.ranged` from docs/01: 근/원 조정·발사. The band is wide here because it
+        /// is doing real work - a ranged enemy spends its life holding a distance, where the
+        /// chaser only brushes past its band on the way in.
+        /// </summary>
+        public static EnemyBrainConfig Ranged() => new EnemyBrainConfig
+        {
+            AggroRadius = 16f,
+            LeashRadius = 22f,
+            PreferredRange = 8f,
+            RangeToleranceUnits = 1f,
+            AttackIntervalTicks = 90,
+            AttackRange = 11f,
+            RequiresLineOfSight = true,
         };
 
         public void Validate()
@@ -119,20 +142,28 @@ namespace NeonVoid.Combat.AI
             float distance = toTarget.magnitude;
             Vector2 facing = distance > 1e-4f ? toTarget / distance : Vector2.zero;
 
+            // docs/01 requires LOS for `enemy.ranged`, and it changes both halves of the
+            // decision: an enemy that cannot see its target must not shoot through the wall,
+            // and standing still behind cover forever is not a tactic. It closes in instead,
+            // which is how peeking out from behind cover emerges without a special case.
+            bool blocked = config.RequiresLineOfSight && !target.HasLineOfSight;
+
             Vector2 move = Vector2.zero;
             if (!perception.Rooted)
             {
                 float near = config.PreferredRange - config.RangeToleranceUnits;
                 float far = config.PreferredRange + config.RangeToleranceUnits;
 
-                if (distance > far)
+                if (blocked)
+                    move = facing;              // get a line on the target
+                else if (distance > far)
                     move = facing;              // close in
                 else if (distance < near)
                     move = -facing;             // back off
-                // inside the band: hold, deliberately
+                // inside the band with a clear line: hold, deliberately
             }
 
-            bool wantsAttack = state.AttackCooldownTicks <= 0 && distance <= config.AttackRange;
+            bool wantsAttack = !blocked && state.AttackCooldownTicks <= 0 && distance <= config.AttackRange;
             if (wantsAttack)
                 state.AttackCooldownTicks = config.AttackIntervalTicks;
 

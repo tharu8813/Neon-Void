@@ -121,6 +121,117 @@ namespace NeonVoid.Tests
             Assert.AreEqual(Vector2.zero, intent.MoveXZ, "The enemy kept manoeuvring around a corpse.");
         }
 
+
+        // --- line of sight -----------------------------------------------------------------
+
+        [Test]
+        public void ARangedEnemyWithNoLineOfSightDoesNotShoot()
+        {
+            // docs/01 lists LOS as what `enemy.ranged` must implement. Without this an enemy
+            // shoots the player through a wall, which makes cover decorative.
+            EnemyBrainConfig config = EnemyBrainConfig.Ranged();
+            config.Validate();
+            var state = EnemyBrainState.Fresh();
+            var hidden = new PerceivedActor(Player, new Vector2(8f, 0f), true, hasLineOfSight: false);
+
+            EnemyIntent intent = EnemyBrain.Decide(ref state, See(Vector2.zero, hidden), config);
+
+            Assert.IsTrue(intent.HasTarget, "It should still know where the player went.");
+            Assert.IsFalse(intent.WantsAttack, "It fired through cover.");
+        }
+
+        [Test]
+        public void ARangedEnemyWithNoLineOfSightClosesInToGetOne()
+        {
+            // Standing behind cover forever is not a tactic. Moving to regain a line is how
+            // peeking out emerges without a special case for it.
+            EnemyBrainConfig config = EnemyBrainConfig.Ranged();
+            var state = EnemyBrainState.Fresh();
+
+            // Inside the band, where a visible target would make it hold position.
+            var hidden = new PerceivedActor(Player, new Vector2(8f, 0f), true, hasLineOfSight: false);
+            EnemyIntent blocked = EnemyBrain.Decide(ref state, See(Vector2.zero, hidden), config);
+
+            var stateVisible = EnemyBrainState.Fresh();
+            EnemyIntent clear = EnemyBrain.Decide(
+                ref stateVisible, See(Vector2.zero, Alive(Player, 8f, 0f)), config);
+
+            Assert.Greater(blocked.MoveXZ.magnitude, 0.5f, "A blocked enemy stood still.");
+            Assert.AreEqual(Vector2.zero, clear.MoveXZ, "A clear line inside the band means hold.");
+        }
+
+        [Test]
+        public void ARangedEnemyWithALineFiresFromItsPreferredRange()
+        {
+            EnemyBrainConfig config = EnemyBrainConfig.Ranged();
+            var state = EnemyBrainState.Fresh();
+
+            EnemyIntent intent = EnemyBrain.Decide(
+                ref state, See(Vector2.zero, Alive(Player, 8f, 0f)), config);
+
+            Assert.IsTrue(intent.WantsAttack, $"It held its fire at {config.PreferredRange} units.");
+        }
+
+        [Test]
+        public void AContactArchetypeIgnoresLineOfSightEntirely()
+        {
+            // A chaser is already limited by having to reach its target; casting a ray for it
+            // would be waste, and the config says so rather than the agent guessing.
+            EnemyBrainConfig config = Config();     // chaser
+            Assert.IsFalse(config.RequiresLineOfSight);
+
+            var state = EnemyBrainState.Fresh();
+            var hidden = new PerceivedActor(Player, new Vector2(1f, 0f), true, hasLineOfSight: false);
+
+            EnemyIntent intent = EnemyBrain.Decide(ref state, See(Vector2.zero, hidden), config);
+
+            Assert.IsTrue(intent.WantsAttack, "A contact attacker was blocked by a line it does not need.");
+        }
+
+        // --- archetypes as data ------------------------------------------------------------
+
+        [Test]
+        public void BothImplementedArchetypesValidate()
+        {
+            Assert.DoesNotThrow(() => EnemyArchetypeCatalog.Chaser().Validate());
+            Assert.DoesNotThrow(() => EnemyArchetypeCatalog.Ranged().Validate());
+            Assert.AreEqual("enemy.chaser", EnemyArchetypeCatalog.Chaser().DocumentId);
+            Assert.AreEqual("enemy.ranged", EnemyArchetypeCatalog.Ranged().DocumentId);
+        }
+
+        [Test]
+        public void AFiringArchetypeMustRequireLineOfSight()
+        {
+            EnemyArchetype cheating = EnemyArchetypeCatalog.Ranged();
+            cheating.Brain.RequiresLineOfSight = false;
+
+            Assert.Throws<InvalidOperationException>(() => cheating.Validate());
+        }
+
+        [Test]
+        public void AProjectileThatExpiresBeforeItsOwnAttackRangeIsRefused()
+        {
+            // The failure it prevents is quiet: the enemy fires, the shot dies in mid-air, and
+            // the archetype looks like it is missing on purpose.
+            EnemyArchetype shortLived = EnemyArchetypeCatalog.Ranged();
+            shortLived.ProjectileLifetimeTicks = 10;    // ~1.8 units at 11 units/second
+
+            Assert.Throws<InvalidOperationException>(() => shortLived.Validate());
+        }
+
+        [Test]
+        public void TheRangedArchetypeIsFrailerThanTheChaser()
+        {
+            // Not balance for its own sake: a thing that hits from 8 units away and is as tough
+            // as a thing that must walk up to you is simply the better enemy, and the arena
+            // would have no reason to contain the other one.
+            EnemyArchetype chaser = EnemyArchetypeCatalog.Chaser();
+            EnemyArchetype ranged = EnemyArchetypeCatalog.Ranged();
+
+            Assert.Less(ranged.MaxHealth, chaser.MaxHealth);
+            Assert.Greater(ranged.Brain.PreferredRange, chaser.Brain.PreferredRange);
+        }
+
         [Test]
         public void EquallyDistantCandidatesAreBrokenByIdSoAReplayAgrees()
         {

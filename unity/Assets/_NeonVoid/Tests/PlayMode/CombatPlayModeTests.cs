@@ -397,6 +397,72 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
 
+
+        // --- the ranged archetype ----------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator ARangedEnemyHoldsItsDistanceInsteadOfWalkingIn()
+        {
+            _arena = PrototypeArena.Build(new Vector3(14f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            PrototypeArena.MakeRanged(enemy);
+            yield return _arena.Tick(420);
+
+            float distance = PrototypeArena.DistanceXZ(enemy, _arena.Player);
+            EnemyArchetype archetype = enemy.GetComponent<EnemyAgent>().Archetype;
+            float band = archetype.Brain.RangeToleranceUnits + 0.6f;
+
+            Assert.AreEqual(archetype.Brain.PreferredRange, distance, band,
+                $"It settled at {distance:0.0} rather than near {archetype.Brain.PreferredRange}.");
+        }
+
+        [UnityTest]
+        public IEnumerator ARangedEnemyShootsThePlayerFromAcrossTheArena()
+        {
+            _arena = PrototypeArena.Build(new Vector3(9f, 0.7f, 0f));
+            PrototypeArena.MakeRanged(_arena.Enemies[0]);
+
+            float before = _arena.Player.Health.Current;
+            yield return _arena.Tick(300);
+
+            Assert.Less(_arena.Player.Health.Current, before, "Nothing ever reached the player.");
+            Assert.Greater(
+                PrototypeArena.DistanceXZ(_arena.Enemies[0], _arena.Player), 4f,
+                "It hit the player by walking into them, which is not what a ranged enemy does.");
+        }
+
+        [UnityTest]
+        public IEnumerator AWallStopsARangedEnemyFromShootingThroughIt()
+        {
+            // docs/01 lists LOS as what this archetype must implement. Without it cover is
+            // decorative and the arena's two blocks mean nothing.
+            _arena = PrototypeArena.Build(new Vector3(12f, 0.7f, 0f));
+            PrototypeArena.MakeRanged(_arena.Enemies[0]);
+            _arena.Wall(new Vector3(6f, 1f, 0f), new Vector3(1f, 4f, 24f));
+
+            float before = _arena.Player.Health.Current;
+            yield return _arena.Tick(300);
+
+            Assert.AreEqual(before, _arena.Player.Health.Current, 1e-3f,
+                "The player was shot through a wall.");
+        }
+
+        [UnityTest]
+        public IEnumerator ABlockedRangedEnemyRepositionsRatherThanStandingStill()
+        {
+            _arena = PrototypeArena.Build(new Vector3(12f, 0.7f, 0f));
+            CombatActor enemy = _arena.Enemies[0];
+            PrototypeArena.MakeRanged(enemy);
+            _arena.Wall(new Vector3(6f, 1f, 0f), new Vector3(1f, 4f, 24f));
+
+            Vector3 start = enemy.transform.position;
+            yield return _arena.Tick(180);
+
+            Assert.Greater(
+                Vector3.Distance(start, enemy.transform.position), 0.5f,
+                "It stood behind cover doing nothing, which is not a tactic.");
+        }
+
         // --- plugin passives ---------------------------------------------------------------
 
         [UnityTest]

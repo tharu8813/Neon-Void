@@ -70,6 +70,24 @@ namespace NeonVoid.Tests.PlayModeTests
         /// <summary>Gives an enemy the chasing brain. Opt-in, so a passive dummy stays still.</summary>
         public static EnemyAgent MakeChaser(CombatActor enemy) => enemy.gameObject.AddComponent<EnemyAgent>();
 
+        /// <summary>Gives an enemy the ranged archetype, stats included.</summary>
+        public static EnemyAgent MakeRanged(CombatActor enemy)
+        {
+            EnemyAgent agent = enemy.gameObject.AddComponent<EnemyAgent>();
+            agent.ApplyArchetype(EnemyArchetypeCatalog.Ranged());
+            return agent;
+        }
+
+        /// <summary>Drops a solid wall into the arena, tracked so teardown removes it.</summary>
+        public GameObject Wall(Vector3 center, Vector3 size)
+        {
+            GameObject wall = Track(GameObject.CreatePrimitive(PrimitiveType.Cube));
+            wall.name = "Wall";
+            wall.transform.position = center;
+            wall.transform.localScale = size;
+            return wall;
+        }
+
         /// <summary>Builds a skill asset at runtime, as the prototype authoring values do.</summary>
         public static SkillAsset SkillFrom(
             string key, SkillDefinition definition, SkillShape shape, SkillStatusEffect status)
