@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
 using NeonVoid.Combat.Projectiles;
+using NeonVoid.Combat.Skills;
 using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 using NeonVoid.Missions;
@@ -59,6 +60,7 @@ namespace NeonVoid.Plugins
         private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
         private AutoAttacker _attacker;
         private IDashState _dash;
+        private PlayerSkillCaster _caster;
         private DeterministicRng _rewardRng;
 
         /// <summary>
@@ -184,6 +186,12 @@ namespace NeonVoid.Plugins
             }
             owner.HitLanded += OnOwnerHitLanded;
 
+            // 점멸/순간이동 후 for G08. The caster raises this only for a skill that actually
+            // went off, which is the half of the card a dash cannot cover.
+            _caster = _caster != null ? _caster : owner.GetComponent<PlayerSkillCaster>();
+            if (_caster != null)
+                _caster.SkillCast += OnOwnerSkillCast;
+
             _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
             if (_runner == null)
             {
@@ -197,6 +205,9 @@ namespace NeonVoid.Plugins
         {
             if (owner != null)
                 owner.HitLanded -= OnOwnerHitLanded;
+
+            if (_caster != null)
+                _caster.SkillCast -= OnOwnerSkillCast;
             if (_runner != null)
                 _runner.Unregister(this);
         }
@@ -300,6 +311,21 @@ namespace NeonVoid.Plugins
             return verdict;
         }
 
+        /// <summary>
+        /// A skill that went off. Only a movement skill is a movement action: docs/03 G08's
+        /// list is 돌진/도약/점멸/순간이동, and the data already marks which skills move the
+        /// player - <see cref="SkillDefinition.IsMovementSkill"/>, which exists because 속박
+        /// has to deny exactly those. That is the 스킬 분류 태그 the card's exception column
+        /// asks for, and it was already there.
+        /// </summary>
+        private void OnOwnerSkillCast(SkillDefinition definition)
+        {
+            if (!definition.IsMovementSkill || owner == null)
+                return;
+
+            _router.OnMovementAction(owner.ActorId, _runner != null ? _runner.TickIndex : 0L);
+        }
+
         private void OnOwnerHitLanded(HitReport report)
         {
             long tick = _runner != null ? _runner.TickIndex : 0L;
@@ -354,6 +380,12 @@ namespace NeonVoid.Plugins
             bool dashing = _dash.IsDashing;
             if (dashing && !_wasDashing)
                 _touchedByThisDash.Clear();
+
+            // 돌진 후: the tick the dash ends. docs/03 G08 says 후, and a buff handed out while
+            // the dash was still running would be spent on ticks the dash already moved fast
+            // through - the player would feel nothing.
+            if (!dashing && _wasDashing)
+                _router.OnMovementAction(owner.ActorId, tickIndex);
 
             _wasDashing = dashing;
             if (!dashing)

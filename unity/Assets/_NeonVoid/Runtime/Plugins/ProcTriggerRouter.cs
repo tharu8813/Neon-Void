@@ -197,6 +197,38 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Offers a finished movement action to every plugin that reacts to one. docs/03 G08
+        /// 이동 버퍼 is 돌진/점멸/순간이동 후, and this is neither a hit nor a contact.
+        /// <para>
+        /// The actor is both source and target: what these cards do, they do to the mover.
+        /// </para>
+        /// </summary>
+        public void OnMovementAction(int actorId, long tick, int runId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredByMovementAction(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+            {
+                PluginDefinition plugin = _triggered[i];
+                _queue.TryEnqueue(
+                    plugin.EffectId,
+                    actorId,
+                    actorId,
+                    _activePath,
+                    tick,
+                    runId,
+                    attackId: 0,
+                    plugin.Damage.Type,
+                    plugin.Damage.IsArea,
+                    plugin.Damage.IsPeriodic,
+                    isCritical: false,
+                    randomStreamId: 0,
+                    onHitEffectScale: _activeScale);
+            }
+        }
+
+        /// <summary>
         /// Resolves everything queued, handing each event the plugin that produced it. The
         /// resolver may deal damage, which may land, which may trigger more plugins - and those
         /// arrive with this event's ancestry attached rather than as fresh chains.

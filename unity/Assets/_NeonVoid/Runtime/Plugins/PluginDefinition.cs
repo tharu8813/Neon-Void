@@ -39,6 +39,21 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         OnDashContact = 5,
+
+        /// <summary>
+        /// 돌진/점멸/순간이동 후 - a movement action having finished. G08 이동 버퍼.
+        /// <para>
+        /// After, not during: docs/03 writes 후, and a buff applied while the dash is still
+        /// running would be spent on ticks the dash was already moving at its own speed. So a
+        /// dash raises it on the tick it ends, and a movement skill on the cast that went off.
+        /// </para>
+        /// <para>
+        /// docs/03's list also includes 도약 and 투명 해제. There is no leap and no
+        /// invisibility in the game, so those two are unreachable rather than handled - see
+        /// <see cref="PluginCatalog.MovementBuffer"/>.
+        /// </para>
+        /// </summary>
+        OnMovementAction = 6,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>
@@ -52,7 +67,11 @@ namespace NeonVoid.Plugins
         /// <summary>Damage to everything around the target. G17 폭발 각인.</summary>
         ExplodeAroundTarget = 2,
 
-        /// <summary>A status effect on the target. G12 부식 표식.</summary>
+        /// <summary>
+        /// Applies the named status to whoever the event targets. G12 부식 표식 debuffs the
+        /// enemy that was hit; G08 이동 버퍼 buffs the player, whose own id the event carries.
+        /// The kind is about applying a status, not about which side receives it.
+        /// </summary>
         MarkTarget = 3,
 
         /// <summary>

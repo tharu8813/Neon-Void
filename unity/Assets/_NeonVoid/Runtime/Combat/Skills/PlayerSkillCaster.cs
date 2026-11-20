@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using NeonVoid.Combat.Status;
 using NeonVoid.Core;
@@ -45,6 +46,23 @@ namespace NeonVoid.Combat.Skills
 
         /// <summary>The last cast attempt, successful or refused, for the HUD and for tests.</summary>
         public SkillCastResult LastResult { get; private set; }
+
+        /// <summary>
+        /// Raised once per skill that actually went off, never for a refused one.
+        /// <para>
+        /// docs/03 writes three cards against casting rather than against hitting - G08 이동
+        /// 버퍼 after a 점멸/순간이동, G07 실행 차폐 on 스킬 사용 시, R05 돌진 차폐 after a
+        /// 돌진 또는 점멸 - and G07's exception column says 스킬 실패 시 발동하지 않음 outright.
+        /// So this fires after the gate, the mana and a blink's destination have all been
+        /// settled, which is the only point at which "the skill was used" is true.
+        /// </para>
+        /// <para>
+        /// An event rather than a reference the other way round: the Plugins domain listens to
+        /// Combat exactly as it already does for <see cref="CombatActor.HitLanded"/>, and
+        /// Combat stays unaware that plugins exist.
+        /// </para>
+        /// </summary>
+        public event Action<SkillDefinition> SkillCast;
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Player + 1;
 
@@ -234,6 +252,10 @@ namespace NeonVoid.Combat.Skills
                     CastSingleTarget(asset);
                     break;
             }
+
+            // After the effect, so a listener that reads the world sees what the skill did -
+            // a blink has already moved the player by the time this fires.
+            SkillCast?.Invoke(asset.Definition);
         }
 
         private void CastCone(SkillAsset asset, in PlayerInputCommand command)
@@ -389,7 +411,7 @@ namespace NeonVoid.Combat.Skills
 
             // The visual must not take part in physics: the field does its own overlap query,
             // and a collider here would shove the player and stop their shots.
-            Object.Destroy(field.GetComponent<Collider>());
+            UnityEngine.Object.Destroy(field.GetComponent<Collider>());
 
             if (fieldMaterial != null)
             {

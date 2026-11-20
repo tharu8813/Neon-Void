@@ -385,6 +385,46 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 G08 이동 버퍼: 2초 = 120 ticks at 60 Hz.</summary>
+        public const int StatedMovementBufferTicks = 120;
+
+        /// <summary>
+        /// G08 이동 버퍼 - 돌진/도약/점멸/순간이동 또는 투명 해제 후 2초 이동속도 증가.
+        /// <para>
+        /// <b>The 스킬 분류 태그 its exception column asks for already existed.</b>
+        /// <see cref="SkillDefinition.IsMovementSkill"/> is there because 속박 has to deny
+        /// exactly the skills that move the player, so the tag that decides whether 점멸 counts
+        /// here is the same one the control rules use. Nothing new had to be classified, and a
+        /// skill cannot be a movement skill for one system and not the other.
+        /// </para>
+        /// <para>
+        /// <b>Two of the four sources do not exist.</b> 돌진 is the dash and 점멸/순간이동 is a
+        /// movement skill, both of which fire this. There is no 도약 anywhere in the game, and
+        /// no invisibility, so 투명 해제 has nothing to be released from - and inventing either
+        /// to satisfy a buff's trigger list would be building content nobody asked for. They
+        /// are reachable the moment those systems arrive, because the trigger is "a movement
+        /// action finished" rather than a list of four.
+        /// </para>
+        /// <para>
+        /// The magnitude is [초안]; docs/03 states the duration and not the amount.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition MovementBuffer() => new PluginDefinition
+        {
+            ProposalId = "G08",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnMovementAction,
+            Effect = PluginEffectKind.MarkTarget,
+            Damage = default,
+
+            // 가속 is the movement speed buff in docs/02's table, and the catalogue's own
+            // duration is 3 seconds - overridden here because the card states 2.
+            AppliedStatus = StatusEffectId.Haste,
+            StatusMagnitude = 0.3f,     // [초안] +30% movement speed
+            StatusDurationTicksOverride = StatedMovementBufferTicks,
+            Rule = ProcEffectRule.SingleUse(8),
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
@@ -399,6 +439,7 @@ namespace NeonVoid.Plugins
             QuadCache(),
             DismantleProtocol(),
             DashDetonation(),
+            MovementBuffer(),
         };
     }
 }

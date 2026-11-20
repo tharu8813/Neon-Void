@@ -227,6 +227,20 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Appends every carried plugin that a finished movement action sets off, in carry
+        /// order.
+        /// </summary>
+        public void CollectTriggeredByMovementAction(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+                if (_carried[i].Trigger == PluginTriggerKind.OnMovementAction)
+                    into.Add(_carried[i]);
+        }
+
+        /// <summary>
         /// Whether a trigger kind matches a hit.
         /// <para>
         /// A hit that removed no health never triggers anything. An attack absorbed by 무적
