@@ -24,6 +24,30 @@ namespace NeonVoid.EditorTools
     public static class NeonVoidPrototypeSceneBuilder
     {
         private const string ScenePath = "Assets/_NeonVoid/Scenes/Prototype_Bootstrap.unity";
+
+        // A dialog waits for a click. In batch mode there is nobody to click, and when the CLI
+        // drives a running Editor the click would have to come from whoever happens to be
+        // sitting in front of it - so an automated run says so and asks nothing.
+        private static bool _automated;
+
+        /// <summary>
+        /// Regenerates the scene without asking anything, for the CLI driving a live Editor.
+        /// Overwrites the existing prototype scene, which is the point of calling this.
+        /// </summary>
+        public static void CreateSceneForAutomation()
+        {
+            _automated = true;
+            try
+            {
+                CreateScene();
+            }
+            finally
+            {
+                _automated = false;
+            }
+        }
+
+        private static bool AsksQuestions => !Application.isBatchMode && !_automated;
         private const string MaterialDirectory = "Assets/_NeonVoid/Content/PrototypeMaterials";
 
         [MenuItem("Tools/Neon Void/Generate Prototype Scene")]
@@ -32,7 +56,7 @@ namespace NeonVoid.EditorTools
             // EditorUtility.DisplayDialog returns false in batch mode, so asking there would
             // silently cancel the regeneration and leave the old scene in place while the
             // command still reported success. Only a human gets asked.
-            if (!Application.isBatchMode
+            if (AsksQuestions
                 && File.Exists(ScenePath)
                 && !EditorUtility.DisplayDialog(
                     "Neon Void prototype exists",
@@ -172,9 +196,10 @@ namespace NeonVoid.EditorTools
                 Debug.LogError("Neon Void prototype scene could not be saved.");
                 return;
             }
-            EditorUtility.DisplayDialog("Neon Void prototype created",
-                "Graybox scene saved. This proves only the bootstrap. " +
-                "P0 must verify input, URP, 60 Hz game architecture and Windows play.", "OK");
+            if (AsksQuestions)
+                EditorUtility.DisplayDialog("Neon Void prototype created",
+                    "Graybox scene saved. This proves only the bootstrap. " +
+                    "P0 must verify input, URP, 60 Hz game architecture and Windows play.", "OK");
             Debug.Log("Neon Void prototype generated: " + ScenePath);
         }
 
