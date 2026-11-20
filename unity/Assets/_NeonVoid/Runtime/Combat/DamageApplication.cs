@@ -57,6 +57,13 @@ namespace NeonVoid.Combat
         {
             DamageResolution resolution = DamageMath.Resolve(request, attacker, defender, critRolled);
 
+            // [원안 수치] docs/03 R01 처형 알고리즘, whose exception column asks for
+            // 피해 확정 시 체력 기준 스냅샷. The fraction is read here, before any health is
+            // removed, so a hit that drops the target under the threshold does not also get
+            // the bonus for having done so - and two hits resolving in the same tick are both
+            // judged against the health the target had when each one landed, not after.
+            resolution = ApplyLowHealthBonus(resolution, attacker, defenderHealth);
+
             if (defenderIsInvulnerable)
             {
                 // [확정] docs/02 section 5: invulnerability nullifies damage. No health is lost
@@ -83,6 +90,38 @@ namespace NeonVoid.Combat
                 isOnHitEvent);
 
             return new DamageOutcome(resolution, removed, killed, false, healing);
+        }
+
+        /// <summary>
+        /// Raises the resolved damage when the defender is already below the threshold.
+        /// <para>
+        /// The mitigated figure is scaled rather than the raw one, so the bonus is not itself
+        /// reduced by resistance a second time. A target at exactly the threshold does NOT
+        /// qualify: 50% 미만 is the document's wording, and an inclusive reading would make the
+        /// bonus apply to a full-health target whose threshold happens to be 1.
+        /// </para>
+        /// </summary>
+        private static DamageResolution ApplyLowHealthBonus(
+            in DamageResolution resolution, in CombatStats attacker, in HealthPool defenderHealth)
+        {
+            float bonusPercent = attacker.LowHealthDamageBonusPercent;
+            if (bonusPercent <= 0f || float.IsNaN(bonusPercent) || float.IsInfinity(bonusPercent))
+                return resolution;
+
+            float threshold = attacker.LowHealthThresholdFraction;
+            if (threshold <= 0f || defenderHealth.Max <= 0f)
+                return resolution;
+
+            if (defenderHealth.Fraction >= threshold)
+                return resolution;
+
+            float multiplier = 1f + bonusPercent / 100f;
+            return new DamageResolution(
+                resolution.Raw,
+                resolution.MitigationMultiplier,
+                resolution.AppliedBeforeShield * multiplier,
+                resolution.IsCritical,
+                resolution.Type);
         }
     }
 }

@@ -59,6 +59,8 @@ namespace NeonVoid.Combat
         private LifestealPolicy _lifestealPolicy;
         private StatCaps _caps;
         private readonly List<StatModifier> _temporaryModifiers = new List<StatModifier>();
+        private readonly List<StatModifier> _passiveModifiers = new List<StatModifier>();
+        private float _passiveMoveSpeedFraction;
         private bool _statsDirty = true;
 
         public int ActorId { get; private set; }
@@ -97,7 +99,43 @@ namespace NeonVoid.Combat
         /// stunned or rooted. Read by the player's movement and by the enemy agents, so 구속
         /// means the same thing on both sides.
         /// </summary>
-        public float MoveSpeedMultiplier => StatusStatContribution.MoveSpeedMultiplier(_status);
+        public float MoveSpeedMultiplier
+        {
+            get
+            {
+                float fromStatus = StatusStatContribution.MoveSpeedMultiplier(_status);
+
+                // A stop stays a stop. Adding a movement passive on top of 정지 or 속박 would
+                // let a plugin walk out of the effect that is holding the actor still.
+                if (fromStatus <= 0f)
+                    return 0f;
+
+                float total = fromStatus + _passiveMoveSpeedFraction;
+                return total < 0f ? 0f : total;
+            }
+        }
+
+        /// <summary>
+        /// Replaces the contributions this actor carries from outside combat - plugins, and
+        /// later approved permanent investment.
+        /// <para>
+        /// Pushed in rather than pulled: Combat must not reference Plugins, or the damage rules
+        /// would depend on the content that uses them. Whoever owns the loadout calls this when
+        /// it changes.
+        /// </para>
+        /// </summary>
+        public void SetPassiveModifiers(IReadOnlyList<StatModifier> modifiers, float moveSpeedFraction = 0f)
+        {
+            _passiveModifiers.Clear();
+            if (modifiers != null)
+                for (int i = 0; i < modifiers.Count; ++i)
+                    _passiveModifiers.Add(modifiers[i]);
+
+            _passiveMoveSpeedFraction =
+                float.IsNaN(moveSpeedFraction) || float.IsInfinity(moveSpeedFraction) ? 0f : moveSpeedFraction;
+
+            _statsDirty = true;
+        }
 
         /// <summary>Raised once, after health reaches zero.</summary>
         public event Action<CombatActor> Died;
@@ -196,6 +234,9 @@ namespace NeonVoid.Combat
         private void RecomputeStats()
         {
             _temporaryModifiers.Clear();
+            // One stage in docs/02's order: 플러그인/버프·디버프. Every fraction is of the base,
+            // so which of the two is added first cannot change the answer.
+            _temporaryModifiers.AddRange(_passiveModifiers);
             StatusStatContribution.Collect(_status, _temporaryModifiers);
 
             _stats = CombatStatResolution.Resolve(

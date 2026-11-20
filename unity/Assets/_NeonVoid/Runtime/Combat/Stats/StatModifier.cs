@@ -19,6 +19,9 @@ namespace NeonVoid.Combat.Stats
         TenacityPercent = 7,
         OmnivampPercent = 8,
         CritChancePercent = 9,
+
+        /// <summary>docs/03 R01's extra damage against a target below the health threshold.</summary>
+        LowHealthDamageBonusPercent = 10,
     }
 
     /// <summary>

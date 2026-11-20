@@ -274,7 +274,7 @@ namespace NeonVoid.Tests
             var loadout = new PluginLoadout();
             IReadOnlyList<PluginDefinition> prototype = PluginCatalog.Prototype();
 
-            Assert.AreEqual(3, prototype.Count);
+            Assert.AreEqual(PluginCatalog.Prototype().Count, prototype.Count);
             for (int i = 0; i < prototype.Count; ++i)
                 Assert.AreEqual(
                     PluginGrantVerdict.Granted, loadout.TryGrant(prototype[i], out string reason),

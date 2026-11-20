@@ -195,7 +195,9 @@ namespace NeonVoid.Tests.PlayModeTests
             _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f), new Vector3(6.2f, 0.7f, 1.2f));
             yield return _arena.Tick(2);
 
-            Assert.AreEqual(3, _arena.Procs.Loadout.Count, "The prototype plugins were not carried.");
+            Assert.AreEqual(
+                NeonVoid.Plugins.PluginCatalog.Prototype().Count, _arena.Procs.Loadout.Count,
+                "The prototype plugins were not carried.");
 
             _arena.FireAt(_arena.Enemies[0]);
             yield return _arena.Tick(60);
@@ -392,6 +394,74 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.AreEqual(SkillCastRejection.NoValidDestination, refused.Rejection);
             Assert.AreEqual(manaBefore, _arena.Player.Mana.Current, 1e-3f,
                 "A blink with nowhere to land still charged the player.");
+        }
+
+
+        // --- plugin passives ---------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator PassivePluginsReachThePlayersStatSnapshot()
+        {
+            // Granted in Start and pushed to the actor there. A plugin that was carried but
+            // never pushed would sit in the list contributing nothing, which is the failure
+            // this project has already shipped in two other shapes.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+
+            CombatStats resolved = _arena.Player.Stats;
+
+            Assert.Greater(resolved.PhysicalPenPercent, 0f, "G04 취약점 분석 contributed nothing.");
+            Assert.Greater(resolved.MagicPenPercent, 0f, "G04 취약점 분석 contributed nothing.");
+            Assert.AreEqual(
+                NeonVoid.Plugins.PluginCatalog.StatedExecutionBonusPercent,
+                resolved.LowHealthDamageBonusPercent, 1e-3f, "R01 처형 알고리즘 contributed nothing.");
+            Assert.Greater(
+                _arena.Player.MoveSpeedMultiplier, 1f, "G02 경량화 did not raise movement speed.");
+        }
+
+        [UnityTest]
+        public IEnumerator TheExecutionBonusHitsHarderOnAWoundedEnemy()
+        {
+            _arena = PrototypeArena.Build(new Vector3(5f, 0.7f, 0f), new Vector3(5f, 0.7f, 6f));
+            CombatActor healthy = _arena.Enemies[0];
+            CombatActor wounded = _arena.Enemies[1];
+            yield return _arena.Tick(2);
+
+            // Taken down to 40%, under R01's 50% mark, without the plugins interfering.
+            _arena.WithoutPlugins();
+            wounded.ReceiveDamage(
+                new DamageRequest { Flat = wounded.Health.Max * 0.6f, Type = DamageType.True },
+                CombatStats.StartingVaccine());
+            yield return _arena.Tick(2);
+
+            float healthyBefore = healthy.Health.Current;
+            float woundedBefore = wounded.Health.Current;
+
+            var hit = new DamageRequest { Flat = 5f, Type = DamageType.True };
+            CombatStats attacker = _arena.Player.Stats;
+            healthy.ReceiveDamage(hit, attacker);
+            wounded.ReceiveDamage(hit, attacker);
+
+            float healthyLost = healthyBefore - healthy.Health.Current;
+            float woundedLost = woundedBefore - wounded.Health.Current;
+
+            Assert.Greater(woundedLost, healthyLost,
+                "A wounded enemy took no more than a healthy one, so R01 never applied.");
+        }
+
+        [UnityTest]
+        public IEnumerator AMovementPassiveCannotWalkOutOfARoot()
+        {
+            // 속박 is a stop. A movement plugin added on top of it would let a build ignore the
+            // effect that is holding the player still.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(2);
+            Assert.Greater(_arena.Player.MoveSpeedMultiplier, 1f);
+
+            _arena.Player.ApplyStatus(NeonVoid.Combat.Status.StatusEffectId.Root, 1f);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(0f, _arena.Player.MoveSpeedMultiplier, 1e-4f);
         }
 
         // --- the clock ---------------------------------------------------------------------

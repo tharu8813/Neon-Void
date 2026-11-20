@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
+using NeonVoid.Combat.Stats;
 using NeonVoid.Combat.Status;
 
 namespace NeonVoid.Plugins
@@ -113,12 +114,103 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = StatedCorrosionDurationTicks,
         };
 
-        /// <summary>The three in a fixed order, so a replay grants them identically.</summary>
+        /// <summary>[원안 수치] docs/03 R01: 체력 50% 미만, 피해 15% 증가.</summary>
+        public const float StatedExecutionThreshold = 0.5f;
+
+        /// <summary>[원안 수치] docs/03 R01.</summary>
+        public const float StatedExecutionBonusPercent = 15f;
+
+        /// <summary>[원안 수치] docs/03 G01 랜덤 패치: 무작위 능력치 3개 증가.</summary>
+        public const int StatedRandomPatchStatCount = 3;
+
+        /// <summary>G01 랜덤 패치 - 무작위 능력치 3개 증가.</summary>
+        public static PluginDefinition RandomPatch() => new PluginDefinition
+        {
+            ProposalId = "G01",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                RandomStatCount = StatedRandomPatchStatCount,
+                RandomStatFraction = 0.15f,     // [초안] how much each rolled stat gains
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>G02 경량화 - 이동속도 증가. 가산/배수/상한 [미확정].</summary>
+        public static PluginDefinition Lightweight() => new PluginDefinition
+        {
+            ProposalId = "G02",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                MoveSpeedFraction = 0.12f,      // [초안]
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// G04 취약점 분석 - 물리·마법 비율 관통 증가. The document leaves
+        /// 두 종류 동시 또는 개별 증가 [미확정]; both is the reading that matches the name.
+        /// </summary>
+        public static PluginDefinition WeaknessAnalysis() => new PluginDefinition
+        {
+            ProposalId = "G04",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                // Flat points of percentage penetration, [초안]. The resolver caps both at 100,
+                // where penetration beyond the target's resistance would start healing it.
+                StatModifiers = new[]
+                {
+                    StatModifier.Add(ModifiedStat.PhysicalPenPercent, 12f),
+                    StatModifier.Add(ModifiedStat.MagicPenPercent, 12f),
+                },
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// R01 처형 알고리즘 - 체력 50% 미만 적에게 피해 15% 증가. Both figures are the
+        /// original design's; the snapshot rule its exception column asks for lives in
+        /// DamageApplication, where the health is read before any of it is removed.
+        /// </summary>
+        public static PluginDefinition ExecutionAlgorithm() => new PluginDefinition
+        {
+            ProposalId = "R01",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                StatModifiers = new[]
+                {
+                    StatModifier.Add(
+                        ModifiedStat.LowHealthDamageBonusPercent, StatedExecutionBonusPercent),
+                },
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
             ArcChain(),
             DetonationGlyph(),
             CorrosionMark(),
+            RandomPatch(),
+            Lightweight(),
+            WeaknessAnalysis(),
+            ExecutionAlgorithm(),
         };
     }
 }

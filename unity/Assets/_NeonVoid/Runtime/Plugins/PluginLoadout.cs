@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using NeonVoid.Combat;
+using NeonVoid.Combat.Stats;
+using NeonVoid.Core;
 
 namespace NeonVoid.Plugins
 {
@@ -58,7 +60,20 @@ namespace NeonVoid.Plugins
         /// Adds a plugin. <paramref name="reason"/> carries the detail for a refusal, so a
         /// caller can log why rather than guessing.
         /// </summary>
-        public PluginGrantVerdict TryGrant(in PluginDefinition definition, out string reason)
+        public PluginGrantVerdict TryGrant(in PluginDefinition definition, out string reason) =>
+            TryGrant(definition, null, out reason);
+
+        /// <summary>
+        /// Adds a plugin, rolling anything it leaves to chance from
+        /// <paramref name="rewardRng"/>.
+        /// <para>
+        /// Rolled once, here, and stored on the carried copy. A plugin that re-rolled whenever
+        /// its stats were read would change under the player mid-mission, and one that rolled
+        /// from a shared clock would differ on a replay of the same seed.
+        /// </para>
+        /// </summary>
+        public PluginGrantVerdict TryGrant(
+            in PluginDefinition definition, DeterministicRng rewardRng, out string reason)
         {
             reason = string.Empty;
 
@@ -84,8 +99,47 @@ namespace NeonVoid.Plugins
                 return PluginGrantVerdict.RejectedAlreadyCarried;
             }
 
-            _carried.Add(definition);
+            PluginDefinition carried = definition;
+            carried.Passive = definition.Passive.Rolled(rewardRng);
+            _carried.Add(carried);
             return PluginGrantVerdict.Granted;
+        }
+
+        /// <summary>
+        /// Appends every carried plugin's passive stat contributions, in carry order.
+        /// <para>
+        /// Passives are collected separately from triggered effects because they reach a
+        /// different place: the stat snapshot, not the proc queue.
+        /// </para>
+        /// </summary>
+        public void CollectPassiveModifiers(List<StatModifier> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                StatModifier[] modifiers = _carried[i].Passive.StatModifiers;
+                if (modifiers == null)
+                    continue;
+
+                for (int m = 0; m < modifiers.Length; ++m)
+                    into.Add(modifiers[m]);
+            }
+        }
+
+        /// <summary>
+        /// Total movement speed fraction the carried plugins add. Summed rather than
+        /// multiplied: docs/03 G02 leaves 가산/배수 open, and adding keeps two copies of a
+        /// movement plugin from compounding into something nobody tuned.
+        /// </summary>
+        public float PassiveMoveSpeedFraction()
+        {
+            float total = 0f;
+            for (int i = 0; i < _carried.Count; ++i)
+                total += _carried[i].Passive.MoveSpeedFraction;
+
+            return total;
         }
 
         /// <summary>Drops everything, e.g. when a mission ends. Saves nothing.</summary>

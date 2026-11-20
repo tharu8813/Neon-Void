@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
+using NeonVoid.Core;
 
 namespace NeonVoid.Plugins
 {
@@ -55,10 +56,21 @@ namespace NeonVoid.Plugins
         /// two happen together because a plugin whose rule never reached the guard would be
         /// judged by the guard's default instead of by its own data.
         /// </summary>
-        public PluginGrantVerdict TryGrant(in PluginDefinition definition, out string reason)
+        public PluginGrantVerdict TryGrant(in PluginDefinition definition, out string reason) =>
+            TryGrant(definition, null, out reason);
+
+        /// <summary>
+        /// As above, drawing anything the plugin leaves to chance from the reward stream.
+        /// <para>
+        /// A passive registers no chain rule: it never reaches the queue, so giving the guard
+        /// an entry for it would only invite a future effect id collision.
+        /// </para>
+        /// </summary>
+        public PluginGrantVerdict TryGrant(
+            in PluginDefinition definition, DeterministicRng rewardRng, out string reason)
         {
-            PluginGrantVerdict verdict = _loadout.TryGrant(definition, out reason);
-            if (verdict == PluginGrantVerdict.Granted)
+            PluginGrantVerdict verdict = _loadout.TryGrant(definition, rewardRng, out reason);
+            if (verdict == PluginGrantVerdict.Granted && definition.Effect != PluginEffectKind.Passive)
                 _guard.Register(definition.Rule);
 
             return verdict;

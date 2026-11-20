@@ -34,6 +34,12 @@ namespace NeonVoid.Plugins
 
         /// <summary>A status effect on the target. G12 부식 표식.</summary>
         MarkTarget = 3,
+
+        /// <summary>
+        /// Nothing happens when a hit lands; the plugin contributes to the stat snapshot simply
+        /// by being carried. G01 랜덤 패치, G02 경량화, G04 취약점 분석, R01 처형 알고리즘.
+        /// </summary>
+        Passive = 4,
     }
 
     /// <summary>
@@ -80,6 +86,9 @@ namespace NeonVoid.Plugins
         [Tooltip("Ticks; negative uses the catalogue duration.")]
         public int StatusDurationTicksOverride;
 
+        [Tooltip("What this plugin contributes simply by being carried.")]
+        public PluginPassive Passive;
+
         /// <summary>The effect id the proc queue knows this plugin by.</summary>
         public int EffectId => Rule.EffectId;
 
@@ -89,13 +98,24 @@ namespace NeonVoid.Plugins
                 throw new InvalidOperationException("A plugin needs its docs/03 id for traceability.");
             if (!Enum.IsDefined(typeof(PluginRarity), Rarity))
                 throw new InvalidOperationException($"{ProposalId}: unknown rarity.");
-            if (Trigger == PluginTriggerKind.None)
+            // A passive has nothing to trigger it, by definition; everything else must say
+            // what sets it off or it can never do anything.
+            if (Trigger == PluginTriggerKind.None && Effect != PluginEffectKind.Passive)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
+
+            if (Effect == PluginEffectKind.Passive && Trigger != PluginTriggerKind.None)
+                throw new InvalidOperationException(
+                    $"{ProposalId}: a passive is not triggered by hits; leave the trigger as None so the queue never sees it.");
             if (Effect == PluginEffectKind.None)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that does nothing when it fires is not a plugin.");
 
-            Rule.Validate();
             Damage.Validate();
+            Passive.Validate();
+
+            // A passive never reaches the proc queue, so it needs no chain identity. Validating
+            // the rule anyway would force every passive to carry a meaningless effect id.
+            if (Effect != PluginEffectKind.Passive)
+                Rule.Validate();
 
             switch (Effect)
             {
@@ -103,6 +123,12 @@ namespace NeonVoid.Plugins
                 case PluginEffectKind.ExplodeAroundTarget:
                     if (float.IsNaN(RadiusUnits) || RadiusUnits <= 0f)
                         throw new InvalidOperationException($"{ProposalId}: this effect needs a radius above zero.");
+                    break;
+
+                case PluginEffectKind.Passive:
+                    if (Passive.IsEmpty)
+                        throw new InvalidOperationException(
+                            $"{ProposalId}: a passive that contributes nothing is not a plugin.");
                     break;
 
                 case PluginEffectKind.MarkTarget:

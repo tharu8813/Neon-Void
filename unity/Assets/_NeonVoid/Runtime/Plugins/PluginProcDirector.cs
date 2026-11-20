@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Proc;
+using NeonVoid.Combat.Stats;
 using NeonVoid.Core;
 using UnityEngine;
 
@@ -33,8 +34,11 @@ namespace NeonVoid.Plugins
         [Tooltip("The actor whose hits trigger these plugins.")]
         [SerializeField] private CombatActor owner;
 
-        [Tooltip("Prototype: grant the three draft plugins when the mission starts.")]
+        [Tooltip("Prototype: grant the draft plugins when the mission starts.")]
         [SerializeField] private bool grantPrototypePluginsOnStart = true;
+
+        [Tooltip("[초안] seed for the reward stream. A real run takes it from mission state (docs/04).")]
+        [SerializeField] private uint prototypeRewardSeed = 20261120u;
 
         private ProcChainGuard _guard;
         private ProcQueue _queue;
@@ -44,6 +48,8 @@ namespace NeonVoid.Plugins
         private readonly HashSet<int> _damagedByExplosion = new HashSet<int>();
 
         private readonly Dictionary<int, int> _resolvedByEffectId = new Dictionary<int, int>();
+        private readonly List<StatModifier> _passiveBuffer = new List<StatModifier>();
+        private DeterministicRng _rewardRng;
 
         /// <summary>The last drain's report, for inspection and for the HUD later.</summary>
         public ProcDrainReport LastDrain { get; private set; }
@@ -77,6 +83,9 @@ namespace NeonVoid.Plugins
                 owner = GetComponent<CombatActor>();
 
             _guard = new ProcChainGuard();
+            // docs/06 section 4 keeps mission, combat and reward randomness in separate
+            // streams. A plugin roll is reward randomness, so it draws from its own.
+            _rewardRng = new DeterministicRng(prototypeRewardSeed);
             _queue = new ProcQueue(_guard);
             _router = new ProcTriggerRouter(new PluginLoadout(), _guard, _queue);
         }
@@ -91,12 +100,14 @@ namespace NeonVoid.Plugins
             IReadOnlyList<PluginDefinition> prototype = PluginCatalog.Prototype();
             for (int i = 0; i < prototype.Count; ++i)
             {
-                PluginGrantVerdict verdict = _router.TryGrant(prototype[i], out string reason);
+                PluginGrantVerdict verdict = _router.TryGrant(prototype[i], _rewardRng, out string reason);
                 if (verdict == PluginGrantVerdict.Granted)
                     Debug.Log($"Plugin {prototype[i].ProposalId} carried.", this);
                 else
                     Debug.LogWarning($"Plugin {prototype[i].ProposalId} not carried: {verdict} - {reason}", this);
             }
+
+            PushPassivesToOwner();
         }
 
         private void OnEnable()
@@ -135,6 +146,32 @@ namespace NeonVoid.Plugins
             foreach (CombatActor actor in FindObjectsByType<CombatActor>(FindObjectsSortMode.None))
                 if (actor != null)
                     _actorsById[actor.ActorId] = actor;
+        }
+
+        /// <summary>
+        /// Hands the owner everything its carried plugins contribute to the stat snapshot.
+        /// Called whenever the loadout changes; a plugin that was granted and never pushed
+        /// would sit in the list doing nothing, which is the failure this project has already
+        /// shipped twice in other shapes.
+        /// </summary>
+        public void PushPassivesToOwner()
+        {
+            if (owner == null || _router == null)
+                return;
+
+            _passiveBuffer.Clear();
+            _router.Loadout.CollectPassiveModifiers(_passiveBuffer);
+            owner.SetPassiveModifiers(_passiveBuffer, _router.Loadout.PassiveMoveSpeedFraction());
+        }
+
+        /// <summary>Grants a plugin at runtime and republishes the passives.</summary>
+        public PluginGrantVerdict Grant(in PluginDefinition definition, out string reason)
+        {
+            PluginGrantVerdict verdict = _router.TryGrant(definition, _rewardRng, out reason);
+            if (verdict == PluginGrantVerdict.Granted)
+                PushPassivesToOwner();
+
+            return verdict;
         }
 
         private void OnOwnerHitLanded(HitReport report)

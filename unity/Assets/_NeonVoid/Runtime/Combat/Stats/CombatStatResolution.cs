@@ -89,6 +89,7 @@ namespace NeonVoid.Combat.Stats
             ModifiedStat.TenacityPercent => stats.TenacityPercent,
             ModifiedStat.OmnivampPercent => stats.OmnivampPercent,
             ModifiedStat.CritChancePercent => stats.CritChancePercent,
+            ModifiedStat.LowHealthDamageBonusPercent => stats.LowHealthDamageBonusPercent,
             _ => 0f,
         };
 
@@ -126,6 +127,9 @@ namespace NeonVoid.Combat.Stats
                 case ModifiedStat.CritChancePercent:
                     stats.CritChancePercent += delta;
                     break;
+                case ModifiedStat.LowHealthDamageBonusPercent:
+                    stats.LowHealthDamageBonusPercent += delta;
+                    break;
             }
         }
 
@@ -141,6 +145,8 @@ namespace NeonVoid.Combat.Stats
             stats.MaxHealth = AtLeastZero(stats.MaxHealth);
             stats.OmnivampPercent = AtLeastZero(stats.OmnivampPercent);
             stats.OnHitLifestealPercent = AtLeastZero(stats.OnHitLifestealPercent);
+            // A negative execution bonus would quietly become damage reduction for the target.
+            stats.LowHealthDamageBonusPercent = AtLeastZero(stats.LowHealthDamageBonusPercent);
 
             stats.CritChancePercent = Clamp(stats.CritChancePercent, 0f, caps.MaxCritChancePercent);
             stats.PhysicalPenPercent = Clamp(stats.PhysicalPenPercent, 0f, caps.MaxPenetrationPercent);
