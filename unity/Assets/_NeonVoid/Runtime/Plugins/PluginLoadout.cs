@@ -241,6 +241,25 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>
+        /// Appends every carried plugin whose stat grows on a kill, in carry order.
+        /// </summary>
+        public void CollectKillGrowthPlugins(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                PluginDefinition card = _carried[i];
+                if (card.Trigger == PluginTriggerKind.OnKill
+                    && card.Effect == PluginEffectKind.GrowingPassive)
+                {
+                    into.Add(card);
+                }
+            }
+        }
+
+        /// <summary>
         /// Whether a trigger kind matches a hit.
         /// <para>
         /// A hit that removed no health never triggers anything. An attack absorbed by 무적
@@ -259,9 +278,10 @@ namespace NeonVoid.Plugins
                 PluginTriggerKind.OnSkillHit => hit.Origin == HitOrigin.Skill,
                 PluginTriggerKind.OnAnyHit => hit.Origin != HitOrigin.Unknown,
 
-                // OnHitEffectResolved lands here on purpose: a hit is not an effect resolving,
-                // and an R04 that also fired on every hit would stack far faster than the card
-                // says.
+                // The rest land here on purpose. A hit is not an effect resolving, not a dash
+                // contact, not a movement action - and a kill grows a stat rather than
+                // resolving in the queue, so OnKill is handled where the stat snapshot is
+                // rebuilt instead of here.
                 _ => false,
             };
         }

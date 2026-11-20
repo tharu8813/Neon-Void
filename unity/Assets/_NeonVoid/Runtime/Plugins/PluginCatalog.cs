@@ -425,6 +425,54 @@ namespace NeonVoid.Plugins
             Rule = ProcEffectRule.SingleUse(8),
         };
 
+        /// <summary>[초안] AD per kill. docs/03 R02 says 소폭, which is not a number.</summary>
+        public const float DraftKillStackAttackDamage = 0.5f;
+
+        /// <summary>
+        /// [초안, 미확정] stacks 킬 스택 may reach. docs/03 leaves 누적 상한 미확정 (D-019), so
+        /// this is a bound to be decided rather than an approved one.
+        /// </summary>
+        public const int DraftKillStackMaxStacks = 20;
+
+        /// <summary>
+        /// R02 킬 스택 - 적 처치 시 AD 소폭 증가.
+        /// <para>
+        /// <b>A growing stat contribution, not a status effect.</b> A status needs a duration,
+        /// and any finite one silently answers the question docs/03 left open - 임무 종료 해제
+        /// 미확정 - with "they decay, this fast". This has no duration: what is decided is only
+        /// that the stacks last while the mission does, which is also all that is TRUE, because
+        /// nothing persists a run (D-017). Whether a mission ending releases them is still the
+        /// open question the document says it is, recorded as D-019.
+        /// </para>
+        /// <para>
+        /// It also leaves docs/02's status catalogue as the document's two tables. 강화 is
+        /// AD 증가 and would have been the obvious status to reuse, but its stack bound of 5 and
+        /// its 5 second duration are 강화's numbers, and borrowing them would have made this
+        /// card inherit two answers it never asked for.
+        /// </para>
+        /// <para>
+        /// <b>Both numbers are [초안] and the bound is 미확정.</b> 소폭 is not a figure, and the
+        /// cap is a question docs/03 asks rather than answers. The bound exists because an
+        /// unbounded AD gain over a long mission is the shape that breaks balance invisibly -
+        /// not because 20 is right.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition KillStack() => new PluginDefinition
+        {
+            ProposalId = "R02",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.OnKill,
+            Effect = PluginEffectKind.GrowingPassive,
+            Damage = default,
+            Growth = new PluginGrowth
+            {
+                Stat = ModifiedStat.AttackDamage,
+                PerStack = DraftKillStackAttackDamage,
+                MaxStacks = DraftKillStackMaxStacks,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
@@ -440,6 +488,7 @@ namespace NeonVoid.Plugins
             DismantleProtocol(),
             DashDetonation(),
             MovementBuffer(),
+            KillStack(),
         };
     }
 }

@@ -58,6 +58,19 @@ namespace NeonVoid.Plugins
         private readonly List<ExtraShotSpec> _extraShotBuffer = new List<ExtraShotSpec>();
         private readonly List<PluginDefinition> _burstBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
+        private readonly List<PluginDefinition> _growthBuffer = new List<PluginDefinition>();
+
+        /// <summary>
+        /// Counters behind the growing passives, keyed on the card's proposal id.
+        /// <para>
+        /// Here rather than on the card, because the card is data that is copied by value - a
+        /// counter on it would be incremented on a copy and lost. Mission scoped by having
+        /// nowhere else to live: nothing persists a run (D-017), so these go when the run does,
+        /// which is the half of docs/03 R02's 임무 종료 해제 that is settled.
+        /// </para>
+        /// </summary>
+        private readonly Dictionary<string, int> _growthStacks = new Dictionary<string, int>();
+        private readonly List<string> _prunedGrowthKeys = new List<string>();
         private AutoAttacker _attacker;
         private IDashState _dash;
         private PlayerSkillCaster _caster;
@@ -237,10 +250,90 @@ namespace NeonVoid.Plugins
 
             _passiveBuffer.Clear();
             _router.Loadout.CollectPassiveModifiers(_passiveBuffer);
+            AppendGrowthModifiers(_passiveBuffer);
             owner.SetPassiveModifiers(_passiveBuffer, _router.Loadout.PassiveMoveSpeedFraction());
 
             PushFiringToAttacker();
         }
+
+        /// <summary>
+        /// Adds each growing passive's current contribution, and forgets the counters of cards
+        /// that are no longer carried.
+        /// <para>
+        /// The pruning matters: a card dropped and granted again would otherwise come back with
+        /// the kills it had before, which would read as the stacks surviving something they
+        /// should not.
+        /// </para>
+        /// </summary>
+        private void AppendGrowthModifiers(List<StatModifier> into)
+        {
+            _growthBuffer.Clear();
+            _router.Loadout.CollectKillGrowthPlugins(_growthBuffer);
+
+            if (_growthStacks.Count > 0)
+            {
+                _prunedGrowthKeys.Clear();
+                foreach (string countedCard in _growthStacks.Keys)
+                {
+                    bool stillCarried = false;
+                    for (int i = 0; i < _growthBuffer.Count && !stillCarried; ++i)
+                        stillCarried = _growthBuffer[i].ProposalId == countedCard;
+
+                    if (!stillCarried)
+                        _prunedGrowthKeys.Add(countedCard);
+                }
+
+                for (int i = 0; i < _prunedGrowthKeys.Count; ++i)
+                    _growthStacks.Remove(_prunedGrowthKeys[i]);
+            }
+
+            for (int i = 0; i < _growthBuffer.Count; ++i)
+            {
+                PluginDefinition card = _growthBuffer[i];
+                _growthStacks.TryGetValue(card.ProposalId, out int stacks);
+                if (stacks > 0)
+                    into.Add(card.Growth.ModifierAt(stacks));
+            }
+        }
+
+        /// <summary>
+        /// Counts a kill towards every growing passive, and republishes the stats if any of
+        /// them moved.
+        /// <para>
+        /// Republished rather than left for the next push, because the stat snapshot is what
+        /// the next attack resolves against: a stack counted and not pushed is the
+        /// "applied but has no effect" failure this project keeps finding.
+        /// </para>
+        /// </summary>
+        private void CountKillTowardsGrowth()
+        {
+            _growthBuffer.Clear();
+            _router.Loadout.CollectKillGrowthPlugins(_growthBuffer);
+            if (_growthBuffer.Count == 0)
+                return;
+
+            bool changed = false;
+            for (int i = 0; i < _growthBuffer.Count; ++i)
+            {
+                PluginDefinition card = _growthBuffer[i];
+                _growthStacks.TryGetValue(card.ProposalId, out int stacks);
+
+                // Clamped at the bound rather than counted past it, so the number the HUD
+                // shows is the number that is contributing.
+                if (stacks >= card.Growth.MaxStacks)
+                    continue;
+
+                _growthStacks[card.ProposalId] = stacks + 1;
+                changed = true;
+            }
+
+            if (changed)
+                PushPassivesToOwner();
+        }
+
+        /// <summary>Stacks a growing passive has accumulated. For tests and the HUD.</summary>
+        public int GrowthStacks(string proposalId) =>
+            proposalId != null && _growthStacks.TryGetValue(proposalId, out int stacks) ? stacks : 0;
 
         /// <summary>
         /// Hands the attacker the extra projectiles its carried plugins grant.
@@ -330,6 +423,11 @@ namespace NeonVoid.Plugins
         {
             long tick = _runner != null ? _runner.TickIndex : 0L;
             _router.OnHitLanded(report, tick);
+
+            // 적 처치 시 for R02. HitReport.Killed has been carried since the damage pipeline
+            // was written and nothing read it until now.
+            if (report.Killed)
+                CountKillTowardsGrowth();
         }
 
         void ISimulationTickReceiver.OnSimulationTick(long tickIndex)

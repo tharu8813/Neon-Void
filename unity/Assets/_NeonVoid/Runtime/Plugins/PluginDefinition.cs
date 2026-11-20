@@ -54,6 +54,16 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         OnMovementAction = 6,
+
+        /// <summary>
+        /// 적 처치 시 - a hit of this actor's that killed. R02 킬 스택.
+        /// <para>
+        /// The hit report already knows: <see cref="HitReport.Killed"/> has been carried since
+        /// the damage pipeline was written and nothing read it. A kill is the one trigger here
+        /// that a hit really does describe.
+        /// </para>
+        /// </summary>
+        OnKill = 7,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>
@@ -97,6 +107,15 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         DamageTarget = 6,
+
+        /// <summary>
+        /// A stat contribution that grows with a counter instead of being fixed. R02 킬 스택.
+        /// <para>
+        /// Never reaches the proc queue: it is a term in the stat snapshot, recomputed from
+        /// base like the fixed passives, not an effect that resolves.
+        /// </para>
+        /// </summary>
+        GrowingPassive = 7,
     }
 
     /// <summary>
@@ -149,6 +168,9 @@ namespace NeonVoid.Plugins
         [Tooltip("What this plugin does to the basic attack: extra projectiles or bursts.")]
         public PluginFiring Firing;
 
+        [Tooltip("A stat contribution that grows with a counter, e.g. per kill.")]
+        public PluginGrowth Growth;
+
         /// <summary>The effect id the proc queue knows this plugin by.</summary>
         public int EffectId => Rule.EffectId;
 
@@ -162,7 +184,9 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         public bool ReachesProcQueue =>
-            Effect != PluginEffectKind.Passive && Effect != PluginEffectKind.FiringModifier;
+            Effect != PluginEffectKind.Passive
+            && Effect != PluginEffectKind.FiringModifier
+            && Effect != PluginEffectKind.GrowingPassive;
 
         public void Validate()
         {
@@ -172,6 +196,8 @@ namespace NeonVoid.Plugins
                 throw new InvalidOperationException($"{ProposalId}: unknown rarity.");
             // A passive and a firing modifier have nothing to trigger them, by definition;
             // everything else must say what sets it off or it can never do anything.
+            // A growing passive IS triggered - by a kill - but still never reaches the queue, so
+            // it is not in this set even though it shares the "no chain rule" half below.
             bool untriggered = Effect == PluginEffectKind.Passive || Effect == PluginEffectKind.FiringModifier;
             if (Trigger == PluginTriggerKind.None && !untriggered)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
@@ -194,6 +220,12 @@ namespace NeonVoid.Plugins
             Damage.Validate();
             Passive.Validate();
             Firing.Validate(ProposalId);
+
+            if (Effect == PluginEffectKind.GrowingPassive)
+                Growth.Validate(ProposalId);
+            else if (!Growth.IsEmpty)
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.GrowingPassive)} may grow a stat with a counter.");
 
             // Only the kind that is about firing may describe firing. A chaining card that
             // quietly also added projectiles would be doing something no reader of its row in
