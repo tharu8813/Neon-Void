@@ -1,0 +1,347 @@
+using System;
+using System.Collections.Generic;
+using NeonVoid.Core;
+
+namespace NeonVoid.Missions.Generation
+{
+    /// <summary>
+    /// Builds one hardware area: rooms, corridors, and where everything stands.
+    /// <para>
+    /// docs/01 section 6's 초기 구현 in order - 모듈형 방/복도 → 목표 지점·보스·철수 포인트 배치
+    /// → 동선 검증 → 결정론 시드 스냅샷. The 3D prefabs, the lighting and the walls are the stage
+    /// after this one, on a graph that has already passed, and none of it is here.
+    /// </para>
+    /// <para>
+    /// <b>Connected by construction, and checked anyway.</b> The rooms are joined into a spanning
+    /// tree, so there is no way for the carving to leave an island - and
+    /// <see cref="AreaLayoutValidator"/> still walks the floor from the entrance to every spawn.
+    /// The point of check 1 is not to doubt the corridor code; it is that the <i>placement</i>
+    /// could put something in a wall, and a map that cannot be finished must never be handed to a
+    /// player.
+    /// </para>
+    /// <para>
+    /// <b>Seeds this generator cannot build.</b> docs/01 section 6 check 5 allows 불가능한 시드 to
+    /// be replaced by a 기록된 대체 시드. Rooms are placed by rejection, so a seed can run out of
+    /// space before every room is down; rather than relaxing the margins - which would let two
+    /// rooms merge and make the path check a statement about a shape nobody designed - the whole
+    /// attempt is thrown away and a derived seed is tried. The seed that won and the number of
+    /// attempts travel on the layout, because a map rebuilt from the asked-for seed would not be
+    /// the map that was played.
+    /// </para>
+    /// <para>
+    /// The seed is expected to be the run's <see cref="RandomStream.Mission"/> seed. [확정]
+    /// docs/06 section 4 keeps map generation, combat and rewards in separate streams so that
+    /// drawing one more card cannot change what the next map looks like; this generator consumes
+    /// its stream and no other.
+    /// </para>
+    /// Pure C#: no Unity types, no scene, no assets.
+    /// </summary>
+    public static class AreaGenerator
+    {
+        /// <summary>
+        /// [초안] world units per cell. Chosen to clear the player's diameter with room to spare -
+        /// <see cref="AreaLayoutValidator.CheckPlayerFits"/> is what holds the rule.
+        /// </summary>
+        public const float DraftCellSizeUnits = 2f;
+
+        /// <summary>[초안] rooms in a nominal-size area.</summary>
+        public const int DraftNominalRoomCount = 7;
+
+        /// <summary>A hard ceiling on rooms, so a large 확대 cannot grow without bound.</summary>
+        public const int MaxRoomCount = 12;
+
+        /// <summary>[초안] the smallest room side, in cells.</summary>
+        public const int DraftMinRoomSideCells = 5;
+
+        /// <summary>[초안] the largest room side, in cells.</summary>
+        public const int DraftMaxRoomSideCells = 8;
+
+        /// <summary>
+        /// Cells of wall kept between rooms. One is enough to stop two rooms merging, which is
+        /// what keeps every connection a corridor the path check can see.
+        /// </summary>
+        public const int RoomMarginCells = 1;
+
+        /// <summary>Seeds tried before the generator gives up on a spec.</summary>
+        public const int MaxAttempts = 12;
+
+        /// <summary>Placements tried for one room before the attempt is abandoned.</summary>
+        private const int PlacementTriesPerRoom = 64;
+
+        /// <summary>
+        /// Builds and validates an area, replacing a seed it cannot build with a recorded
+        /// derived one.
+        /// </summary>
+        /// <param name="failure">
+        /// Why every attempt failed, when none succeeded. Empty on success.
+        /// </param>
+        public static bool TryGenerate(in AreaSpec spec, out AreaLayout layout, out string failure)
+        {
+            var refusals = new List<string>(MaxAttempts);
+
+            for (int attempt = 1; attempt <= MaxAttempts; ++attempt)
+            {
+                uint seed = attempt == 1 ? spec.Seed : FallbackSeed(spec.Seed, attempt);
+                AreaLayout candidate = BuildOnce(spec, seed, attempt, out string buildRefusal);
+
+                if (candidate == null)
+                {
+                    refusals.Add($"attempt {attempt} (seed {seed}): {buildRefusal}");
+                    continue;
+                }
+
+                AreaLayoutVerdict verdict = AreaLayoutValidator.Validate(candidate);
+                if (verdict.IsValid)
+                {
+                    layout = candidate;
+                    failure = string.Empty;
+                    return true;
+                }
+
+                refusals.Add($"attempt {attempt} (seed {seed}): {verdict.Reason}");
+            }
+
+            layout = null;
+            failure = $"{spec.GenerationKey} could not be built in {MaxAttempts} attempts: " +
+                      string.Join(" | ", refusals.ToArray());
+            return false;
+        }
+
+        /// <summary>
+        /// The replacement seed for an attempt. Derived rather than random, so the whole sequence
+        /// of seeds a spec tries is itself reproducible - otherwise a map that needed three
+        /// attempts could never be rebuilt from its key.
+        /// </summary>
+        public static uint FallbackSeed(uint original, int attempt)
+        {
+            if (attempt < 2)
+                throw new ArgumentOutOfRangeException(nameof(attempt), attempt, "The first attempt uses the spec's own seed.");
+
+            unchecked
+            {
+                uint mixed = original ^ (uint)(attempt * 0x9E3779B9u);
+                mixed ^= mixed << 13;
+                mixed ^= mixed >> 17;
+                mixed ^= mixed << 5;
+
+                // The generator's RNG guards a zero seed, but a zero here would also make two
+                // different attempts share a seed if the mix ever landed on it twice.
+                return mixed == 0u ? 0x6C078965u : mixed;
+            }
+        }
+
+        /// <summary>Rooms a spec asks for: the drafted count at its size, with room for its spawns.</summary>
+        public static int RoomCountFor(in AreaSpec spec)
+        {
+            int scaled = AreaLayoutValidator.Scale(DraftNominalRoomCount, spec.SizeModifierPercent);
+
+            // The entrance, the boss and one room per objective, all distinct: an objective
+            // sharing the boss's room would be an objective the player trips over on the way in,
+            // and the entrance sharing one would put a device in their face on arrival.
+            int needed = spec.ObjectiveCount + 2;
+            int rooms = scaled < needed ? needed : scaled;
+            return rooms > MaxRoomCount ? MaxRoomCount : rooms;
+        }
+
+        /// <summary>The square grid side that holds this many rooms with their margins.</summary>
+        public static int GridSideFor(int roomCount)
+        {
+            if (roomCount < 1)
+                throw new ArgumentOutOfRangeException(nameof(roomCount), roomCount, "An area has rooms.");
+
+            int perSide = (int)Math.Ceiling(Math.Sqrt(roomCount));
+            int side = (perSide * (DraftMaxRoomSideCells + 2)) + 4;
+
+            // A floor small enough to hold its rooms can still be too cramped to put the boss a
+            // walk away from the entrance, so there is a lower bound independent of the count.
+            return side < 28 ? 28 : side;
+        }
+
+        /// <summary>
+        /// One attempt at one seed. Returns null with a reason when the seed cannot be laid out;
+        /// the result is not validated here.
+        /// </summary>
+        private static AreaLayout BuildOnce(in AreaSpec spec, uint seed, int attempt, out string refusal)
+        {
+            var rng = new DeterministicRng(seed);
+            int roomCount = RoomCountFor(spec);
+            int side = GridSideFor(roomCount);
+
+            List<AreaRoom> rooms = PlaceRooms(rng, roomCount, side);
+            if (rooms == null)
+            {
+                refusal = $"could not place {roomCount} rooms in a {side}x{side} grid without merging them";
+                return null;
+            }
+
+            var grid = new AreaGrid(side, side);
+            for (int i = 0; i < rooms.Count; ++i)
+                grid.CarveRoom(rooms[i]);
+
+            ConnectRooms(grid, rooms, rng);
+
+            AreaCell start = rooms[0].Centre;
+            int[] field = grid.DistanceField(start);
+
+            int bossRoom = FarthestRoom(grid, rooms, field, skip: 0);
+            if (bossRoom < 0)
+            {
+                refusal = "no room could be reached from the entrance";
+                return null;
+            }
+
+            List<int> objectiveRooms = ObjectiveRooms(grid, rooms, field, spec.ObjectiveCount, bossRoom);
+            if (objectiveRooms == null)
+            {
+                refusal = $"only {rooms.Count} rooms, too few to hold {spec.ObjectiveCount} objectives apart " +
+                          "from the entrance and the boss";
+                return null;
+            }
+
+            var objectives = new List<AreaCell>(objectiveRooms.Count);
+            for (int i = 0; i < objectiveRooms.Count; ++i)
+                objectives.Add(rooms[objectiveRooms[i]].Centre);
+
+            AreaRoom boss = rooms[bossRoom];
+            refusal = string.Empty;
+            return new AreaLayout(
+                spec,
+                seed,
+                attempt,
+                DraftCellSizeUnits,
+                grid,
+                rooms,
+                start,
+                objectives,
+                boss.Centre,
+                // Opposite corners of the boss's room, so the console and the pad are as far from
+                // each other and from the boss as that room allows.
+                new AreaCell(boss.MinX, boss.MinY),
+                new AreaCell(boss.MaxX, boss.MaxY));
+        }
+
+        private static List<AreaRoom> PlaceRooms(DeterministicRng rng, int roomCount, int side)
+        {
+            var rooms = new List<AreaRoom>(roomCount);
+
+            for (int i = 0; i < roomCount; ++i)
+            {
+                bool placed = false;
+
+                for (int attempt = 0; attempt < PlacementTriesPerRoom && !placed; ++attempt)
+                {
+                    int width = rng.NextInt(DraftMinRoomSideCells, DraftMaxRoomSideCells + 1);
+                    int height = rng.NextInt(DraftMinRoomSideCells, DraftMaxRoomSideCells + 1);
+
+                    // Two cells of border, so a corridor can always run outside a room.
+                    int maxX = side - width - 1;
+                    int maxY = side - height - 1;
+                    if (maxX <= 1 || maxY <= 1)
+                        continue;
+
+                    var room = new AreaRoom(rng.NextInt(1, maxX), rng.NextInt(1, maxY), width, height);
+                    if (Collides(rooms, room))
+                        continue;
+
+                    rooms.Add(room);
+                    placed = true;
+                }
+
+                if (!placed)
+                    return null;
+            }
+
+            return rooms;
+        }
+
+        private static bool Collides(List<AreaRoom> rooms, in AreaRoom candidate)
+        {
+            for (int i = 0; i < rooms.Count; ++i)
+            {
+                if (rooms[i].TooCloseTo(candidate, RoomMarginCells))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Joins every room into one tree: each new room to the nearest room already in it. A
+        /// tree is the fewest corridors that leave nothing stranded, and it keeps the walk to the
+        /// boss meaningful - a map full of loops would make every room about equally far away.
+        /// </summary>
+        private static void ConnectRooms(AreaGrid grid, List<AreaRoom> rooms, DeterministicRng rng)
+        {
+            for (int i = 1; i < rooms.Count; ++i)
+            {
+                AreaCell from = rooms[i].Centre;
+                int nearest = 0;
+                int nearestSteps = int.MaxValue;
+
+                for (int j = 0; j < i; ++j)
+                {
+                    int steps = from.ManhattanTo(rooms[j].Centre);
+                    if (steps < nearestSteps)
+                    {
+                        nearestSteps = steps;
+                        nearest = j;
+                    }
+                }
+
+                grid.CarveCorridor(from, rooms[nearest].Centre, horizontalFirst: (rng.NextUInt() & 1u) == 0u);
+            }
+        }
+
+        private static int FarthestRoom(AreaGrid grid, List<AreaRoom> rooms, int[] field, int skip)
+        {
+            int best = -1;
+            int bestSteps = -1;
+
+            for (int i = 0; i < rooms.Count; ++i)
+            {
+                if (i == skip)
+                    continue;
+
+                int steps = grid.DistanceAt(field, rooms[i].Centre);
+                if (steps > bestSteps)
+                {
+                    bestSteps = steps;
+                    best = i;
+                }
+            }
+
+            return bestSteps <= 0 ? -1 : best;
+        }
+
+        /// <summary>
+        /// The rooms the objectives go in: the farthest ones that are neither the entrance nor
+        /// the boss's.
+        /// <para>
+        /// Farthest rather than nearest, so the player crosses the area to clear it instead of
+        /// finishing every objective in the first two rooms and walking an empty map to the boss.
+        /// </para>
+        /// </summary>
+        private static List<int> ObjectiveRooms(
+            AreaGrid grid, List<AreaRoom> rooms, int[] field, int wanted, int bossRoom)
+        {
+            var candidates = new List<int>(rooms.Count);
+            for (int i = 0; i < rooms.Count; ++i)
+            {
+                if (i == 0 || i == bossRoom)
+                    continue;
+                if (grid.DistanceAt(field, rooms[i].Centre) == AreaGrid.Unreachable)
+                    continue;
+
+                candidates.Add(i);
+            }
+
+            if (candidates.Count < wanted)
+                return null;
+
+            candidates.Sort((a, b) =>
+                grid.DistanceAt(field, rooms[b].Centre).CompareTo(grid.DistanceAt(field, rooms[a].Centre)));
+
+            return candidates.GetRange(0, wanted);
+        }
+    }
+}
