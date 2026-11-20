@@ -122,7 +122,12 @@ namespace NeonVoid.Player
             if (_actor != null && !_actor.IsAlive)
                 return;
 
-            _state = PlayerMotionSimulation.Step(_state, command, motionConfig, out Vector2 desired);
+            // The player obeys 구속 / 속박 / 정지 through the same function the enemies use.
+            // Until this was passed, enemies respected a slow and the player did not.
+            float speedMultiplier = _actor != null ? _actor.MoveSpeedMultiplier : 1f;
+
+            _state = PlayerMotionSimulation.Step(
+                _state, command, motionConfig, out Vector2 desired, speedMultiplier);
 
             _character.Move(new Vector3(desired.x, 0f, desired.y));
 

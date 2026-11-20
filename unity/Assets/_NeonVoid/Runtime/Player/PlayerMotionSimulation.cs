@@ -39,14 +39,26 @@ namespace NeonVoid.Player
             in PlayerMotionState state,
             in PlayerInputCommand command,
             in PlayerMotionConfig config,
-            out Vector2 desiredDisplacementXZ)
+            out Vector2 desiredDisplacementXZ,
+            float speedMultiplier = 1f)
         {
             PlayerMotionState next = state;
+
+            // 구속 slows, 정지 and 속박 stop outright. A non-finite or negative multiplier is
+            // treated as a stop rather than propagated: a NaN here would reach the position and
+            // poison it permanently.
+            float speed = float.IsNaN(speedMultiplier) || speedMultiplier < 0f ? 0f : speedMultiplier;
+            bool canMove = speed > 0f;
 
             // The cooldown is READ here and SPENT at the end of the tick. Spending it first
             // would give the dash tick itself a free decrement, so a 45 tick cooldown would
             // only free up on tick T+46. Read-then-spend makes T+45 exact.
+            //
+            // canMove also gates starting a dash, which is D-009's "정지 중 대시 미발동".
+            // Without it a stunned player would start a dash, travel nowhere, and pay the
+            // cooldown for it - the worst of both readings.
             bool wantsDash = command.DashPressed
+                             && canMove
                              && !next.IsDashing
                              && next.DashCooldownTicksRemaining <= 0
                              && command.MoveXZ.sqrMagnitude > MovementDeadZoneSqr;
@@ -63,12 +75,16 @@ namespace NeonVoid.Player
             Vector2 velocityUnitsPerSecond;
             if (next.DashTicksRemaining > 0)
             {
-                velocityUnitsPerSecond = next.DashDirectionXZ * config.DashSpeedUnitsPerSecond;
+                // The multiplier scales a dash already in flight too, so being rooted or
+                // stunned mid-dash stops it rather than letting it carry the player away from
+                // the effect that was supposed to hold them. Whether 구속 should also slow a
+                // dash, rather than only stopping it outright, is [미확정].
+                velocityUnitsPerSecond = next.DashDirectionXZ * config.DashSpeedUnitsPerSecond * speed;
                 next.DashTicksRemaining--;
             }
             else
             {
-                velocityUnitsPerSecond = command.MoveXZ * config.MoveSpeedUnitsPerSecond;
+                velocityUnitsPerSecond = command.MoveXZ * config.MoveSpeedUnitsPerSecond * speed;
             }
 
             desiredDisplacementXZ = velocityUnitsPerSecond * (float)SimulationClock.TickDeltaSeconds;

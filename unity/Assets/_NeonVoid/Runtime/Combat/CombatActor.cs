@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using NeonVoid.Combat.Skills;
+using NeonVoid.Combat.Stats;
 using NeonVoid.Combat.Status;
 using NeonVoid.Core;
 using UnityEngine;
@@ -47,6 +49,7 @@ namespace NeonVoid.Combat
         [SerializeField] private float skillHaste;
         [SerializeField] private float tenacityPercent;
 
+        private CombatStats _baseStats;
         private CombatStats _stats;
         private HealthPool _health;
         private StatusContainer _status;
@@ -54,15 +57,47 @@ namespace NeonVoid.Combat
         private SkillLoadout _skills;
         private SimulationRunner _runner;
         private LifestealPolicy _lifestealPolicy;
+        private StatCaps _caps;
+        private readonly List<StatModifier> _temporaryModifiers = new List<StatModifier>();
+        private bool _statsDirty = true;
 
         public int ActorId { get; private set; }
         public int TeamId => teamId;
         public bool IsAlive => _health.IsAlive;
         public HealthPool Health => _health;
         public ManaPool Mana => _mana;
-        public CombatStats Stats => _stats;
         public StatusContainer Status => _status;
         public SkillLoadout Skills => _skills;
+
+        /// <summary>The stat block before any buff, debuff or plugin. Never modified in place.</summary>
+        public CombatStats BaseStats => _baseStats;
+
+        /// <summary>
+        /// The combat snapshot everything resolves against: base stats with every current
+        /// contribution applied, in the order docs/02 section 2 fixes.
+        /// <para>
+        /// Recomputed from <see cref="BaseStats"/> whenever something changed, never adjusted
+        /// in place. docs/02 requires 원본 기반 재계산 so the same contribution cannot land
+        /// twice; a snapshot that was edited incrementally would be right once and drift
+        /// upward from then on.
+        /// </para>
+        /// </summary>
+        public CombatStats Stats
+        {
+            get
+            {
+                if (_statsDirty)
+                    RecomputeStats();
+                return _stats;
+            }
+        }
+
+        /// <summary>
+        /// Fraction of base movement speed this actor may use right now: 1 unimpeded, 0 while
+        /// stunned or rooted. Read by the player's movement and by the enemy agents, so 구속
+        /// means the same thing on both sides.
+        /// </summary>
+        public float MoveSpeedMultiplier => StatusStatContribution.MoveSpeedMultiplier(_status);
 
         /// <summary>Raised once, after health reaches zero.</summary>
         public event Action<CombatActor> Died;
@@ -88,32 +123,34 @@ namespace NeonVoid.Combat
         {
             ActorId = _allocator.Next();
 
-            _stats = CombatStats.StartingVaccine();
-            _stats.MaxHealth = maxHealth;
-            _stats.AttackDamage = attackDamage;
-            _stats.AbilityPower = abilityPower;
-            _stats.PhysicalArmor = physicalArmor;
-            _stats.MagicResistance = magicResistance;
-            _stats.OmnivampPercent = omnivampPercent;
-            _stats.OnHitLifestealPercent = onHitLifestealPercent;
-            _stats.SkillHaste = skillHaste;
-            _stats.TenacityPercent = tenacityPercent;
+            _baseStats = CombatStats.StartingVaccine();
+            _baseStats.MaxHealth = maxHealth;
+            _baseStats.AttackDamage = attackDamage;
+            _baseStats.AbilityPower = abilityPower;
+            _baseStats.PhysicalArmor = physicalArmor;
+            _baseStats.MagicResistance = magicResistance;
+            _baseStats.OmnivampPercent = omnivampPercent;
+            _baseStats.OnHitLifestealPercent = onHitLifestealPercent;
+            _baseStats.SkillHaste = skillHaste;
+            _baseStats.TenacityPercent = tenacityPercent;
 
             try
             {
-                _stats.Validate();
+                _baseStats.Validate();
             }
             catch (InvalidOperationException error)
             {
                 Debug.LogError($"{name}: combat stats rejected ({error.Message}). Falling back to the starting block.", this);
-                _stats = CombatStats.StartingVaccine();
+                _baseStats = CombatStats.StartingVaccine();
             }
 
-            _health = HealthPool.Full(_stats.MaxHealth);
+            _caps = StatCaps.Draft();
+            _health = HealthPool.Full(_baseStats.MaxHealth);
             _status = new StatusContainer(StatusCatalog.Draft());
             _mana = ManaPool.Starting();
             _skills = new SkillLoadout();
             _lifestealPolicy = LifestealPolicy.Draft();
+            _statsDirty = true;
         }
 
         private void OnEnable()
@@ -138,9 +175,36 @@ namespace NeonVoid.Combat
             if (!IsAlive)
                 return;
 
-            _status.Tick();
+            // An expiry changes what the stat snapshot should say, so the next read recomputes.
+            IReadOnlyList<StatusEffectId> expired = _status.Tick();
+            if (expired != null && expired.Count > 0)
+                _statsDirty = true;
+
             _mana.Tick();
             _skills.Tick();
+        }
+
+        /// <summary>
+        /// Rebuilds the combat snapshot from the base stats. docs/02 section 2's order:
+        /// permanent investment first, then plugins and buffs or debuffs, then caps.
+        /// <para>
+        /// Permanent investment is passed as null: it is approved progression state and no save
+        /// exists to approve any yet. The parameter is there so the order cannot be got wrong
+        /// later by inserting it in the wrong place.
+        /// </para>
+        /// </summary>
+        private void RecomputeStats()
+        {
+            _temporaryModifiers.Clear();
+            StatusStatContribution.Collect(_status, _temporaryModifiers);
+
+            _stats = CombatStatResolution.Resolve(
+                _baseStats, null, _temporaryModifiers, _caps, out int rejected);
+            _statsDirty = false;
+
+            if (rejected > 0)
+                Debug.LogError(
+                    $"{name}: {rejected} stat contribution(s) rejected as unusable (NaN, infinite or unknown stat).", this);
         }
 
         /// <summary>
@@ -158,8 +222,11 @@ namespace NeonVoid.Combat
 
             bool invulnerable = _status.Has(StatusEffectId.Invulnerable);
 
+            // Stats, not _stats: the defender's armour and magic resistance have to be the
+            // current ones. Reading the stale snapshot is what made 방화벽 차단 inert - the
+            // mark was applied, tracked and displayed, and the mitigation never saw it.
             DamageOutcome outcome = DamageApplication.Apply(
-                request, attackerStats, _stats, ref _health, invulnerable,
+                request, attackerStats, Stats, ref _health, invulnerable,
                 _lifestealPolicy, critRolled, isOnHitEvent);
 
             DamageTaken?.Invoke(this, outcome);
@@ -188,7 +255,7 @@ namespace NeonVoid.Combat
             if (!IsAlive)
                 return SkillCastResult.Refused(SkillCastRejection.CasterIsDead);
 
-            return _skills.TryCast(slotIndex, ref _mana, _stats, SkillGate.FromStatus(_status));
+            return _skills.TryCast(slotIndex, ref _mana, Stats, SkillGate.FromStatus(_status));
         }
 
         /// <summary>
@@ -225,8 +292,17 @@ namespace NeonVoid.Combat
         /// shortened; damage over time and stat reductions are not (see TenacityMath).
         /// </summary>
         public StatusApplyOutcome ApplyStatus(
-            StatusEffectId id, float magnitude, float controlResistancePercent = 0f, int durationTicksOverride = -1) =>
-            _status.Apply(id, magnitude, _stats.TenacityPercent, controlResistancePercent, durationTicksOverride);
+            StatusEffectId id, float magnitude, float controlResistancePercent = 0f, int durationTicksOverride = -1)
+        {
+            StatusApplyOutcome outcome = _status.Apply(
+                id, magnitude, Stats.TenacityPercent, controlResistancePercent, durationTicksOverride);
+
+            // A status that changed anything may change the stat snapshot, so the next read of
+            // it recomputes from the base. Marking unconditionally is deliberate: deciding here
+            // which statuses are "only" control effects would put that knowledge in two places.
+            _statsDirty = true;
+            return outcome;
+        }
 
         /// <summary>True when this actor may damage the other one.</summary>
         public bool IsHostileTo(CombatActor other) => other != null && other.teamId != teamId;

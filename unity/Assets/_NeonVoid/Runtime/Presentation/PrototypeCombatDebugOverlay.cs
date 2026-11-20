@@ -129,6 +129,15 @@ namespace NeonVoid.Presentation
                     $"HP {health.Current:0}/{health.Max:0}    MP {mana.Current:0}/{mana.Max:0}", _panelLabel);
                 GUILayout.Label($"skills  {SkillCooldowns(player.Skills)}", _panelLabel);
 
+                // Base beside effective, so a buff or debuff is visible as a number changing
+                // rather than as a vague feeling that the game got easier.
+                CombatStats stats = player.Stats;
+                CombatStats baseStats = player.BaseStats;
+                GUILayout.Label(
+                    $"AD {stats.AttackDamage:0.#}/{baseStats.AttackDamage:0.#}   " +
+                    $"AP {stats.AbilityPower:0.#}   " +
+                    $"spd x{player.MoveSpeedMultiplier:0.00}", _panelLabel);
+
                 string status = StatusSummary(player.Status);
                 GUILayout.Label($"status  {(status.Length == 0 ? "-" : status)}", _panelLabel);
             }
@@ -234,8 +243,16 @@ namespace NeonVoid.Presentation
 
                 HealthPool health = actor.Health;
                 string status = StatusSummary(actor.Status);
+
+                // Armour only when something has changed it, which is how 부식 표식 becomes
+                // visible: the mark used to be displayed while reducing nothing at all.
+                float armor = actor.Stats.PhysicalArmor;
+                string armorText = Mathf.Abs(armor - actor.BaseStats.PhysicalArmor) > 0.01f
+                    ? $"  arm {armor:0.#}"
+                    : string.Empty;
+
                 string text = actor.IsAlive
-                    ? $"#{actor.ActorId}  {health.Current:0}/{health.Max:0}" +
+                    ? $"#{actor.ActorId}  {health.Current:0}/{health.Max:0}{armorText}" +
                       (status.Length > 0 ? $"\n{status}" : string.Empty)
                     : $"#{actor.ActorId}  dead";
 

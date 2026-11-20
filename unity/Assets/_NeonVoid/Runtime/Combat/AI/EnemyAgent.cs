@@ -163,7 +163,9 @@ namespace NeonVoid.Combat.AI
                 candidates,
                 stunned: status.Has(StatusEffectId.Stun),
                 rooted: status.Has(StatusEffectId.Root),
-                speedMultiplier: 1f - Mathf.Clamp01(status.TotalMagnitudeOf(StatusEffectId.Slow)));
+                // The same function the player's movement reads, so 구속 cannot come to mean
+                // one thing for an enemy and another for the player.
+                speedMultiplier: _self.MoveSpeedMultiplier);
         }
 
         /// <summary>
