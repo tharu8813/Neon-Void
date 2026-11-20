@@ -98,6 +98,17 @@ namespace NeonVoid.Player
         }
 
         /// <summary>
+        /// The command handed out for the current tick, for anything that acts on the same
+        /// input after movement has run.
+        /// <para>
+        /// A second caller must never call <see cref="ConsumeCommandForTick"/> itself: the
+        /// latches are cleared there, so whichever caller arrived first would eat the press and
+        /// the other would see nothing. One consumer builds the command, everyone else reads it.
+        /// </para>
+        /// </summary>
+        public PlayerInputCommand LastConsumedCommand { get; private set; }
+
+        /// <summary>
         /// Builds the command for one tick and consumes the latched presses.
         /// </summary>
         /// <param name="playerPositionXZ">Used only as the aim fallback when projection fails.</param>
@@ -106,7 +117,11 @@ namespace NeonVoid.Player
             Vector2 aim = ResolveAimWorldXZ(playerPositionXZ);
 
             if (_map == null || CombatInputSuspended)
-                return PlayerInputCommand.Idle(aim);
+            {
+                PlayerInputCommand idle = PlayerInputCommand.Idle(aim);
+                LastConsumedCommand = idle;
+                return idle;
+            }
 
             Vector2 move = _move != null ? _move.ReadValue<Vector2>() : Vector2.zero;
 
@@ -120,6 +135,7 @@ namespace NeonVoid.Player
                 interactPressed: _interactLatched);
 
             _dashLatched = _skill1Latched = _skill2Latched = _skill3Latched = _interactLatched = false;
+            LastConsumedCommand = command;
             return command;
         }
 

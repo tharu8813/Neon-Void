@@ -158,6 +158,27 @@ namespace NeonVoid.Combat
             return outcome;
         }
 
+        /// <summary>
+        /// Attempts to cast the skill in a slot, spending this actor's own mana.
+        /// <para>
+        /// The mana lives here, so the attempt has to happen here too: handing a copy of the
+        /// pool to a caster and taking it back afterwards is a lost update waiting to happen -
+        /// two casts in one tick would each start from the same pre-cast balance and the second
+        /// would overwrite the first one's spend.
+        /// </para>
+        /// <para>
+        /// Every rule about whether the cast is allowed stays in <see cref="SkillLoadout"/>;
+        /// this adds only the liveness check, which no gate covers.
+        /// </para>
+        /// </summary>
+        public SkillCastResult TryCastSkill(int slotIndex)
+        {
+            if (!IsAlive)
+                return SkillCastResult.Refused(SkillCastRejection.CasterIsDead);
+
+            return _skills.TryCast(slotIndex, ref _mana, _stats, SkillGate.FromStatus(_status));
+        }
+
         /// <summary>Heals this actor, e.g. from its own lifesteal.</summary>
         public float Heal(float amount) => IsAlive ? _health.Heal(amount) : 0f;
 

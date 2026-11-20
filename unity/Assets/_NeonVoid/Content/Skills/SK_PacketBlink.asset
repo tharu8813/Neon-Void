@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ab9e9bc7fe976c4899678c2b5190afd, type: 3}
+  m_Name: SK_PacketBlink
+  m_EditorClassIdentifier: NeonVoid.Runtime::NeonVoid.Combat.Skills.SkillAsset
+  documentKey: skill.packet_blink
+  displayName: "\uD328\uD0B7 \uC810\uBA78"
+  definition:
+    SkillId: 1003
+    ManaCost: 20
+    BaseCooldownTicks: 240
+    IsMovementSkill: 1
+    Damage:
+      Flat: 0
+      AdRatio: 0
+      ApRatio: 0
+      Type: 0
+      CanCrit: 0
+      IsArea: 0
+      IsPeriodic: 0
+  shape:
+    Kind: 3
+    RadiusUnits: 0
+    ConeHalfAngleDegrees: 0
+    TeleportMaxDistanceUnits: 6
+    Field:
+      DurationTicks: 0
+      TickIntervalTicks: 0
+  appliedStatus:
+    Id: 0
+    Magnitude: 0
+    DurationTicksOverride: -1

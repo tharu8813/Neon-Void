@@ -3,6 +3,7 @@ using System.IO;
 using NeonVoid.Combat;
 using NeonVoid.Combat.AI;
 using NeonVoid.Combat.Projectiles;
+using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Player;
 using NeonVoid.Presentation;
@@ -47,6 +48,13 @@ namespace NeonVoid.EditorTools
             Material playerMat = GetOrCreateMaterial("NV_Player", new Color(0.3f, 0.95f, 0.96f));
             Material enemyMat = GetOrCreateMaterial("NV_Dummy", new Color(1f, 0.23f, 0.42f));
             Material corpseMat = GetOrCreateMaterial("NV_Corpse", new Color(0.21f, 0.13f, 0.19f));
+            Material fieldMat = GetOrCreateMaterial("NV_Field", new Color(0.95f, 0.55f, 0.15f));
+
+            // docs/03 section 6: two or three prototype skills, as replaceable assets. Only
+            // the files are written here; the references are loaded after the scene exists,
+            // because opening a new scene unloads assets nothing in it refers to yet and the
+            // references would quietly become null.
+            string[] skillPaths = NeonVoidPrototypeSkills.CreateOrUpdateAll();
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             CreateBox("Ground - XZ", new Vector3(0f, -0.25f, 0f),
@@ -82,6 +90,20 @@ namespace NeonVoid.EditorTools
             CombatActor playerActor = player.AddComponent<CombatActor>();
             AutoAttacker attacker = player.AddComponent<AutoAttacker>();
             AssignSerialized(attacker, "projectileMaterial", playerMat);
+
+            // [초안] prototype stats, set here so the skill rules are observable rather than
+            // multiplied by zero: the starting block has no ability power, which would make
+            // every magic skill deal its flat component only, and no omnivamp, which would
+            // hide the 0.33 area efficiency the field exists to demonstrate.
+            AssignSerializedFloat(playerActor, "abilityPower", 20f);
+            AssignSerializedFloat(playerActor, "omnivampPercent", 15f);
+
+            // P2: Q/E/R cast the three prototype skills through the tested cast rules.
+            PlayerSkillCaster caster = player.AddComponent<PlayerSkillCaster>();
+            AssignSerialized(caster, "inputRouter", router);
+            AssignSerialized(caster, "motionDriver", driver);
+            AssignSerialized(caster, "fieldMaterial", fieldMat);
+            AssignSerializedObjectArray(caster, "slotSkills", NeonVoidPrototypeSkills.Load(skillPaths));
 
             // The body stops colliding and looks dead. Without this a corpse stays a solid,
             // invisible wall that can corner the player and stop their shots.
@@ -192,6 +214,66 @@ namespace NeonVoid.EditorTools
                 return;
             property.floatValue = value;
             property.serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// Fills a serialized array of object references.
+        /// <para>
+        /// The resize is applied and the property re-fetched before the elements are written.
+        /// Setting <c>arraySize</c> and then writing into element properties fetched from the
+        /// same handle silently produced an array of nulls: the scene saved with three empty
+        /// skill slots, every log line was clean, and the only symptom was that nothing
+        /// happened in play. Hence also the read-back below - a wiring step that can fail
+        /// quietly is worse than one that fails loudly.
+        /// </para>
+        /// </summary>
+        private static void AssignSerializedObjectArray(Object target, string fieldName, Object[] values)
+        {
+            int count = values != null ? values.Length : 0;
+            var serialized = new SerializedObject(target);
+            SerializedProperty property = serialized.FindProperty(fieldName);
+            if (property == null)
+            {
+                Debug.LogError($"{target.GetType().Name} has no serialized field '{fieldName}'; scene wiring is incomplete.");
+                return;
+            }
+
+            if (!property.isArray)
+            {
+                Debug.LogError($"{target.GetType().Name}.{fieldName} is not an array; scene wiring is incomplete.");
+                return;
+            }
+
+            // An object that is not a saved asset has no guid to write, so the reference would
+            // serialize as a null however correct it looks in memory.
+            for (int i = 0; i < count; ++i)
+                if (values[i] != null && !AssetDatabase.Contains(values[i]))
+                    Debug.LogError(
+                        $"{target.GetType().Name}.{fieldName}[{i}] was handed an object the AssetDatabase does not hold; the reference will be lost on save.");
+
+            property.arraySize = count;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            serialized.Update();
+            property = serialized.FindProperty(fieldName);
+            for (int i = 0; i < count; ++i)
+                property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            serialized.Update();
+            property = serialized.FindProperty(fieldName);
+            for (int i = 0; i < count; ++i)
+            {
+                if (values[i] == null)
+                {
+                    Debug.LogError($"{target.GetType().Name}.{fieldName}[{i}] was handed nothing; the slot will be empty.");
+                    continue;
+                }
+
+                if (property.GetArrayElementAtIndex(i).objectReferenceValue == null)
+                    Debug.LogError(
+                        $"{target.GetType().Name}.{fieldName}[{i}] did not take the reference to '{values[i].name}'; scene wiring is incomplete.");
+            }
         }
 
         private static SerializedProperty FindField(Object target, string fieldName)

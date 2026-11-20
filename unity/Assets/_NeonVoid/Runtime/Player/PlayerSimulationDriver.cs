@@ -133,6 +133,39 @@ namespace NeonVoid.Player
         }
 
         /// <summary>
+        /// Moves the player to a position without travelling through what is in between, for a
+        /// blink or teleport. The caller is responsible for the destination being free.
+        /// <para>
+        /// The simulation state is written as well as the transform, which is the whole reason
+        /// this is a method rather than the caller setting the position itself. The rules keep
+        /// their own position ledger, and leaving it behind would make the next tick resolve
+        /// facing and the dash dead zone against where the player used to be.
+        /// </para>
+        /// <para>
+        /// The CharacterController is switched off across the move: it resolves movement
+        /// against geometry, and asking it to jump a distance in one frame is how a teleport
+        /// ends up refused, halved, or inside a wall.
+        /// </para>
+        /// </summary>
+        public void TeleportTo(Vector2 positionXZ)
+        {
+            if (float.IsNaN(positionXZ.x) || float.IsNaN(positionXZ.y))
+                return;
+
+            bool wasEnabled = _character != null && _character.enabled;
+            if (_character != null)
+                _character.enabled = false;
+
+            Vector3 position = transform.position;
+            transform.position = new Vector3(positionXZ.x, position.y, positionXZ.y);
+
+            if (_character != null)
+                _character.enabled = wasEnabled;
+
+            _state.PositionXZ = positionXZ;
+        }
+
+        /// <summary>
         /// Facing is presentation, applied once per frame rather than once per tick: rotating
         /// the transform several times in one frame costs work nobody can see.
         /// </summary>

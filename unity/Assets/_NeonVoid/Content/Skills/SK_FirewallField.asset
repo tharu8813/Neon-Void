@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ab9e9bc7fe976c4899678c2b5190afd, type: 3}
+  m_Name: SK_FirewallField
+  m_EditorClassIdentifier: NeonVoid.Runtime::NeonVoid.Combat.Skills.SkillAsset
+  documentKey: skill.firewall_field
+  displayName: "\uBC29\uD654\uBCBD \uD544\uB4DC"
+  definition:
+    SkillId: 1002
+    ManaCost: 40
+    BaseCooldownTicks: 480
+    IsMovementSkill: 0
+    Damage:
+      Flat: 4
+      AdRatio: 0
+      ApRatio: 0.25
+      Type: 1
+      CanCrit: 0
+      IsArea: 1
+      IsPeriodic: 1
+  shape:
+    Kind: 2
+    RadiusUnits: 3
+    ConeHalfAngleDegrees: 0
+    TeleportMaxDistanceUnits: 0
+    Field:
+      DurationTicks: 300
+      TickIntervalTicks: 30
+  appliedStatus:
+    Id: 21
+    Magnitude: 0.25
+    DurationTicksOverride: 45
