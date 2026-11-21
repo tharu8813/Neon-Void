@@ -234,6 +234,108 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>
+        /// [확정] docs/02 section 7 and docs/03 G05: 보호막을 만드는 일반 플러그인 30초 주기.
+        /// 1800 ticks at 60 Hz.
+        /// </summary>
+        public const int StatedPeriodicShieldTicks = 1800;
+
+        /// <summary>[초안] none of the three shield cards states an amount.</summary>
+        public const float DraftPeriodicShieldAmount = 40f;
+
+        /// <summary>[초안] ticks G05's shield lasts if nothing eats it.</summary>
+        public const int DraftPeriodicShieldLifetimeTicks = 1800;
+
+        /// <summary>[초안] G07 실행 차폐.</summary>
+        public const float DraftSkillShieldAmount = 25f;
+
+        /// <summary>[초안] ticks G07's shield lasts.</summary>
+        public const int DraftSkillShieldLifetimeTicks = 300;
+
+        /// <summary>[초안] R05 돌진 차폐, a rare, so worth more than G07's.</summary>
+        public const float DraftDashShieldAmount = 35f;
+
+        /// <summary>[초안] ticks R05's shield lasts.</summary>
+        public const int DraftDashShieldLifetimeTicks = 240;
+
+        /// <summary>
+        /// G05 주기 차폐막 - 30초마다 보호막.
+        /// <para>
+        /// The 30초 is [확정]: docs/02 section 7 states 보호막을 만드는 일반 플러그인 30초 주기
+        /// outright, and docs/03 repeats it. The amount and how long the shield lasts are
+        /// [초안] - neither document gives either.
+        /// </para>
+        /// <para>
+        /// 중첩·갱신·만료, which docs/03 lists as this card's exception, is not answered here:
+        /// it is <see cref="NeonVoid.Combat.ShieldPolicy"/>, where the absorption order is
+        /// [확정] 신규부터 (docs/08 D-004a) and the refresh rule is still open.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition PeriodicBarrier() => new PluginDefinition
+        {
+            ProposalId = "G05",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnTimer,
+            Effect = PluginEffectKind.GrantShield,
+            Rule = ProcEffectRule.SingleUse(5),
+            Damage = default,
+            TimerPeriodTicks = StatedPeriodicShieldTicks,
+            Shield = new PluginShieldGrant
+            {
+                Amount = DraftPeriodicShieldAmount,
+                LifetimeTicks = DraftPeriodicShieldLifetimeTicks,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// G07 실행 차폐 - 스킬 사용 시 보호막 생성.
+        /// <para>
+        /// 스킬 실패 시 발동하지 않음, which docs/03 lists as the exception, holds because the
+        /// caster raises its cast event only for a cast that actually went off - a refused
+        /// cast never reaches the router at all, so there is no check to forget.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition ExecutionBarrier() => new PluginDefinition
+        {
+            ProposalId = "G07",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnSkillCast,
+            Effect = PluginEffectKind.GrantShield,
+            Rule = ProcEffectRule.SingleUse(7),
+            Damage = default,
+            Shield = new PluginShieldGrant
+            {
+                Amount = DraftSkillShieldAmount,
+                LifetimeTicks = DraftSkillShieldLifetimeTicks,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// R05 돌진 차폐 - 돌진 또는 점멸 뒤 보호막 생성.
+        /// <para>
+        /// The same 분류 태그 G08 이동 버퍼 uses, which is the 분류 태그 docs/03 lists as this
+        /// card's exception: a skill counts as a dash or blink because its definition says
+        /// <c>IsMovementSkill</c>, not because of its name.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition DashBarrier() => new PluginDefinition
+        {
+            ProposalId = "R05",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.OnMovementAction,
+            Effect = PluginEffectKind.GrantShield,
+            Rule = ProcEffectRule.SingleUse(15),
+            Damage = default,
+            Shield = new PluginShieldGrant
+            {
+                Amount = DraftDashShieldAmount,
+                LifetimeTicks = DraftDashShieldLifetimeTicks,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>[원안 수치] docs/03 R03 위기 반발: 플레이어 HP 30% 이하.</summary>
         public const float StatedCrisisThresholdFraction = 0.30f;
 

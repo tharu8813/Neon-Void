@@ -296,6 +296,33 @@ namespace NeonVoid.Tests
             }
         }
 
+        // --- the part that is decided ------------------------------------------------------
+
+        [Test]
+        public void TheApprovedAbsorptionOrderIsNewestFirst()
+        {
+            // [확정] docs/08 D-004a, approved 2026-11-22. Pinned so that an approved rule
+            // cannot drift back into a default somebody changed while tuning something else -
+            // the other orders are still implemented, which is exactly what makes that easy.
+            Assert.AreEqual(ShieldAbsorptionOrder.NewestFirst, ShieldPolicy.ApprovedOrder);
+            Assert.AreEqual(ShieldPolicy.ApprovedOrder, ShieldPolicy.Draft().Order);
+        }
+
+        [Test]
+        public void WhatWasNotApprovedIsStillOpen()
+        {
+            // The approval covered the absorption order and nothing else. Recording that here
+            // as well as in docs/08 means a later reader of the code is told the same thing.
+            ShieldPolicy policy = ShieldPolicy.Draft();
+
+            Assert.AreEqual(
+                ShieldRefreshRule.Separate, policy.Refresh,
+                "갱신·합산 is still [미확정] and Separate is the provisional reading");
+            Assert.IsFalse(
+                policy.AbsorbsOnTheExpiryTick,
+                "the expiry-tick reading is still [미확정]");
+        }
+
         // --- the example D-004 asks to approve -------------------------------------------------
 
         [Test]

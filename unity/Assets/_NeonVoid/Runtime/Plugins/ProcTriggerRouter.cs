@@ -237,6 +237,54 @@ namespace NeonVoid.Plugins
             }
         }
 
+        /// <summary>G05 주기 차폐막: a card's own period has elapsed.</summary>
+        public void OnTimerElapsed(int actorId, long tick, string proposalId, int runId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredByTimer(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+            {
+                PluginDefinition plugin = _triggered[i];
+                if (!string.Equals(plugin.ProposalId, proposalId, System.StringComparison.Ordinal))
+                    continue;
+
+                Enqueue(plugin, actorId, tick, runId);
+            }
+        }
+
+        /// <summary>
+        /// G07 실행 차폐: the carrier cast a skill and it went off. 스킬 실패 시 발동하지 않음
+        /// is the caller's guarantee - the caster raises its event only for a cast that
+        /// succeeded, so a refused cast never reaches here.
+        /// </summary>
+        public void OnSkillCast(int actorId, long tick, int runId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredBySkillCast(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+                Enqueue(_triggered[i], actorId, tick, runId);
+        }
+
+        private void Enqueue(in PluginDefinition plugin, int actorId, long tick, int runId)
+        {
+            _queue.TryEnqueue(
+                plugin.EffectId,
+                actorId,
+                actorId,
+                _activePath,
+                tick,
+                runId,
+                attackId: 0,
+                plugin.Damage.Type,
+                plugin.Damage.IsArea,
+                plugin.Damage.IsPeriodic,
+                isCritical: false,
+                randomStreamId: 0,
+                onHitEffectScale: _activeScale);
+        }
+
         public void OnMovementAction(int actorId, long tick, int runId = 0)
         {
             _triggered.Clear();

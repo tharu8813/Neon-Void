@@ -40,16 +40,21 @@ namespace NeonVoid.Combat
     /// runs out of time leaves anything behind.
     /// </para>
     /// <para>
-    /// <b>The defaults below are not an approved decision.</b> D-004's approval condition is
-    /// 2개 이상 보호막 예시 승인 - a worked example with two or more shields, agreed. Until
-    /// that happens these are one reading among several, every one of which is implemented and
-    /// tested so the choice costs a constant rather than a rewrite.
+    /// <b>The absorption order is settled; the rest is not.</b> D-004a was approved on
+    /// 2026-11-22: 신규부터, the most recently granted shield is eaten first. See
+    /// <see cref="ApprovedOrder"/>. The refresh rule and the expiry-tick reading were
+    /// explicitly NOT part of that approval and remain [미확정], so they are still one reading
+    /// among several - every one implemented and tested, so choosing costs a constant.
     /// </para>
     /// </summary>
     [Serializable]
     public struct ShieldPolicy
     {
-        /// <summary>[미확정] docs/02 section 7: 보호막 흡수 순서.</summary>
+        /// <summary>
+        /// docs/02 section 7: 보호막 흡수 순서. <b>[확정] 2026-11-22 (docs/08 D-004a)</b>:
+        /// <see cref="ApprovedOrder"/>. Still a field rather than a constant because the other
+        /// readings remain implemented and tested, and a test may drive them.
+        /// </summary>
         public ShieldAbsorptionOrder Order;
 
         /// <summary>[미확정] docs/02 section 7: 여러 보호막의 갱신·합산.</summary>
@@ -62,18 +67,26 @@ namespace NeonVoid.Combat
         public bool AbsorbsOnTheExpiryTick;
 
         /// <summary>
-        /// The provisional reading. <b>Not an approved decision</b> - see the type comment.
+        /// [확정] docs/08 D-004a, approved 2026-11-22: 신규부터. A shield granted mid-fight is
+        /// the one the player just earned and expects to be spending, and oldest-first leaves
+        /// short-lived shields expiring unused.
+        /// </summary>
+        public const ShieldAbsorptionOrder ApprovedOrder = ShieldAbsorptionOrder.NewestFirst;
+
+        /// <summary>
+        /// The policy in force: the approved order, and the provisional reading of everything
+        /// D-004 still leaves open.
         /// <para>
-        /// Newest first, because a shield granted mid-fight is the one the player just earned
-        /// and expects to be spending; separate, because merging two sources into one amount
-        /// loses the information needed to answer the other two questions later.
+        /// Separate rather than merged, because merging two sources into one amount loses the
+        /// information needed to answer the remaining questions later - and it is reversible,
+        /// which a merge that has already thrown the sources away is not.
         /// </para>
         /// </summary>
         public static ShieldPolicy Draft() => new ShieldPolicy
         {
-            Order = ShieldAbsorptionOrder.NewestFirst,
-            Refresh = ShieldRefreshRule.Separate,
-            AbsorbsOnTheExpiryTick = false,
+            Order = ApprovedOrder,
+            Refresh = ShieldRefreshRule.Separate,     // [미확정]
+            AbsorbsOnTheExpiryTick = false,           // [미확정]
         };
     }
 }

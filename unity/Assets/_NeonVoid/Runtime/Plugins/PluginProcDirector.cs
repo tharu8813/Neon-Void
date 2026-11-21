@@ -61,6 +61,7 @@ namespace NeonVoid.Plugins
         private readonly List<PluginDefinition> _growthBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _conditionBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _chargeBuffer = new List<PluginDefinition>();
+        private readonly List<PluginDefinition> _timerBuffer = new List<PluginDefinition>();
 
         /// <summary>Gauge held per charged card, by its proposal id. L03 피버타임.</summary>
         private readonly Dictionary<string, float> _charge = new Dictionary<string, float>();
@@ -69,6 +70,11 @@ namespace NeonVoid.Plugins
         private readonly Dictionary<string, int> _feverTicks = new Dictionary<string, int>();
 
         private readonly List<string> _prunedFeverKeys = new List<string>();
+
+        /// <summary>Ticks each OnTimer card has waited, by proposal id. G05 주기 차폐막.</summary>
+        private readonly Dictionary<string, int> _timers = new Dictionary<string, int>();
+
+        private readonly List<string> _prunedTimerKeys = new List<string>();
 
         /// <summary>
         /// Ticks since the owner last took damage, for G11 무피격 가속.
@@ -443,6 +449,88 @@ namespace NeonVoid.Plugins
             return moveSpeed;
         }
 
+        /// <summary>
+        /// Runs each OnTimer card's own clock. G05 주기 차폐막 is 30초 주기, which docs/02
+        /// section 7 states as [확정].
+        /// <para>
+        /// A clock per card rather than one shared one, because two cards with different
+        /// periods would otherwise have to agree on a tick, and the counters of cards that are
+        /// no longer carried are dropped so a card re-granted later starts its period fresh
+        /// rather than firing instantly off a stale count.
+        /// </para>
+        /// </summary>
+        private void TickCardTimers(long tickIndex)
+        {
+            _timerBuffer.Clear();
+            _router.Loadout.CollectTriggeredByTimer(_timerBuffer);
+
+            if (_timerBuffer.Count == 0)
+            {
+                _timers.Clear();
+                return;
+            }
+
+            if (_timers.Count > 0)
+            {
+                _prunedTimerKeys.Clear();
+                foreach (string counted in _timers.Keys)
+                {
+                    bool stillCarried = false;
+                    for (int i = 0; i < _timerBuffer.Count && !stillCarried; ++i)
+                        stillCarried = _timerBuffer[i].ProposalId == counted;
+
+                    if (!stillCarried)
+                        _prunedTimerKeys.Add(counted);
+                }
+
+                for (int i = 0; i < _prunedTimerKeys.Count; ++i)
+                    _timers.Remove(_prunedTimerKeys[i]);
+            }
+
+            for (int i = 0; i < _timerBuffer.Count; ++i)
+            {
+                PluginDefinition card = _timerBuffer[i];
+                _timers.TryGetValue(card.ProposalId, out int waited);
+                ++waited;
+
+                if (waited < card.TimerPeriodTicks)
+                {
+                    _timers[card.ProposalId] = waited;
+                    continue;
+                }
+
+                _timers[card.ProposalId] = 0;
+                _router.OnTimerElapsed(
+                    owner != null ? owner.ActorId : 0, tickIndex, card.ProposalId);
+            }
+        }
+
+        /// <summary>Ticks a card's clock has waited. For a HUD and for a test.</summary>
+        public int TimerTicks(string proposalId) =>
+            _timers.TryGetValue(proposalId, out int waited) ? waited : 0;
+
+        /// <summary>
+        /// Gives the carrier the 보호막 a card granted.
+        /// <para>
+        /// The source id is the card's, which is what <see cref="ShieldPolicy.Refresh"/> keys
+        /// on - two shields from one card are the refresh question, two from different cards
+        /// never are.
+        /// </para>
+        /// </summary>
+        private void RaiseShield(in PluginDefinition plugin)
+        {
+            if (owner == null)
+                return;
+
+            long tick = _runner != null ? _runner.TickIndex : 0L;
+            owner.Shields.Grant(
+                plugin.ProposalId, plugin.Shield.Amount, tick, plugin.Shield.LifetimeTicks);
+
+            Debug.Log(
+                $"{plugin.ProposalId} 보호막 {plugin.Shield.Amount:0.#} " +
+                $"({owner.Shields.LayerCount} standing, {owner.Shields.Total:0.#} total).", this);
+        }
+
         private void TickConditions()
         {
             if (_ticksSinceDamage < int.MaxValue)
@@ -779,10 +867,19 @@ namespace NeonVoid.Plugins
         /// </summary>
         private void OnOwnerSkillCast(SkillDefinition definition)
         {
-            if (!definition.IsMovementSkill || owner == null)
+            if (owner == null)
                 return;
 
-            _router.OnMovementAction(owner.ActorId, _runner != null ? _runner.TickIndex : 0L);
+            long tick = _runner != null ? _runner.TickIndex : 0L;
+
+            // G07 실행 차폐 fires for any skill that went off. The caster raises this event
+            // only for a successful cast, which is 스킬 실패 시 발동하지 않음.
+            _router.OnSkillCast(owner.ActorId, tick);
+
+            if (!definition.IsMovementSkill)
+                return;
+
+            _router.OnMovementAction(owner.ActorId, tick);
         }
 
         private void OnOwnerHitLanded(HitReport report)
@@ -806,6 +903,7 @@ namespace NeonVoid.Plugins
             // swept is where the dash actually is.
             TickConditions();
             TickFeverWindows();
+            TickCardTimers(tickIndex);
 
             SweepDashPath(tickIndex);
 
@@ -928,6 +1026,9 @@ namespace NeonVoid.Plugins
                     break;
                 case PluginEffectKind.KnockbackAroundOwner:
                     ShoveEverybodyBack(plugin);
+                    break;
+                case PluginEffectKind.GrantShield:
+                    RaiseShield(plugin);
                     break;
             }
         }

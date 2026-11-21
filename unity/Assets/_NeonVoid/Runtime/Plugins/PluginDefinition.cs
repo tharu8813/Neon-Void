@@ -75,6 +75,19 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         OnOwnerLowHealth = 8,
+
+        /// <summary>
+        /// A fixed period has passed. docs/03 G05 주기 차폐막 is 30초마다 보호막, and docs/02
+        /// section 7 states 보호막을 만드는 일반 플러그인 30초 주기 as [확정].
+        /// </summary>
+        OnTimer = 9,
+
+        /// <summary>
+        /// The carrier cast a skill and it went off. docs/03 G07 실행 차폐 is
+        /// 스킬 사용 시 보호막 생성, whose exception column is 스킬 실패 시 발동하지 않음 -
+        /// so this is raised from the cast that succeeded, not from the attempt.
+        /// </summary>
+        OnSkillCast = 10,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>
@@ -167,6 +180,16 @@ namespace NeonVoid.Plugins
         /// 주변 적 넉백, and deals no damage at all.
         /// </summary>
         KnockbackAroundOwner = 11,
+
+        /// <summary>
+        /// Gives the carrier a 보호막. docs/03 G05 주기 차폐막, G07 실행 차폐, R05 돌진 차폐.
+        /// <para>
+        /// Which shield a hit then eats is <see cref="ShieldPolicy"/>: [확정] 신규부터 as of
+        /// docs/08 D-004a, with the refresh and expiry readings still open. The card grants;
+        /// it does not decide what the stack does with what it granted.
+        /// </para>
+        /// </summary>
+        GrantShield = 12,
     }
 
     /// <summary>
@@ -214,6 +237,12 @@ namespace NeonVoid.Plugins
 
         [Tooltip("[초안] units a knockback shoves an enemy. 0 for every other effect.")]
         public float KnockbackUnits;
+
+        [Tooltip("The 보호막 a GrantShield effect gives. Empty for every other effect.")]
+        public PluginShieldGrant Shield;
+
+        [Tooltip("Ticks between firings of an OnTimer card. docs/03 G05 is 30초 = 1800. 0 otherwise.")]
+        public int TimerPeriodTicks;
 
         [Tooltip("Status applied by a marking effect, or None.")]
         public StatusEffectId AppliedStatus;
@@ -364,6 +393,26 @@ namespace NeonVoid.Plugins
                     $"{ProposalId}: only an {nameof(PluginTriggerKind.OnOwnerLowHealth)} card has a " +
                     "health threshold.");
             }
+
+            if (Trigger == PluginTriggerKind.OnTimer)
+            {
+                if (TimerPeriodTicks < 1)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a period of {TimerPeriodTicks} ticks fires every tick or never.");
+                }
+            }
+            else if (TimerPeriodTicks != 0)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only an {nameof(PluginTriggerKind.OnTimer)} card has a period.");
+            }
+
+            if (Effect == PluginEffectKind.GrantShield)
+                Shield.Validate(ProposalId);
+            else if (!Shield.IsEmpty)
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.GrantShield)} grants a 보호막.");
 
             if (Effect == PluginEffectKind.KnockbackAroundOwner)
             {

@@ -127,6 +127,32 @@ namespace NeonVoid.Plugins
             card.Effect == PluginEffectKind.ConditionalPassive
             || card.Effect == PluginEffectKind.ChargedPassive;
 
+        /// <summary>Every carried card that fires on its own clock. docs/03 G05 주기 차폐막.</summary>
+        public void CollectTriggeredByTimer(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Trigger == PluginTriggerKind.OnTimer)
+                    into.Add(_carried[i]);
+            }
+        }
+
+        /// <summary>Every carried card that fires on a successful cast. docs/03 G07 실행 차폐.</summary>
+        public void CollectTriggeredBySkillCast(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Trigger == PluginTriggerKind.OnSkillCast)
+                    into.Add(_carried[i]);
+            }
+        }
+
         /// <summary>
         /// Every carried card that fires when the carrier is hurt and low. The health check is
         /// not here: the loadout cannot see the carrier.
