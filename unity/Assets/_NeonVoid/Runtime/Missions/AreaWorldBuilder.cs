@@ -20,7 +20,8 @@ namespace NeonVoid.Missions
             Transform extractionPad,
             AreaRoomGate[] roomGates,
             int floorSlabs,
-            int wallSlabs)
+            int wallSlabs,
+            int mutatedEnemies)
         {
             Root = root;
             Layout = layout;
@@ -32,6 +33,7 @@ namespace NeonVoid.Missions
             RoomGates = roomGates;
             FloorSlabs = floorSlabs;
             WallSlabs = wallSlabs;
+            MutatedEnemies = mutatedEnemies;
         }
 
         /// <summary>Everything built, under one object, so it can be torn down in one call.</summary>
@@ -57,6 +59,16 @@ namespace NeonVoid.Missions
 
         /// <summary>Boxes the wall was built from, after merging.</summary>
         public int WallSlabs { get; }
+
+        /// <summary>
+        /// How many of this area's enemies the environment mutated. 0 outside 변이발생.
+        /// <para>
+        /// Reported rather than left implicit because it is the only visible consequence of the
+        /// board's environment right now: a Mutation area that built no mutants would look
+        /// exactly like a Clear one, in the world and in every log.
+        /// </para>
+        /// </summary>
+        public int MutatedEnemies { get; }
 
         /// <summary>Enemies placed, across every room.</summary>
         public int EnemyCount
@@ -170,6 +182,10 @@ namespace NeonVoid.Missions
             return stats;
         }
 
+        private int _mutationLevel = AreaMutation.NoMutation;
+        private bool[] _mutated;
+        private int _mutatedThisBuild;
+
         /// <summary>Where the area's cell (0,0) begins in world space.</summary>
         public Vector3 WorldOrigin
         {
@@ -186,10 +202,38 @@ namespace NeonVoid.Missions
         /// Moved to the entrance. Null leaves the player where they are, which is only useful to
         /// a test that is about the geometry.
         /// </param>
-        public AreaBuildResult Build(AreaLayout layout, MissionRunDirector mission, Transform player)
+        public AreaBuildResult Build(AreaLayout layout, MissionRunDirector mission, Transform player) =>
+            Build(layout, mission, player, AreaConditions.Clear(layout.Spec.Hardware, HardwareDifficulty.Normal));
+
+        /// <summary>
+        /// Builds the area under the mission's conditions for it.
+        /// <para>
+        /// The conditions arrive here rather than in <see cref="AreaSpec"/> on purpose. docs/01
+        /// section 6 check 4 makes <c>(seed, hardwareId, generatorVersion)</c> reproduce the
+        /// terrain and the objective positions, so the generator never sees the environment -
+        /// a Clear area and a Mutation area of the same seed are the same map with different
+        /// enemies standing in it, which is what lets a player recognise a hardware they have
+        /// played before.
+        /// </para>
+        /// <para>
+        /// <b>난이도 does nothing here.</b> docs/01 section 3 lists 난이도에 따른 실제 HP/피해 배율
+        /// among its [미확정] items, so Hard and Easy differ in what the gate says and in
+        /// nothing else. Only 변이발생 has a [확정] effect to apply.
+        /// </para>
+        /// </summary>
+        public AreaBuildResult Build(
+            AreaLayout layout, MissionRunDirector mission, Transform player, in AreaConditions conditions)
         {
             if (layout == null)
                 throw new ArgumentNullException(nameof(layout));
+            if (conditions.Hardware != layout.Spec.Hardware)
+            {
+                throw new ArgumentException(
+                    $"those are {conditions.Hardware}'s conditions and this is a {layout.Spec.Hardware} layout.",
+                    nameof(conditions));
+            }
+
+            _mutationLevel = AreaMutation.LevelOf(conditions);
 
             // A map that has not passed cannot be built: docs/01 section 6's checks exist so a
             // player is never handed an area they cannot finish, and building one anyway would
@@ -237,6 +281,8 @@ namespace NeonVoid.Missions
             Transform pad = Marker("철수 패드", layout, layout.Extraction, root.transform);
 
             AreaRoomGate[] roomGates = BuildEnemies(layout, root.transform);
+            int mutated = _mutatedThisBuild;
+            _mutationLevel = AreaMutation.NoMutation;
 
             if (player != null)
                 PlaceAtEntrance(player, PositionOf(layout, layout.Start));
@@ -248,11 +294,14 @@ namespace NeonVoid.Missions
             Debug.Log(
                 $"Built {layout.Spec.Hardware} from {layout.ReceiptLine()}: " +
                 $"{floorSlabs} floor slab(s), {wallSlabs} wall slab(s), {devices.Length} objective(s), " +
-                $"{layout.Enemies.Count} enemy/enemies in {roomGates.Length} gated room(s).",
+                $"{layout.Enemies.Count} enemy/enemies in {roomGates.Length} gated room(s), " +
+                $"{conditions.GateLine()}" +
+                (mutated > 0 ? $", {mutated} 변이체" : string.Empty),
                 root);
 
             return new AreaBuildResult(
-                root, layout, runtime, devices, bossGate, console, pad, roomGates, floorSlabs, wallSlabs);
+                root, layout, runtime, devices, bossGate, console, pad, roomGates, floorSlabs, wallSlabs,
+                mutated);
         }
 
         /// <summary>
@@ -330,6 +379,20 @@ namespace NeonVoid.Missions
         {
             var perRoom = new Dictionary<int, List<AreaRoomOccupant>>();
 
+            // Decided once, before anything is spawned, so the choice is a function of the
+            // seed and the level rather than of the order things happened to be created in.
+            var isElite = new bool[layout.Enemies.Count];
+            for (int i = 0; i < layout.Enemies.Count; ++i)
+                isElite[i] = layout.Enemies[i].IsElite;
+
+            _mutated = AreaMutation.Choose(layout.EffectiveSeed, isElite, _mutationLevel);
+            _mutatedThisBuild = 0;
+            for (int i = 0; i < _mutated.Length; ++i)
+            {
+                if (_mutated[i])
+                    _mutatedThisBuild++;
+            }
+
             for (int i = 0; i < layout.Enemies.Count; ++i)
             {
                 AreaEnemySpawn spawn = layout.Enemies[i];
@@ -387,7 +450,21 @@ namespace NeonVoid.Missions
                 archetype.AttackDamage *= draftEliteDamageMultiplier;
             }
 
-            string name = $"{(spawn.IsElite ? "정예 " : string.Empty)}{spawn.Archetype} {index + 1}";
+            // [확정] docs/01 section 5: 변이발생 - 일부 개체 능력 상승. Applied to the archetype
+            // for the same reason the elite multiplier is: EnemyAgent writes the archetype's
+            // stats onto the actor again in its own Start, so boosting the actor would be
+            // silently undone on the frame the room opens.
+            bool mutated = _mutated != null && index < _mutated.Length && _mutated[index];
+            if (mutated)
+            {
+                archetype.DocumentId = $"enemy.mutated{_mutationLevel}({archetype.DocumentId})";
+                archetype.MaxHealth *= AreaMutation.HealthMultiplier(_mutationLevel);
+                archetype.AttackDamage *= AreaMutation.DamageMultiplier(_mutationLevel);
+            }
+
+            string name =
+                $"{(spawn.IsElite ? "정예 " : string.Empty)}{(mutated ? $"변이{_mutationLevel} " : string.Empty)}" +
+                $"{spawn.Archetype} {index + 1}";
             Vector3 position = PositionOf(layout, spawn.Cell);
 
             GameObject body;

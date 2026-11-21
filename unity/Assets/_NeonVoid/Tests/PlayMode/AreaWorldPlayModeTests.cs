@@ -90,13 +90,18 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         /// <summary>Builds the area the arena's mission will report to, with short dwells.</summary>
-        private AreaBuildResult BuildArea(uint seed = 3u, int objectives = 3)
+        private AreaBuildResult BuildArea(uint seed = 3u, int objectives = 3) =>
+            BuildArea(AreaConditions.Clear(HardwareId.Cpu, HardwareDifficulty.Normal), seed, objectives);
+
+        /// <summary>The same area under the mission's conditions for it.</summary>
+        private AreaBuildResult BuildArea(in AreaConditions conditions, uint seed = 3u, int objectives = 3)
         {
             _builderObject = new GameObject("Area World Builder");
             var builder = _builderObject.AddComponent<AreaWorldBuilder>();
             builder.WorldOrigin = AreaOrigin;
 
-            _area = builder.Build(LayoutFor(seed, objectives), _arena.Mission, _arena.PlayerObject.transform);
+            _area = builder.Build(
+                LayoutFor(seed, objectives), _arena.Mission, _arena.PlayerObject.transform, conditions);
             _area.Runtime.ConfigureDwell(DwellRadius, DwellTicks, DwellRadius, DwellTicks);
             return _area;
         }
@@ -450,6 +455,118 @@ namespace NeonVoid.Tests.PlayModeTests
 
             Assert.AreEqual(AreaProgressPhase.Purification, Flow.AreaPhase, "it purified from across the map");
             Assert.AreEqual(0, Flow.PurifiedAreas.Count);
+        }
+    
+        // --- 변이발생 -----------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator AMutatedAreaHasExactlyTheMutantsTheEnvironmentPromised()
+        {
+            // [확정] docs/01 section 5: 변이발생 - 일부 개체 능력 상승. AreaMutationTests holds
+            // the rules; what only a built area can show is that the enemies standing in the
+            // room are the ones those rules chose. EnemyAgent writes its archetype's stats onto
+            // the actor again in its own Start, so a boost applied to the actor rather than the
+            // archetype would be undone on the frame the room opens - and every pure test would
+            // still pass.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+
+            const int Level = AreaConditions.MaxMutationLevel;
+            AreaBuildResult area = BuildArea(
+                new AreaConditions(HardwareId.Cpu, HardwareDifficulty.Normal, EnvironmentKind.Mutation, Level));
+
+            yield return _arena.Tick(1);
+
+            int normals = 0;
+            for (int i = 0; i < area.Layout.Enemies.Count; ++i)
+            {
+                if (!area.Layout.Enemies[i].IsElite)
+                    ++normals;
+            }
+
+            Assert.AreEqual(
+                AreaMutation.MutatedCount(normals, Level), area.MutatedEnemies,
+                "the builder did not mutate the share the level asks for");
+            Assert.Greater(area.MutatedEnemies, 0);
+
+            int markedMutant = 0;
+            int elitesSeen = 0;
+            for (int g = 0; g < area.RoomGates.Length; ++g)
+            {
+                AreaRoomGate gate = area.RoomGates[g];
+                gate.Open();
+                yield return _arena.Tick(1);
+
+                for (int i = 0; i < gate.HeldCount; ++i)
+                {
+                    AreaRoomOccupant occupant = gate.OccupantAt(i);
+                    var agent = occupant.Actor.GetComponent<NeonVoid.Combat.AI.EnemyAgent>();
+                    Assert.IsNotNull(agent, "an area enemy has no brain");
+
+                    bool isMutant = agent.Archetype.DocumentId.Contains("mutated");
+                    if (occupant.IsElite)
+                    {
+                        ++elitesSeen;
+                        Assert.IsFalse(isMutant, "a 정예 was mutated on top of being a 정예");
+                        continue;
+                    }
+
+                    if (!isMutant)
+                        continue;
+
+                    ++markedMutant;
+
+                    // The stats the agent is running are the stats on the actor: the boost
+                    // survived Start rather than being written and overwritten.
+                    Assert.AreEqual(
+                        agent.Archetype.MaxHealth, occupant.Actor.Health.Max, 0.05f,
+                        "the mutant's archetype and its actor disagree");
+                }
+            }
+
+            Assert.AreEqual(area.MutatedEnemies, markedMutant, "the mutants in the room are not the ones counted");
+            Assert.Greater(elitesSeen, 0, "the area generated no 정예, so this says nothing about them");
+        }
+
+        [UnityTest]
+        public IEnumerator AMutatedKillPaysTheSameMissionXpAsAnyOther()
+        {
+            // GDD v1 section 5.4 fixes the area's 의뢰 XP budget by cause. An environment that
+            // paid more would make 변이발생 the farming environment and double some areas'
+            // budgets without anything saying so.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+
+            AreaBuildResult area = BuildArea(
+                new AreaConditions(
+                    HardwareId.Cpu, HardwareDifficulty.Normal, EnvironmentKind.Mutation,
+                    AreaConditions.MaxMutationLevel));
+
+            // The area entered the flow itself when it was built.
+            Assert.AreEqual(MissionFlowPhase.InArea, Flow.Phase, Flow.LastRefusal);
+
+            AreaRoomGate gate = area.RoomGates[0];
+            gate.Open();
+            yield return _arena.Tick(1);
+
+            // A normal, not a 정예: an elite legitimately pays four times as much, so killing
+            // whichever occupant came first would be a coin toss over what this asserts.
+            CombatActor normal = null;
+            for (int i = 0; i < gate.HeldCount && normal == null; ++i)
+            {
+                if (!gate.OccupantAt(i).IsElite)
+                    normal = gate.OccupantAt(i).Actor;
+            }
+
+            Assert.IsNotNull(normal, "the first room holds only 정예");
+
+            long before = Flow.Run.MissionXp;
+            PrototypeArena.Kill(normal);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(
+                MissionXpBudget.XpForNormalKill(0), Flow.Run.MissionXp - before,
+                "a kill in a mutated area paid a different amount");
         }
     }
 }

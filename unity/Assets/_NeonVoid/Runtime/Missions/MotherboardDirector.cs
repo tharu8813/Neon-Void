@@ -249,7 +249,10 @@ namespace NeonVoid.Missions
             }
 
             builder.WorldOrigin = transform.position + areaBuildOffset;
-            _area = builder.Build(layout, mission, player);
+
+            // The board's conditions for this hardware, which is what makes 변이발생 anything
+            // more than a word on a portal.
+            _area = builder.Build(layout, mission, player, _board.For(hardware));
 
             if (!_area.Runtime.HasEntered)
             {

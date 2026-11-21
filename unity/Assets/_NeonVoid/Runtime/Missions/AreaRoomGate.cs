@@ -60,6 +60,13 @@ namespace NeonVoid.Missions
         /// <summary>Enemies the room was built with.</summary>
         public int HeldCount => _occupants.Count;
 
+        /// <summary>
+        /// One of the room's occupants. Read-only: what a gate holds is decided when the area
+        /// is built, and a room that could gain an occupant afterwards would have a count the
+        /// 의뢰 XP budget never saw.
+        /// </summary>
+        public AreaRoomOccupant OccupantAt(int index) => _occupants[index];
+
         /// <summary>Enemies still standing.</summary>
         public int AliveCount
         {
