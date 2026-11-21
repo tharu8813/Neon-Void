@@ -36,9 +36,12 @@ namespace NeonVoid.Combat
     /// invulnerable target, which is free sustain for hitting something that took nothing.
     /// </para>
     /// <para>
-    /// Shield absorption is still absent: docs/08 D-004 leaves multi-shield ordering
-    /// unresolved, so the shield parameter is carried through to the lifesteal policy but no
-    /// shield pool is invented here.
+    /// Shield absorption happens here, between the resolve and the health, which is where
+    /// docs/02 section 3's pipeline puts it:
+    /// <c>actualHealthDamage = max(0, appliedBeforeShield - shieldAbsorbed)</c>. WHICH shield
+    /// is eaten first is <see cref="ShieldPolicy"/> and is still [미확정] (docs/08 D-004) -
+    /// the order is the stack's decision to make, not this type's, and the amount absorbed is
+    /// the same whichever reading is approved.
     /// </para>
     /// Pure: no Unity types, no side effects beyond the health it is handed by reference.
     /// </summary>
@@ -53,7 +56,8 @@ namespace NeonVoid.Combat
             in LifestealPolicy lifestealPolicy,
             bool critRolled,
             bool isOnHitEvent,
-            float shieldAbsorbed = 0f)
+            ShieldStack shields = null,
+            long nowTick = 0L)
         {
             DamageResolution resolution = DamageMath.Resolve(request, attacker, defender, critRolled);
 
@@ -76,8 +80,20 @@ namespace NeonVoid.Combat
                 return new DamageOutcome(resolution, 0f, false, true, nothing);
             }
 
+            // 보호막 before health. A defender with no shields is the null case and behaves
+            // exactly as it did before shields existed.
+            float toHealth = resolution.AppliedBeforeShield;
+            float shieldAbsorbed = 0f;
+
+            if (shields != null && shields.HasAny)
+            {
+                ShieldAbsorption eaten = shields.Absorb(toHealth, nowTick);
+                shieldAbsorbed = eaten.Absorbed;
+                toHealth = eaten.Remainder;
+            }
+
             float healthBefore = defenderHealth.Current;
-            float removed = defenderHealth.Remove(resolution.AppliedBeforeShield);
+            float removed = defenderHealth.Remove(toHealth);
             bool killed = healthBefore > 0f && !defenderHealth.IsAlive;
 
             LifestealResult healing = LifestealMath.Compute(

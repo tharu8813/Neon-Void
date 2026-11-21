@@ -74,7 +74,9 @@ namespace NeonVoid.Combat
         /// <summary>
         /// Resolves one hit all the way to the damage that reaches health, before shields.
         /// <para>
-        /// Shield absorption is deliberately NOT applied here: docs/08 D-004 leaves the order
+        /// Shield absorption is deliberately NOT applied here, and still is not: it belongs
+        /// after the resolve, in DamageApplication, where the order of operations lives.
+        /// docs/08 D-004 leaves the order
         /// and interaction of multiple shields unresolved, so inventing one would bake an
         /// unapproved rule into the damage pipeline.
         /// </para>

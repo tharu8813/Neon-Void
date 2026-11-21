@@ -92,6 +92,13 @@ namespace NeonVoid.Combat
         public int ActorId { get; private set; }
         public int TeamId => teamId;
         public bool IsAlive => _health.IsAlive;
+
+        /// <summary>
+        /// The 보호막 this actor is carrying. Built with the provisional
+        /// <see cref="ShieldPolicy.Draft"/>, which is <b>not an approved decision</b> - docs/08
+        /// D-004 is still open and the policy is settable so one constant moves it.
+        /// </summary>
+        public ShieldStack Shields { get; } = new ShieldStack(ShieldPolicy.Draft());
         public HealthPool Health => _health;
         public ManaPool Mana => _mana;
         public StatusContainer Status => _status;
@@ -312,7 +319,8 @@ namespace NeonVoid.Combat
             // mark was applied, tracked and displayed, and the mitigation never saw it.
             DamageOutcome outcome = DamageApplication.Apply(
                 request, attackerStats, Stats, ref _health, invulnerable,
-                _lifestealPolicy, critRolled, isOnHitEvent);
+                _lifestealPolicy, critRolled, isOnHitEvent,
+                Shields, _runner != null ? _runner.TickIndex : 0L);
 
             DamageTaken?.Invoke(this, outcome);
 
