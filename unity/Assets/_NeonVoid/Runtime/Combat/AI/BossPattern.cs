@@ -73,6 +73,13 @@ namespace NeonVoid.Combat.AI
         [Tooltip("Ring inner radius - the safe middle. Zero for a solid disc.")]
         public float InnerRadiusUnits;
 
+        [Tooltip(
+            "The shape marks the SAFE area and everything else within RangeUnits is the attack. " +
+            "docs/01 gives the GPU a 회전 팬형 안전 영역 and the SSD 안전 공간 축소·확대, and a " +
+            "'get into the wedge' attack is a different problem from 'get out of the wedge'. " +
+            "Fan and Line only - a Ring already says it with InnerRadiusUnits.")]
+        public bool SafeInsideShape;
+
         [Tooltip("What it deals, resolved through the normal damage pipeline.")]
         public DamageRequest Damage;
 
@@ -84,6 +91,21 @@ namespace NeonVoid.Combat.AI
         /// - see the type's note on 전조 표시와 충돌 볼륨의 일치.
         /// </summary>
         public bool Covers(Vector2 originXZ, Vector2 facingXZ, Vector2 pointXZ)
+        {
+            bool insideShape = InsideShape(originXZ, facingXZ, pointXZ);
+            if (!SafeInsideShape)
+                return insideShape;
+
+            // The shape is the safe cut-out, so the attack is the rest of the disc of radius
+            // RangeUnits. Bounded rather than infinite: an attack with no outer edge could not
+            // be dodged by running, which is docs/01's 피할 수 있는 텔레그래프 in another form.
+            if (insideShape)
+                return false;
+
+            return LineTargeting.IsInsideRing(originXZ, pointXZ, 0f, RangeUnits);
+        }
+
+        private bool InsideShape(Vector2 originXZ, Vector2 facingXZ, Vector2 pointXZ)
         {
             switch (Shape)
             {
@@ -131,14 +153,38 @@ namespace NeonVoid.Combat.AI
                 case BossPatternShape.Fan:
                     if (HalfAngleDegrees <= 0f || HalfAngleDegrees > 180f)
                         throw new InvalidOperationException($"{Name}: a fan's half-angle is between 0 and 180.");
+                    if (SafeInsideShape && HalfAngleDegrees >= 180f)
+                    {
+                        throw new InvalidOperationException(
+                            $"{Name}: a safe wedge of {HalfAngleDegrees} degrees covers everything, so the " +
+                            "attack would be nothing at all.");
+                    }
+
                     break;
 
                 case BossPatternShape.Line:
                     if (HalfWidthUnits <= 0f)
                         throw new InvalidOperationException($"{Name}: a line with no width hits nothing.");
+                    if (SafeInsideShape && HalfWidthUnits >= RangeUnits)
+                    {
+                        throw new InvalidOperationException(
+                            $"{Name}: a safe band {HalfWidthUnits} wide fills a disc of radius {RangeUnits}, " +
+                            "so the attack would be nothing at all.");
+                    }
+
                     break;
 
                 case BossPatternShape.Ring:
+                    if (SafeInsideShape)
+                    {
+                        // A ring already says "the middle is safe" with InnerRadiusUnits, and
+                        // the inverted version would be a disc with a hole around the boss plus
+                        // a hole beyond it - two safe zones, which no document asks for.
+                        throw new InvalidOperationException(
+                            $"{Name}: a ring marks its safe middle with InnerRadiusUnits; inverting it as " +
+                            "well would mean two safe zones.");
+                    }
+
                     if (InnerRadiusUnits < 0f || InnerRadiusUnits >= RangeUnits)
                     {
                         throw new InvalidOperationException(
@@ -158,6 +204,7 @@ namespace NeonVoid.Combat.AI
         }
 
         public override string ToString() =>
-            $"{Name} ({Shape}, {TelegraphSeconds:0.0#}s telegraph, {RangeUnits:0.#}u)";
+            $"{Name} ({Shape}{(SafeInsideShape ? " safe-inside" : string.Empty)}, " +
+            $"{TelegraphSeconds:0.0#}s telegraph, {RangeUnits:0.#}u)";
     }
 }

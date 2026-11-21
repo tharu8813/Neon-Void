@@ -273,34 +273,53 @@ namespace NeonVoid.Missions
         }
 
         /// <summary>
-        /// Gives the area's boss its patterns, where they exist.
+        /// Gives the area's boss its own patterns. Every hardware has a different cycle, built
+        /// from its own row of docs/01 section 2 and its own 세부 전개.
         /// <para>
-        /// Only the CPU's 코어 워처 is built. The other four are <b>not</b> given the 코어 워처's
-        /// cycle as a stand-in: a GPU fight that was secretly the CPU's would pass every test and
-        /// is the copy-paste CLAUDE.md forbids by name. They get a boss that can be shot and
-        /// killed - enough for the mission flow - and the console says so once, rather than
-        /// looking finished.
+        /// <b>Nothing is ever substituted.</b> An area whose boss has no cycle gets a boss that
+        /// can be shot and killed and a loud line saying the contract is unmet - it does not get
+        /// the 코어 워처's patterns in another colour. That substitution would pass every test in
+        /// this project and it is the copy-paste CLAUDE.md forbids by name.
         /// </para>
         /// <para>
-        /// This choice lives in the Missions domain because docs/06 makes 월드 its own, and
-        /// <see cref="BossCatalog"/> in Combat must not reach across to ask which hardware it is
+        /// This choice lives in the Missions domain because docs/06 makes 월드 its own, and the
+        /// boss catalogues in Combat must not reach across to ask which hardware they are
         /// looking at.
         /// </para>
         /// </summary>
         private void GiveTheBossItsPatterns(HardwareId hardware, CombatActor bossActor, Transform player)
         {
-            if (hardware != HardwareId.Cpu)
+            BossPatternCycle cycle = CycleFor(hardware);
+            if (cycle == null)
             {
                 Debug.LogWarning(
                     $"{BossNameFor(hardware)} ({hardware}) has no patterns yet, so it stands still and can be " +
                     "killed. docs/01 section 3's contract - 3 patterns, a 지역 기믹, a phase change - is " +
-                    "unmet for this area, and it is not given the 코어 워처's.", this);
+                    "unmet for this area, and it is not given another boss's.", this);
                 return;
             }
 
             var brain = bossActor.gameObject.AddComponent<AreaBossBrain>();
             brain.Configure(bossActor, player != null ? player.GetComponent<CombatActor>() : null);
-            brain.UseCycle(BossCatalog.CoreWatcher());
+            brain.UseCycle(cycle);
+        }
+
+        /// <summary>
+        /// The cycle for one hardware, or null when nothing has been built for it. Public and
+        /// static so a test can hold that the five are five different fights without building
+        /// five areas.
+        /// </summary>
+        public static BossPatternCycle CycleFor(HardwareId hardware)
+        {
+            switch (hardware)
+            {
+                case HardwareId.Cpu: return BossCatalog.CoreWatcher();
+                case HardwareId.Gpu: return AreaBossCatalog.RenderObserver();
+                case HardwareId.Ram: return AreaBossCatalog.MemoryLich();
+                case HardwareId.Ssd: return AreaBossCatalog.StreamInterceptor();
+                case HardwareId.Hdd: return AreaBossCatalog.SectorColossus();
+                default: return null;
+            }
         }
 
         /// <summary>

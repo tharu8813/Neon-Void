@@ -40,7 +40,10 @@ namespace NeonVoid.Tests.PlayModeTests
         /// and a player who cannot be killed by it - these tests are about where the attacks land,
         /// not about who wins.
         /// </summary>
-        private IEnumerator Arena()
+        private IEnumerator Arena() => Arena(BossCatalog.CoreWatcher(), "코어 워처");
+
+        /// <summary>The same arena with somebody else's boss standing in it.</summary>
+        private IEnumerator Arena(BossPatternCycle cycle, string bossName)
         {
             _arena = PrototypeArena.Build();
 
@@ -49,7 +52,7 @@ namespace NeonVoid.Tests.PlayModeTests
             _arena.Player.Configure(PrototypeArena.PlayerTeam, playerStats);
 
             _bossObject = _arena.Track(GameObject.CreatePrimitive(PrimitiveType.Capsule));
-            _bossObject.name = "코어 워처";
+            _bossObject.name = bossName;
             _bossObject.transform.position = _arena.PlayerObject.transform.position + new Vector3(0f, 0f, 4f);
 
             CombatStats bossStats = CombatStats.StartingVaccine();
@@ -59,7 +62,7 @@ namespace NeonVoid.Tests.PlayModeTests
 
             _brain = _bossObject.AddComponent<AreaBossBrain>();
             _brain.Configure(_boss, _arena.Player);
-            _brain.UseCycle(BossCatalog.CoreWatcher());
+            _brain.UseCycle(cycle);
             _brain.RefreshHostiles();
 
             yield return _arena.Tick(1);
@@ -270,6 +273,109 @@ namespace NeonVoid.Tests.PlayModeTests
             yield return _arena.Tick(240);
 
             Assert.AreEqual(after, _arena.Player.Health.Current, "a dead boss kept attacking");
+        }
+    
+        // --- the other four areas' bosses --------------------------------------------------
+
+        /// <summary>Ticks until the named pattern is the one on screen, or fails.</summary>
+        private IEnumerator TickToTelegraphOf(string patternName, int limit = 1200)
+        {
+            for (int i = 0; i < limit; ++i)
+            {
+                if (_brain.TryGetTelegraph(out BossTelegraph showing)
+                    && showing.Pattern.Name == patternName)
+                {
+                    yield break;
+                }
+
+                yield return _arena.Tick(1);
+            }
+
+            Assert.Fail($"'{patternName}' never came up in {limit} ticks; the boss is at {_brain.Cycle}");
+        }
+
+        [UnityTest]
+        public IEnumerator TheSafeWedgeIsSafeInARunningScene()
+        {
+            // docs/01 gives the GPU a 회전 팬형 안전 영역, and the sign on that is the one thing
+            // about it that can be wrong in a way no pure test would notice: an inverted shape
+            // that is drawn as a safe place and resolves as a dangerous one would kill the
+            // player for doing exactly what the telegraph asked.
+            yield return Arena(AreaBossCatalog.RenderObserver(), "렌더 옵저버");
+            yield return TickToTelegraphOf(AreaBossCatalog.RotatingSafeFan().Name);
+
+            Assert.IsTrue(_brain.TryGetTelegraph(out BossTelegraph wedge));
+            Vector3 bossAt = _bossObject.transform.position;
+
+            // Three units along the wedge's own facing, which the telegraph captured when it
+            // went up - not wherever the player happens to be now.
+            var inside = new Vector3(
+                wedge.OriginXZ.x + (wedge.FacingXZ.x * 3f), _arena.PlayerObject.transform.position.y,
+                wedge.OriginXZ.y + (wedge.FacingXZ.y * 3f));
+
+            // Two points that bracket the shape: just outside the wedge but inside the disc is
+            // the attack, and far enough away is not. An inverted shape with no outer edge
+            // would make the second one dangerous, and there would be nowhere to run to.
+            Assert.IsTrue(
+                wedge.Covers(wedge.OriginXZ - (wedge.FacingXZ * 3f)),
+                "inside the disc and outside the wedge is supposed to be the attack");
+            Assert.IsFalse(
+                wedge.Covers(new Vector2(bossAt.x, bossAt.z + 100f)),
+                "the attack reaches the far side of the room, so running does not work");
+
+            TeleportPlayer(inside);
+            yield return _arena.Tick(1);
+            Assert.IsFalse(wedge.Covers(PlayerXZ), "the player is not standing in the safe wedge");
+
+            float before = _arena.Player.Health.Current;
+            yield return TickToResolve();
+
+            Assert.AreEqual(before, _arena.Player.Health.Current, 0.01f, "standing in the safe wedge was punished");
+        }
+
+        [UnityTest]
+        public IEnumerator StandingOutsideTheSafeWedgeIsNot()
+        {
+            yield return Arena(AreaBossCatalog.RenderObserver(), "렌더 옵저버");
+            yield return TickToTelegraphOf(AreaBossCatalog.RotatingSafeFan().Name);
+
+            Assert.IsTrue(_brain.TryGetTelegraph(out BossTelegraph wedge));
+
+            // Directly behind the wedge's facing, which is inside the dangerous disc and
+            // outside the safe cut-out.
+            var outside = new Vector3(
+                wedge.OriginXZ.x - (wedge.FacingXZ.x * 3f), _arena.PlayerObject.transform.position.y,
+                wedge.OriginXZ.y - (wedge.FacingXZ.y * 3f));
+
+            TeleportPlayer(outside);
+            yield return _arena.Tick(1);
+            Assert.IsTrue(wedge.Covers(PlayerXZ), "the test is not standing where it thinks");
+
+            float before = _arena.Player.Health.Current;
+            yield return TickToResolve();
+
+            Assert.Less(_arena.Player.Health.Current, before, "the safe-inside attack hit nobody");
+        }
+
+        [UnityTest]
+        public IEnumerator EveryAreaBossOpensAndAttacksInAScene()
+        {
+            // Each of the five is built from its own row of docs/01 and none is another's in a
+            // different colour. What a scene adds is that each one actually runs: a cycle that
+            // validated and then never telegraphed would pass every pure test.
+            foreach (NeonVoid.Missions.HardwareId hardware in NeonVoid.Missions.HardwareIds.All)
+            {
+                BossPatternCycle cycle = NeonVoid.Missions.AreaWorldBuilder.CycleFor(hardware);
+                string who = NeonVoid.Missions.AreaWorldBuilder.BossNameFor(hardware);
+
+                yield return Arena(cycle, who);
+                yield return TickToTelegraph();
+
+                Assert.IsTrue(_brain.TryGetTelegraph(out BossTelegraph showing), who);
+                Assert.IsNotEmpty(showing.Pattern.Name, who);
+
+                TearDown();
+            }
         }
     }
 }
