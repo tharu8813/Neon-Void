@@ -32,6 +32,22 @@ namespace NeonVoid.Progression
         RejectedInvalidId = 3,
     }
 
+    /// <summary>Answer to a request to open the ledger for a new run.</summary>
+    public enum RunResetVerdict
+    {
+        /// <summary>The previous run's death was settled and cleared. The new run may begin.</summary>
+        Reset = 0,
+
+        /// <summary>Nothing had happened. The new run may begin.</summary>
+        AlreadyClean = 1,
+
+        /// <summary>
+        /// A death is still waiting for the save service, or its write failed. Nothing is
+        /// cleared and the new run must not begin.
+        /// </summary>
+        RefusedUnsettled = 2,
+    }
+
     /// <summary>Answer to an acknowledgement from the save service.</summary>
     public enum DeathAckVerdict
     {
@@ -143,6 +159,41 @@ namespace NeonVoid.Progression
             }
 
             return DeathAckVerdict.Applied;
+        }
+
+        /// <summary>
+        /// Opens the ledger for a new run, and says whether the new run may begin at all.
+        /// <para>
+        /// <b>Why this exists.</b> A ledger holds the one death that ends a run, and before the
+        /// 디펜더 허브 a session <i>was</i> one run - so nothing ever had to clear it. Now a
+        /// session is a series of missions, and a ledger that still held the first mission's
+        /// death would answer the second mission's death with
+        /// <see cref="DeathRegistrationVerdict.RejectedRunAlreadyEnded"/>: no clone charged, no
+        /// death recorded, a vaccine that is immortal from the second mission on. That is the
+        /// exact mirror of the double charge this type was written to prevent, and worse,
+        /// because a charge that never happens leaves nothing behind to notice.
+        /// </para>
+        /// <para>
+        /// <b>An unsettled death refuses.</b> [확정] CLAUDE.md: 보상/사망/철수/DB 이동은 저장
+        /// 커밋 승인 후 UI 및 게임 상태 확정. A death that is waiting for the disk, or whose write
+        /// failed, has not been paid for - and starting the next mission on top of it would
+        /// confirm new game state over an unconfirmed one, and lose the death if the player
+        /// never comes back to it. The caller retries the commit instead.
+        /// </para>
+        /// </summary>
+        public RunResetVerdict TryStartNewRun()
+        {
+            if (!_hasPending)
+                return RunResetVerdict.AlreadyClean;
+
+            if (Phase != RunDeathPhase.Committed)
+                return RunResetVerdict.RefusedUnsettled;
+
+            _pending = default;
+            _hasPending = false;
+            Phase = RunDeathPhase.Alive;
+            LastFailureReason = string.Empty;
+            return RunResetVerdict.Reset;
         }
 
         /// <summary>

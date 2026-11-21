@@ -39,6 +39,11 @@ namespace NeonVoid.Missions
             "immediately, because every actor derives its combat generator from one.")]
         [SerializeField] private bool beginMissionOnAwake = true;
 
+        [Tooltip(
+            "The session's death ledger. A mission does not begin while the previous one's " +
+            "death is unsettled. Found in the scene when left empty.")]
+        [SerializeField] private RunDeathDirector deaths;
+
         /// <summary>The live mission. Read by the death director and the plugin director.</summary>
         public MissionRunState State { get; } = new MissionRunState();
 
@@ -62,6 +67,18 @@ namespace NeonVoid.Missions
 
         /// <summary>This mission's run identity, or the absent one before it begins.</summary>
         public RunIdentity Identity => State.Identity;
+
+        /// <summary>
+        /// The session's death ledger, looked up when it is first needed rather than cached in
+        /// <see cref="Awake"/>: this director runs at -200 and a scene is free to create the
+        /// death director afterwards, so an Awake lookup would cache a nothing and never check
+        /// again.
+        /// </summary>
+        private RunDeathDirector Deaths =>
+            deaths != null ? deaths : (deaths = FindFirstObjectByType<RunDeathDirector>());
+
+        /// <summary>Names the death ledger. The injection seam for a test.</summary>
+        public void ConnectDeaths(RunDeathDirector director) => deaths = director;
 
         /// <summary>
         /// Runs before anything else through <see cref="DefaultExecutionOrder"/>, so that any
@@ -107,6 +124,14 @@ namespace NeonVoid.Missions
         /// </summary>
         public bool TryBeginNextMission()
         {
+            // Before anything, and before a run id is spent: the previous mission's death has to
+            // be settled. [확정] CLAUDE.md asks that 사망 be confirmed by a save commit before
+            // game state is, and a ledger still holding an unsettled death would refuse the next
+            // mission's death outright - charging nothing for it.
+            RunDeathDirector ledger = Deaths;
+            if (ledger != null && ledger.TryStartNewRun() == RunResetVerdict.RefusedUnsettled)
+                return false;
+
             int ordinal = _missionsBegun + 1;
             uint missionSeed = MissionSeries.SeedFor(_sessionSeed, ordinal);
             long id = RunIdForMission(ordinal);

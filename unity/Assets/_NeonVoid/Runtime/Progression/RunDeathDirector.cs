@@ -199,6 +199,41 @@ namespace NeonVoid.Progression
                            "An answer about another death cannot release this one.", this);
         }
 
+        /// <summary>
+        /// Opens the ledger for the next mission of this session, and says whether that mission
+        /// may begin at all. Called by <see cref="MissionRunDirector"/> before it asks permanent
+        /// state for a run id.
+        /// <para>
+        /// The death sequence restarts with the run, so a run's first death is always its
+        /// <c>death1</c> - the id is a property of the run, which is what the save service
+        /// dedupes on, and not of however many missions this session happens to have played.
+        /// </para>
+        /// </summary>
+        public RunResetVerdict TryStartNewRun()
+        {
+            DeathId settled = Ledger.RegisteredDeathId;
+            RunResetVerdict verdict = Ledger.TryStartNewRun();
+            if (verdict == RunResetVerdict.RefusedUnsettled)
+            {
+                Debug.LogError(
+                    $"{name}: {Ledger.RegisteredDeathId} is still {Ledger.Phase}, so no new mission " +
+                    "begins. 보상/사망/철수는 저장 커밋 승인 후 확정 (CLAUDE.md): starting one now " +
+                    "would confirm a new run over a death nobody has paid for. " +
+                    (Ledger.Phase == RunDeathPhase.CommitFailed
+                        ? $"Retry the commit: {Ledger.LastFailureReason}"
+                        : "Waiting for the save service."),
+                    this);
+                return verdict;
+            }
+
+            _deathsObserved = 0;
+
+            if (verdict == RunResetVerdict.Reset)
+                Debug.Log($"Death ledger cleared: {settled} was committed. The next mission may begin.", this);
+
+            return verdict;
+        }
+
         /// <summary>Re-sends a failed commit, keeping the original death id.</summary>
         public bool RetryCommit()
         {

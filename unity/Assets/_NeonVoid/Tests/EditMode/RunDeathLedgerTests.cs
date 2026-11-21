@@ -252,5 +252,103 @@ namespace NeonVoid.Tests
             Assert.IsNotEmpty(ack.FailureReason);
             Assert.IsFalse(ack.Succeeded);
         }
+    
+        // --- the next run ------------------------------------------------------------------
+
+        private static DeathReport NextRunsDeath(long tick = 300L) =>
+            new DeathReport(DeathId.For(Run + 1, PlayerActor, 1), tick);
+
+        [Test]
+        public void AFreshLedgerIsAlreadyOpenForItsFirstRun()
+        {
+            var ledger = new RunDeathLedger();
+            Assert.AreEqual(RunResetVerdict.AlreadyClean, ledger.TryStartNewRun());
+            Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase);
+        }
+
+        [Test]
+        public void ASecondRunsDeathIsChargedRatherThanRefused()
+        {
+            // The hole the 디펜더 허브 opened. Before it, a session was one run and the ledger
+            // never had to be cleared; afterwards a session is a series of missions, and a
+            // ledger still holding the first death answered the second with
+            // RejectedRunAlreadyEnded - no clone charged, no death recorded, a vaccine that is
+            // immortal from the second mission on.
+            var ledger = new RunDeathLedger();
+            DeathReport first = FirstDeath();
+            Assert.AreEqual(DeathRegistrationVerdict.Accepted, ledger.TryRegisterDeath(first));
+            Assert.AreEqual(DeathAckVerdict.Applied, ledger.Acknowledge(DeathCommitAck.Success(first.Id)));
+
+            Assert.AreEqual(RunResetVerdict.Reset, ledger.TryStartNewRun());
+            Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase);
+            Assert.IsFalse(ledger.HasRegisteredDeath, "the cleared ledger still holds a death");
+
+            DeathReport second = NextRunsDeath();
+            Assert.AreEqual(
+                DeathRegistrationVerdict.Accepted, ledger.TryRegisterDeath(second),
+                "the second mission's death was refused, so nothing would have been charged for it");
+            Assert.AreEqual(RunDeathPhase.AwaitingCommit, ledger.Phase);
+        }
+
+        [Test]
+        public void NoNewRunOpensOverADeathThatIsStillWaiting()
+        {
+            // [확정] CLAUDE.md: 보상/사망/철수는 저장 커밋 승인 후 확정. A death waiting for the
+            // disk has not been paid for, and starting the next mission over it would confirm
+            // new state on top of unconfirmed state.
+            var ledger = new RunDeathLedger();
+            DeathReport first = FirstDeath();
+            ledger.TryRegisterDeath(first);
+
+            Assert.AreEqual(RunResetVerdict.RefusedUnsettled, ledger.TryStartNewRun());
+            Assert.AreEqual(RunDeathPhase.AwaitingCommit, ledger.Phase, "the refusal changed the phase");
+            Assert.AreEqual(first.Id, ledger.RegisteredDeathId, "the refusal dropped the death");
+        }
+
+        [Test]
+        public void NoNewRunOpensOverADeathWhoseWriteFailed()
+        {
+            var ledger = new RunDeathLedger();
+            DeathReport first = FirstDeath();
+            ledger.TryRegisterDeath(first);
+            ledger.Acknowledge(DeathCommitAck.Failure(first.Id, "disk full"));
+
+            Assert.AreEqual(RunResetVerdict.RefusedUnsettled, ledger.TryStartNewRun());
+            Assert.AreEqual(RunDeathPhase.CommitFailed, ledger.Phase);
+            StringAssert.Contains("disk full", ledger.LastFailureReason);
+
+            // And the retry path still works afterwards, which is the way out of this state.
+            Assert.IsTrue(ledger.TryBeginRetry(out DeathReport retried));
+            Assert.AreEqual(first.Id, retried.Id, "the retry minted a new id");
+        }
+
+        [Test]
+        public void AnAckForTheClearedRunsDeathReleasesNothing()
+        {
+            // A late answer about the previous run - a commit that resolved after the player
+            // started the next mission - must not reopen a ledger that has moved on.
+            var ledger = new RunDeathLedger();
+            DeathReport first = FirstDeath();
+            ledger.TryRegisterDeath(first);
+            ledger.Acknowledge(DeathCommitAck.Success(first.Id));
+            ledger.TryStartNewRun();
+
+            Assert.AreEqual(
+                DeathAckVerdict.RejectedNothingPending, ledger.Acknowledge(DeathCommitAck.Success(first.Id)));
+            Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase, "a stale ack moved the new run's phase");
+        }
+
+        [Test]
+        public void ClearingTwiceInARowIsHarmless()
+        {
+            var ledger = new RunDeathLedger();
+            DeathReport first = FirstDeath();
+            ledger.TryRegisterDeath(first);
+            ledger.Acknowledge(DeathCommitAck.Success(first.Id));
+
+            Assert.AreEqual(RunResetVerdict.Reset, ledger.TryStartNewRun());
+            Assert.AreEqual(RunResetVerdict.AlreadyClean, ledger.TryStartNewRun());
+            Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase);
+        }
     }
 }

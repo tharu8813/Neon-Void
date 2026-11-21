@@ -102,9 +102,11 @@ namespace NeonVoid.Tests.PlayModeTests
         /// that order because the save gate is resolved in the mission director's Awake, and the
         /// hub needs the mission and the player to already exist.
         /// </summary>
-        private IEnumerator Hub()
+        private IEnumerator Hub(bool connectSave = true)
         {
-            ConnectSave();
+            if (connectSave)
+                ConnectSave();
+
             _arena = PrototypeArena.BuildWaitingInTheHub(SessionSeed);
 
             // A mission is 8~12 minutes of combat in one test; the point here is the loop.
@@ -125,7 +127,9 @@ namespace NeonVoid.Tests.PlayModeTests
             var growthObject = new GameObject("Vaccine Growth Director");
             growthObject.SetActive(false);
             _growth = growthObject.AddComponent<VaccineGrowthDirector>();
-            _growth.Configure(_arena.Player, _saveObject.GetComponent<VaccineSaveDirector>());
+            _growth.Configure(
+                _arena.Player,
+                _saveObject != null ? _saveObject.GetComponent<VaccineSaveDirector>() : null);
             growthObject.SetActive(true);
             _growthObject = growthObject;
 
@@ -557,6 +561,98 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.AreEqual(
                 NeonVoid.Core.DesignConstants.HardwareCount, _motherboard.Board.Count,
                 "the second mission's board is not a whole board");
+        }
+    
+        // --- 세션의 두 번째 사망 ---------------------------------------------------------
+
+        /// <summary>
+        /// Puts the player back on their feet after a death.
+        /// <para>
+        /// Nothing in the game does this yet: [확정] docs/04 section 2 says 1~3번째 사망은 잔여
+        /// 복제를 차감하고 허브에서 재시도, and the retry currently begins with the vaccine still
+        /// at zero health. That gap is its own piece of work - the revive belongs after the
+        /// commit that spends the clone, and the ack does not yet say whether the vaccine
+        /// survived it. Here, so that this test is about the ledger and not about that.
+        /// </para>
+        /// </summary>
+        private void PutThePlayerBackOnTheirFeet()
+        {
+            CombatStats stats = PrototypeArena.PlayerStats();
+            stats.MaxHealth = 1_000_000f;
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, stats);
+
+            // ActorDeathReaction parks the body: controller off, colliders off. A revive has to
+            // undo that, and listing it here is also the clearest statement of what the missing
+            // one will have to do.
+            var controller = _arena.PlayerObject.GetComponent<CharacterController>();
+            if (controller != null)
+                controller.enabled = true;
+
+            Collider[] colliders = _arena.PlayerObject.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; ++i)
+                colliders[i].enabled = true;
+
+            Assert.IsTrue(_arena.Player.IsAlive, "the player is still down");
+        }
+
+        [UnityTest]
+        public IEnumerator ASecondDeathInTheSameSessionCostsASecondClone()
+        {
+            // [확정] docs/04 section 2: 1~3번째 사망은 잔여 복제를 차감. The ledger holds the one
+            // death that ends a run, and a session is a series of runs now - so a ledger that
+            // was never cleared answered the second mission's death with RejectedRunAlreadyEnded
+            // and charged nothing for it.
+            yield return Hub();
+
+            for (int mission = 1; mission <= 2; ++mission)
+            {
+                Assert.IsTrue(
+                    _hub.TryUseTerminal(HubTerminalKind.Mission), $"mission {mission} would not begin");
+                yield return _arena.Tick(1);
+                yield return EnterArea(HardwareId.Cpu);
+
+                PrototypeArena.Kill(_arena.Player);
+                yield return _arena.Tick(4);
+
+                Assert.AreEqual(MissionPhase.Failed, Flow.Run.Phase, $"mission {mission} did not fail");
+                Assert.AreEqual(
+                    VaccineSaveState.DesignStartingCopies - mission, _store.Snapshot.vaccine.copiesRemaining,
+                    $"death {mission} did not cost a clone");
+                Assert.AreEqual(
+                    mission, _store.Snapshot.vaccine.deathCount, $"death {mission} was not recorded");
+
+                PutThePlayerBackOnTheirFeet();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator NoMissionBeginsWhileADeathIsStillUnsettled()
+        {
+            // [확정] CLAUDE.md: 보상/사망/철수는 저장 커밋 승인 후 UI 및 게임 상태 확정. With no
+            // save connected the death stays in AwaitingCommit forever, which is exactly the
+            // state a failed or slow write produces - and the hub used to hand out the next
+            // mission on top of it.
+            yield return Hub(connectSave: false);
+
+            RunDeathDirector deaths = _arena.DeathDirector;
+            Assert.IsFalse(deaths.HasCommitService, "this test needs a death nothing can commit");
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission), "the first mission would not begin");
+            yield return _arena.Tick(1);
+            yield return EnterArea(HardwareId.Cpu);
+
+            PrototypeArena.Kill(_arena.Player);
+            yield return _arena.Tick(4);
+
+            Assert.AreEqual(RunDeathPhase.AwaitingCommit, deaths.Ledger.Phase);
+            Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase, "the failed mission did not end in the hub");
+
+            PutThePlayerBackOnTheirFeet();
+
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("still AwaitingCommit"));
+            Assert.IsFalse(
+                _hub.TryUseTerminal(HubTerminalKind.Mission),
+                "a new mission began on top of a death nobody had paid for");
         }
     }
 }
