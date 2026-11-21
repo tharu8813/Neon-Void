@@ -449,6 +449,40 @@ namespace NeonVoid.Plugins
         /// which is the shape of failure this project keeps finding.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// G14 추적 응답: the basic attack goes off because a skill landed.
+        /// <para>
+        /// <b>스킬의 자기 발동/루프 방지</b>, which docs/03 lists against this card, holds for
+        /// two reasons rather than a guard written here. The shot is a basic attack, so what it
+        /// hits carries <see cref="HitOrigin"/> of a basic attack and can never satisfy
+        /// <see cref="PluginTriggerKind.OnSkillHit"/> again - the loop has no second step. And
+        /// the queue's own chain rules bound the effect anyway, the same as every other proc.
+        /// </para>
+        /// <para>
+        /// Queued rather than fired inside the resolve: a shot spawned mid-drain would be a
+        /// projectile created while the queue is walking its own list, and the attacker is the
+        /// thing that knows which way the carrier is facing on this tick.
+        /// </para>
+        /// </summary>
+        private void FireRespondingShot(in PluginDefinition plugin)
+        {
+            if (_attacker == null && owner != null)
+                _attacker = owner.GetComponent<AutoAttacker>();
+
+            if (_attacker == null)
+            {
+                Debug.LogWarning(
+                    $"{name}: {plugin.ProposalId} fired on a skill hit and there is no AutoAttacker " +
+                    "to fire from, so nothing was shot.", this);
+                return;
+            }
+
+            // Full effect strength. R06 and G13 cut theirs to 80% and 70% because docs/03
+            // says so for those two; it says nothing of the kind for G14, and inventing a
+            // reduction would be a nerf nobody wrote down.
+            _attacker.QueueBurst(plugin.ProjectilesFired, onHitEffectScale: 1f);
+        }
+
         private void PushFiringToAttacker()
         {
             if (_attacker == null && owner != null)
@@ -665,6 +699,9 @@ namespace NeonVoid.Plugins
                     break;
                 case PluginEffectKind.DamageTarget:
                     Strike(target, plugin, HitOrigin.Skill);
+                    break;
+                case PluginEffectKind.FireProjectile:
+                    FireRespondingShot(plugin);
                     break;
             }
         }

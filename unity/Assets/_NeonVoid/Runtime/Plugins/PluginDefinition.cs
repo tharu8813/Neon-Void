@@ -128,6 +128,17 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         ConditionalPassive = 8,
+
+        /// <summary>
+        /// Fires the carrier's basic attack, now. G14 추적 응답 is 스킬 피해 적중 시
+        /// 자동발사 탄환 1개.
+        /// <para>
+        /// Not a <see cref="FiringModifier"/>: those change what every volley is, and are read
+        /// off the loadout once. This one is an effect that resolves when something happens,
+        /// so it goes through the proc queue and obeys its chain rules like any other.
+        /// </para>
+        /// </summary>
+        FireProjectile = 9,
     }
 
     /// <summary>
@@ -164,6 +175,9 @@ namespace NeonVoid.Plugins
 
         [Tooltip("[초안] reach of the effect in units, where it has one.")]
         public float RadiusUnits;
+
+        [Tooltip("Projectiles a FireProjectile effect fires. docs/03 G14 추적 응답 fires 1.")]
+        public int ProjectilesFired;
 
         [Tooltip("Status applied by a marking effect, or None.")]
         public StatusEffectId AppliedStatus;
@@ -278,6 +292,22 @@ namespace NeonVoid.Plugins
             // effect id.
             if (ReachesProcQueue)
                 Rule.Validate();
+
+            if (Effect == PluginEffectKind.FireProjectile)
+            {
+                if (ProjectilesFired < 1)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a firing effect that fires {ProjectilesFired} projectiles " +
+                        "does nothing when it resolves.");
+                }
+            }
+            else if (ProjectilesFired != 0)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.FireProjectile)} fires projectiles " +
+                    "when it resolves.");
+            }
 
             switch (Effect)
             {

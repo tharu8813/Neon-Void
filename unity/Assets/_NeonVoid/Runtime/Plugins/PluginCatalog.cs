@@ -234,6 +234,38 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 G14 추적 응답: 자동발사 탄환 1개.</summary>
+        public const int StatedSkillResponseShots = 1;
+
+        /// <summary>
+        /// G14 추적 응답 - 스킬 피해 적중 시 자동발사 탄환 1개.
+        /// <para>
+        /// The one number the document gives is the shot count, and it is here exactly. What it
+        /// asks to be handled is 스킬의 자기 발동/루프 방지, and that holds without a guard of
+        /// its own: the shot is a basic attack, so what it hits can never satisfy
+        /// <see cref="PluginTriggerKind.OnSkillHit"/> again, and the loop has no second step.
+        /// </para>
+        /// <para>
+        /// An effect that resolves rather than a <see cref="PluginEffectKind.FiringModifier"/>:
+        /// R06 and G13 change what every volley is and are read off the loadout once, while
+        /// this one happens because something happened, so it goes through the proc queue and
+        /// obeys its chain rules.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition SkillResponse() => new PluginDefinition
+        {
+            ProposalId = "G14",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnSkillHit,
+            Effect = PluginEffectKind.FireProjectile,
+            // No internal cooldown: docs/03 gives none, and the card is already bounded by how
+            // often a skill can land. Inventing one would be a rate the document does not have.
+            Rule = ProcEffectRule.SingleUse(14),
+            Damage = default,
+            ProjectilesFired = StatedSkillResponseShots,
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>[초안] docs/03 R07 자동 추적탄 states no number, only 유도탄 발사.</summary>
         public const float DraftSeekerTurnDegreesPerTick = 3.5f;
 
