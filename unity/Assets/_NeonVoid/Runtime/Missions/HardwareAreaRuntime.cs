@@ -76,6 +76,7 @@ namespace NeonVoid.Missions
         private SimulationRunner _runner;
         private DwellGate _console;
         private DwellGate _pad;
+        private AreaObjectiveChain _chain;
         private bool _entered;
         private bool _extractionArmed;
 
@@ -114,6 +115,12 @@ namespace NeonVoid.Missions
         /// </para>
         /// </summary>
         public bool IsExtractionArmed => _extractionArmed;
+
+        /// <summary>
+        /// The chain this area's <see cref="AreaObjectiveKind.Sequence"/> nodes make, or null
+        /// when the hardware has none. For a HUD gauge and for a test.
+        /// </summary>
+        public AreaObjectiveChain ObjectiveChain => _chain;
 
         /// <summary>The 정화 dwell, for a progress ring.</summary>
         public DwellGate PurificationDwell => _console;
@@ -161,6 +168,7 @@ namespace NeonVoid.Missions
         {
             _console = new DwellGate(consoleRadiusUnits, consoleDwellTicks);
             _pad = new DwellGate(padRadiusUnits, padDwellTicks);
+            _chain = BuildChain();
 
             if (mission == null)
                 mission = FindFirstObjectByType<MissionRunDirector>();
@@ -317,6 +325,7 @@ namespace NeonVoid.Missions
                 return;
 
             OpenTheRoomThePlayerIsIn();
+            TickObjectives(flow);
             SyncBossGate(flow);
             TickPurificationConsole(flow);
             TickExtractionPad(flow);
@@ -370,6 +379,139 @@ namespace NeonVoid.Missions
                 bossGate.Open();
             else if (flow.AreaPhase == AreaProgressPhase.Objectives)
                 bossGate.Close();
+        }
+
+        /// <summary>
+        /// The chain this area's Sequence nodes make, or null when it has none. Built from the
+        /// devices that are actually here, for the same reason the objective count is
+        /// (see the class comment): a chain whose length came from the hardware table would
+        /// disagree with the room whenever an area was built with fewer objectives.
+        /// </summary>
+        private AreaObjectiveChain BuildChain()
+        {
+            int nodes = 0;
+            for (int i = 0; i < objectives.Length; ++i)
+            {
+                if (objectives[i] != null && objectives[i].Kind == AreaObjectiveKind.Sequence)
+                    ++nodes;
+            }
+
+            if (nodes == 0)
+                return null;
+
+            return new AreaObjectiveChain(nodes, AreaObjectives.ChainWindowTicksFor(area));
+        }
+
+        /// <summary>
+        /// Drives the objectives that are stood on rather than shot. Destroy objectives need
+        /// nothing here - they report from their actor's death.
+        /// <para>
+        /// Only during <see cref="AreaProgressPhase.Objectives"/>: afterwards the boss is the
+        /// task, and a player who walks back over a station while fighting it should not be
+        /// filling a dwell that no longer means anything.
+        /// </para>
+        /// </summary>
+        private void TickObjectives(MissionFlow flow)
+        {
+            if (flow.AreaPhase != AreaProgressPhase.Objectives)
+            {
+                ResetObjectiveDwells();
+                return;
+            }
+
+            if (_chain != null && _chain.Tick())
+            {
+                // The window ran out. Every node goes dark, because the chain no longer counts
+                // any of them - and none of them has told the flow anything, so nothing has to
+                // be taken back.
+                ResetObjectiveDwells();
+                Debug.Log($"{area}: the objective chain timed out and reset.", this);
+            }
+
+            for (int i = 0; i < objectives.Length; ++i)
+            {
+                AreaObjectiveDevice objective = objectives[i];
+                if (objective == null || objective.IsCompleted || objective.Kind == AreaObjectiveKind.Destroy)
+                    continue;
+
+                if (!objective.TickDwell(DistanceToPlayer(objective.Station)))
+                    continue;
+
+                if (objective.Kind == AreaObjectiveKind.Hold)
+                {
+                    objective.Complete();
+                    continue;
+                }
+
+                OfferToChain(objective);
+            }
+        }
+
+        private void OfferToChain(AreaObjectiveDevice node)
+        {
+            if (_chain == null)
+            {
+                Debug.LogError(
+                    $"{name}: {node.ObjectiveName} is a chain node and this area has no chain.", this);
+                return;
+            }
+
+            switch (_chain.Offer(node.ChainIndex))
+            {
+                case AreaChainOffer.Accepted:
+                    node.Light();
+                    Debug.Log($"{area}: {node.ObjectiveName} lit. {_chain}.", this);
+                    break;
+
+                case AreaChainOffer.Completed:
+                    node.Light();
+                    CompleteTheChain();
+                    break;
+
+                case AreaChainOffer.OutOfOrder:
+                    ResetObjectiveDwells();
+                    Debug.Log(
+                        $"{area}: {node.ObjectiveName} was out of order, so the chain reset.", this);
+                    break;
+
+                case AreaChainOffer.AlreadyLit:
+                case AreaChainOffer.AlreadyComplete:
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Reports every node of the chain complete, on the tick its last node landed.
+        /// <para>
+        /// All of them at once, because the chain is what the player did and the nodes are how
+        /// it was counted. A node that reported on its own would have to un-report when the
+        /// chain broke, and docs/01 section 6.6 does not allow that.
+        /// </para>
+        /// </summary>
+        private void CompleteTheChain()
+        {
+            for (int i = 0; i < objectives.Length; ++i)
+            {
+                AreaObjectiveDevice objective = objectives[i];
+                if (objective != null
+                    && objective.Kind == AreaObjectiveKind.Sequence
+                    && !objective.IsCompleted)
+                {
+                    objective.Complete();
+                }
+            }
+        }
+
+        private void ResetObjectiveDwells()
+        {
+            for (int i = 0; i < objectives.Length; ++i)
+                objectives[i]?.ResetDwell();
+
+            // A finished chain is left finished. It is read by the HUD and by the flow's own
+            // record of what the player did, and emptying it after the fact would make a
+            // completed area look like one nobody had walked.
+            if (_chain != null && !_chain.IsComplete)
+                _chain.Reset();
         }
 
         private void TickPurificationConsole(MissionFlow flow)
@@ -484,8 +626,10 @@ namespace NeonVoid.Missions
                 return $"{area}: no mission";
 
             string gate = bossGate != null ? bossGate.ToString() : "no boss";
-            return $"{area} {flow.AreaPhase} · 목표 {flow.ObjectivesCompletedInArea}/{flow.ObjectivesRequiredInArea} · " +
-                   $"{gate} · 정화 {_console.Progress:P0} · 철수 {(_extractionArmed ? "armed" : $"{_pad.Progress:P0}")}";
+            string chain = _chain != null ? $" · {_chain}" : string.Empty;
+            return $"{area} {flow.AreaPhase} · 목표 {flow.ObjectivesCompletedInArea}/{flow.ObjectivesRequiredInArea}" +
+                   $"{chain} · {gate} · 정화 {_console.Progress:P0} · " +
+                   $"철수 {(_extractionArmed ? "armed" : $"{_pad.Progress:P0}")}";
         }
     }
 }

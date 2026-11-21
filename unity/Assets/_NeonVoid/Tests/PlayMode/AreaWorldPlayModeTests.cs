@@ -82,9 +82,12 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.IsTrue(director.CanCommit, director.Result.Detail);
         }
 
-        private static AreaLayout LayoutFor(uint seed, int objectives = 3)
+        private static AreaLayout LayoutFor(uint seed, int objectives = 3) =>
+            LayoutFor(HardwareId.Cpu, seed, objectives);
+
+        private static AreaLayout LayoutFor(HardwareId hardware, uint seed, int objectives = 3)
         {
-            var spec = new AreaSpec(HardwareId.Cpu, seed, objectives);
+            var spec = new AreaSpec(hardware, seed, objectives);
             Assert.IsTrue(AreaGenerator.TryGenerate(spec, out AreaLayout layout, out string failure), failure);
             return layout;
         }
@@ -101,7 +104,8 @@ namespace NeonVoid.Tests.PlayModeTests
             builder.WorldOrigin = AreaOrigin;
 
             _area = builder.Build(
-                LayoutFor(seed, objectives), _arena.Mission, _arena.PlayerObject.transform, conditions);
+                LayoutFor(conditions.Hardware, seed, objectives), _arena.Mission,
+                _arena.PlayerObject.transform, conditions);
             _area.Runtime.ConfigureDwell(DwellRadius, DwellTicks, DwellRadius, DwellTicks);
             return _area;
         }
@@ -119,6 +123,22 @@ namespace NeonVoid.Tests.PlayModeTests
             Transform player = _arena.PlayerObject.transform;
             player.position = new Vector3(player.position.x, destination.y, player.position.z);
             _arena.Driver.TeleportTo(new Vector2(destination.x, destination.z));
+        }
+
+        /// <summary>
+        /// The first objective of this area that is destroyed rather than stood on. A test about
+        /// the player's fire reaching a device has to aim at one that is a device.
+        /// </summary>
+        private static int IndexOfFirstDestroyObjective(AreaBuildResult area)
+        {
+            for (int i = 0; i < area.Devices.Length; ++i)
+            {
+                if (area.Devices[i] != null && area.Devices[i].Kind == AreaObjectiveKind.Destroy)
+                    return i;
+            }
+
+            Assert.Fail($"{area.Layout.Spec.Hardware} has no Destroy objective to shoot at.");
+            return -1;
         }
 
         private static readonly string[] NoLearns = new string[0];
@@ -250,14 +270,13 @@ namespace NeonVoid.Tests.PlayModeTests
 
             long runId = Flow.Run.Identity.RunId;
 
-            // 소목표: destroy every device the generator placed.
+            // 소목표: whatever CPU's objectives are - [확정] docs/01 only fixes that there are
+            // 2~3 of them, and AreaObjectives decides their shapes per hardware.
             for (int i = 0; i < area.Devices.Length; ++i)
-            {
-                Assert.IsFalse(area.Devices[i].IsCompleted);
-                PrototypeArena.Kill(area.Devices[i].Device);
-            }
+                Assert.IsFalse(area.Devices[i].IsCompleted, $"objective {i} began completed");
 
-            yield return _arena.Tick(1);
+            _arena.MakePlayerUnkillable();
+            yield return _arena.ClearObjectives(area);
             Assert.AreEqual(AreaProgressPhase.Boss, Flow.AreaPhase, Flow.LastRefusal);
             Assert.IsTrue(area.BossGate.Boss.gameObject.activeInHierarchy, "the boss never arrived");
 
@@ -305,8 +324,9 @@ namespace NeonVoid.Tests.PlayModeTests
             AreaBuildResult area = BuildArea();
             yield return _arena.Tick(1);
 
-            CombatActor device = area.Devices[0].Device;
-            StandOn(area.Layout.Objectives[0]);
+            int shootable = IndexOfFirstDestroyObjective(area);
+            CombatActor device = area.Devices[shootable].Device;
+            StandOn(area.Layout.Objectives[shootable]);
             yield return _arena.Tick(2);
 
             float before = device.Health.Current;
@@ -442,9 +462,8 @@ namespace NeonVoid.Tests.PlayModeTests
             AreaBuildResult area = BuildArea();
             yield return _arena.Tick(1);
 
-            for (int i = 0; i < area.Devices.Length; ++i)
-                PrototypeArena.Kill(area.Devices[i].Device);
-            yield return _arena.Tick(1);
+            _arena.MakePlayerUnkillable();
+            yield return _arena.ClearObjectives(area);
             PrototypeArena.Kill(area.BossGate.Boss);
             yield return _arena.Tick(1);
             Assert.AreEqual(AreaProgressPhase.Purification, Flow.AreaPhase);
@@ -567,6 +586,256 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.AreEqual(
                 MissionXpBudget.XpForNormalKill(0), Flow.Run.MissionXp - before,
                 "a kill in a mutated area paid a different amount");
+        }
+    
+        // --- 구역별 소목표 -------------------------------------------------------------------
+
+        /// <summary>The area's chain nodes, in chain order.</summary>
+        private static AreaObjectiveDevice[] ChainNodesOf(AreaBuildResult area)
+        {
+            var nodes = new System.Collections.Generic.List<AreaObjectiveDevice>();
+            for (int i = 0; i < area.Devices.Length; ++i)
+            {
+                if (area.Devices[i] != null && area.Devices[i].Kind == AreaObjectiveKind.Sequence)
+                    nodes.Add(area.Devices[i]);
+            }
+
+            nodes.Sort((a, b) => a.ChainIndex.CompareTo(b.ChainIndex));
+            return nodes.ToArray();
+        }
+
+        /// <summary>Puts the player on a station, through the motion simulation.</summary>
+        private void StandAt(Transform station)
+        {
+            Vector3 at = station.position;
+            _arena.Driver.TeleportTo(new Vector2(at.x, at.z));
+        }
+
+        /// <summary>
+        /// Somewhere no station can reach, whatever the seed placed where. A cell of the map
+        /// would do for most seeds and then quietly stop proving anything on the one that put an
+        /// objective next to the entrance.
+        /// </summary>
+        private void StandFarAway() =>
+            _arena.Driver.TeleportTo(new Vector2(AreaOrigin.x + 5000f, AreaOrigin.z + 5000f));
+
+        /// <summary>The station of this area's farthest objective from the entrance.</summary>
+        private AreaObjectiveDevice FarthestStation(AreaBuildResult area)
+        {
+            Vector3 start = WorldOf(area.Layout.Start);
+            AreaObjectiveDevice farthest = null;
+            float best = -1f;
+
+            for (int i = 0; i < area.Devices.Length; ++i)
+            {
+                AreaObjectiveDevice candidate = area.Devices[i];
+                if (candidate == null || candidate.Station == null)
+                    continue;
+
+                float distance = (candidate.Station.position - start).sqrMagnitude;
+                if (distance <= best)
+                    continue;
+
+                best = distance;
+                farthest = candidate;
+            }
+
+            Assert.IsNotNull(farthest, $"{area.Layout.Spec.Hardware} placed no station");
+            return farthest;
+        }
+
+        [UnityTest]
+        public IEnumerator EveryHardwareAreaCanActuallyBeCleared()
+        {
+            // [확정] docs/01 section 1: 2~3개 소목표 → 보스. The objective shapes are per hardware
+            // now, so this is the test that each hardware's own table produces an area a player
+            // can finish - the one failure mode a per-hardware table introduces.
+            foreach (HardwareId hardware in HardwareIds.All)
+            {
+                ConnectSave();
+                _arena = PrototypeArena.Build();
+                _arena.MakePlayerUnkillable();
+
+                AreaBuildResult area = BuildArea(
+                    AreaConditions.Clear(hardware, HardwareDifficulty.Normal), seed: 11u);
+                yield return _arena.Tick(1);
+
+                Assert.AreEqual(AreaProgressPhase.Objectives, Flow.AreaPhase, $"{hardware}: {Flow.LastRefusal}");
+
+                yield return _arena.ClearObjectives(area);
+
+                Assert.AreEqual(
+                    AreaProgressPhase.Boss, Flow.AreaPhase,
+                    $"{hardware}: its objectives could not be completed. {Flow.LastRefusal}");
+                Assert.AreEqual(
+                    0, area.Runtime.ObjectivesOutstanding, $"{hardware} left an objective standing");
+
+                // Object.Destroy only takes effect at the end of the frame, and the next
+                // iteration's runtime looks the SimulationRunner up by type - so without a frame
+                // in between it would find the one that is on its way out.
+                TearDown();
+                yield return null;
+                SetUp();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EveryHardwareAsksForSomethingDifferent()
+        {
+            // CLAUDE.md: the five hardware are not one copy-pasted map. The table is held by
+            // AreaObjectiveTests; what only a built area shows is that the builder gives each
+            // area its hardware's objectives rather than CPU's, which is what it used to do.
+            var seen = new System.Collections.Generic.List<string>();
+
+            foreach (HardwareId hardware in HardwareIds.All)
+            {
+                ConnectSave();
+                _arena = PrototypeArena.Build();
+
+                AreaBuildResult area = BuildArea(
+                    AreaConditions.Clear(hardware, HardwareDifficulty.Normal), seed: 11u);
+                yield return _arena.Tick(1);
+
+                var names = new System.Text.StringBuilder();
+                for (int i = 0; i < area.Devices.Length; ++i)
+                {
+                    names.Append(area.Devices[i].Kind).Append(':').Append(area.Devices[i].ObjectiveName);
+                    names.Append('|');
+
+                    bool isDestroy = area.Devices[i].Kind == AreaObjectiveKind.Destroy;
+                    Assert.AreEqual(
+                        isDestroy, area.Devices[i].Device != null,
+                        $"{hardware}: {area.Devices[i].ObjectiveName} has the wrong kind of body");
+                    Assert.AreEqual(
+                        isDestroy, area.Devices[i].Station == null,
+                        $"{hardware}: {area.Devices[i].ObjectiveName} has the wrong kind of place");
+                }
+
+                string signature = names.ToString();
+                Assert.IsFalse(seen.Contains(signature), $"{hardware} built the same objectives as another area");
+                seen.Add(signature);
+
+                TearDown();
+                yield return null;
+                SetUp();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AStationIsCompletedByStandingOnItAndNotFromAcrossTheMap()
+        {
+            // The same claim DwellGate makes, made of an objective: a Hold that counted ticks
+            // without caring where the player was would complete itself while they fought
+            // somewhere else.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            _arena.MakePlayerUnkillable();
+
+            // HDD's three objectives are all Hold.
+            AreaBuildResult area = BuildArea(
+                AreaConditions.Clear(HardwareId.Hdd, HardwareDifficulty.Normal), seed: 11u);
+            yield return _arena.Tick(1);
+
+            AreaObjectiveDevice hold = FarthestStation(area);
+            Assert.AreEqual(AreaObjectiveKind.Hold, hold.Kind);
+            Assert.IsNull(hold.Device, "a station the player could shoot down would make the area unclearable");
+
+            StandFarAway();
+            yield return _arena.Tick(hold.Dwell.RequiredTicks * 2);
+
+            Assert.IsFalse(hold.IsCompleted, "it completed from the entrance");
+            Assert.AreEqual(0, hold.Dwell.TicksHeld, "the dwell filled from across the map");
+
+            StandAt(hold.Station);
+            yield return _arena.Tick(hold.Dwell.RequiredTicks + 1);
+
+            Assert.IsTrue(hold.IsCompleted, "standing on it did nothing");
+            Assert.AreEqual(1, Flow.ObjectivesCompletedInArea, "the flow was not told");
+        }
+
+        [UnityTest]
+        public IEnumerator AChainWalkedOutOfOrderResetsAndTellsTheFlowNothing()
+        {
+            // [확정] docs/01 section 6.6: 완료 보상은 반복 호출에도 정확히 1회. A chain node that
+            // reported on its own would have to un-report when the chain broke, so a half-walked
+            // chain must have told the flow nothing at all.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            _arena.MakePlayerUnkillable();
+
+            // GPU's first two objectives are a chain, with no clock.
+            AreaBuildResult area = BuildArea(
+                AreaConditions.Clear(HardwareId.Gpu, HardwareDifficulty.Normal), seed: 11u);
+            yield return _arena.Tick(1);
+
+            AreaObjectiveDevice[] nodes = ChainNodesOf(area);
+            Assert.AreEqual(2, nodes.Length, "GPU's chain is not two nodes");
+            Assert.IsNotNull(area.Runtime.ObjectiveChain, "the area built no chain");
+            Assert.IsFalse(area.Runtime.ObjectiveChain.HasWindow, "GPU's chain has a clock");
+
+            // The second node first.
+            StandAt(nodes[1].Station);
+            yield return _arena.Tick(nodes[1].Dwell.RequiredTicks + 1);
+
+            Assert.AreEqual(0, area.Runtime.ObjectiveChain.Lit, "an out-of-order node lit the chain");
+            Assert.IsFalse(nodes[1].IsCompleted, "a node completed on its own");
+            Assert.AreEqual(0, Flow.ObjectivesCompletedInArea, "the flow counted half a chain");
+
+            // And now in order. The first node lights but reports nothing.
+            StandAt(nodes[0].Station);
+            yield return _arena.Tick(nodes[0].Dwell.RequiredTicks + 1);
+
+            Assert.IsTrue(nodes[0].IsLit, "the first node did not light");
+            Assert.IsFalse(nodes[0].IsCompleted, "a node reported before the chain landed");
+            Assert.AreEqual(0, Flow.ObjectivesCompletedInArea, "the flow counted a lit node");
+
+            StandAt(nodes[1].Station);
+            yield return _arena.Tick(nodes[1].Dwell.RequiredTicks + 1);
+
+            Assert.IsTrue(area.Runtime.ObjectiveChain.IsComplete, "the chain never landed");
+            Assert.AreEqual(
+                nodes.Length, Flow.ObjectivesCompletedInArea,
+                "the chain landed but its nodes were not counted");
+
+            for (int i = 0; i < nodes.Length; ++i)
+                Assert.IsTrue(nodes[i].IsCompleted, $"chain node {i} was not completed");
+        }
+
+        [UnityTest]
+        public IEnumerator SsdsChainRunsOutIfTheWalkTakesTooLong()
+        {
+            // [초안] docs/01 section 2: SSD is 레일을 짧은 시간에 연결, and it is the only area with
+            // a clock. The expiry has to leave the flow untouched for the same reason an
+            // out-of-order node does.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            _arena.MakePlayerUnkillable();
+
+            AreaBuildResult area = BuildArea(
+                AreaConditions.Clear(HardwareId.Ssd, HardwareDifficulty.Normal), seed: 11u);
+            yield return _arena.Tick(1);
+
+            AreaObjectiveChain chain = area.Runtime.ObjectiveChain;
+            Assert.IsNotNull(chain, "SSD built no chain");
+            Assert.IsTrue(chain.HasWindow, "SSD's chain has no clock");
+
+            AreaObjectiveDevice[] nodes = ChainNodesOf(area);
+            StandAt(nodes[0].Station);
+            yield return _arena.Tick(nodes[0].Dwell.RequiredTicks + 1);
+
+            Assert.AreEqual(1, chain.Lit, "the first rail never lit");
+
+            // Walk away and wait it out.
+            StandFarAway();
+            yield return _arena.Tick(chain.WindowTicks + 2);
+
+            Assert.AreEqual(0, chain.Lit, "the window never ran out");
+            Assert.AreEqual(0, Flow.ObjectivesCompletedInArea, "an expired chain paid the flow");
+            Assert.IsFalse(nodes[0].IsCompleted, "an expired node stayed complete");
+
+            // And it can still be cleared afterwards, which is the point of a reset rather than a failure.
+            yield return _arena.ClearObjectives(area);
+            Assert.AreEqual(AreaProgressPhase.Boss, Flow.AreaPhase, Flow.LastRefusal);
         }
     }
 }

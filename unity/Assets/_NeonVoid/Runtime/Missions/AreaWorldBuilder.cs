@@ -253,16 +253,36 @@ namespace NeonVoid.Missions
                 wallSlabs = BuildWalls(layout, root.transform);
             }
 
+            // [초안] docs/01 section 2's own objectives for this hardware, in its own 핵심 동사.
+            // Every area used to build CPU's 과열 밸브, three identical destructibles, whatever
+            // hardware it was - which is the copy-pasted map CLAUDE.md forbids.
+            HardwareId hardware = layout.Spec.Hardware;
+            AreaObjectiveSpec[] objectiveSpecs = AreaObjectives.For(hardware, layout.Objectives.Count);
             var devices = new AreaObjectiveDevice[layout.Objectives.Count];
             for (int i = 0; i < devices.Length; ++i)
             {
-                CombatActor actor = SpawnBody(
-                    objectiveDevicePrefab, prototypeDeviceStats, PrimitiveType.Cube,
-                    $"과열 밸브 {i + 1}", layout, layout.Objectives[i], root.transform);
+                AreaObjectiveSpec spec = objectiveSpecs[i];
+                AreaCell cell = layout.Objectives[i];
+
+                if (spec.Kind == AreaObjectiveKind.Destroy)
+                {
+                    CombatActor actor = SpawnBody(
+                        objectiveDevicePrefab, prototypeDeviceStats, PrimitiveType.Cube,
+                        spec.Name, layout, cell, root.transform);
+
+                    devices[i] = AddAsleep<AreaObjectiveDevice>(
+                        $"Objective {i + 1}", root.transform, d => d.Configure(actor, spec.Name));
+                    continue;
+                }
+
+                Transform at = SpawnStation(spec.Name, layout, cell, root.transform);
+                int ticks = spec.Kind == AreaObjectiveKind.Hold
+                    ? AreaObjectives.HoldTicksFor(hardware)
+                    : AreaObjectives.ChainNodeTicksFor(hardware);
 
                 devices[i] = AddAsleep<AreaObjectiveDevice>(
                     $"Objective {i + 1}", root.transform,
-                    d => d.Configure(actor, $"과열 밸브 {i + 1}"));
+                    d => d.ConfigureStation(spec, at, AreaObjectives.DraftHoldRadiusUnits, ticks));
             }
 
             CombatActor bossActor = SpawnBody(
@@ -293,7 +313,8 @@ namespace NeonVoid.Missions
 
             Debug.Log(
                 $"Built {layout.Spec.Hardware} from {layout.ReceiptLine()}: " +
-                $"{floorSlabs} floor slab(s), {wallSlabs} wall slab(s), {devices.Length} objective(s), " +
+                $"{floorSlabs} floor slab(s), {wallSlabs} wall slab(s), " +
+                $"{devices.Length} objective(s) [{DescribeObjectives(devices)}], " +
                 $"{layout.Enemies.Count} enemy/enemies in {roomGates.Length} gated room(s), " +
                 $"{conditions.GateLine()}" +
                 (mutated > 0 ? $", {mutated} 변이체" : string.Empty),
@@ -586,6 +607,50 @@ namespace NeonVoid.Missions
         }
 
         /// <summary>An empty transform the dwell gates measure against.</summary>
+        /// <summary>The area's objectives, for the build log: what the player is actually asked to do.</summary>
+        private static string DescribeObjectives(AreaObjectiveDevice[] devices)
+        {
+            var text = new System.Text.StringBuilder();
+            for (int i = 0; i < devices.Length; ++i)
+            {
+                if (i > 0)
+                    text.Append(", ");
+
+                text.Append(devices[i] != null ? devices[i].ToString() : "missing");
+            }
+
+            return text.ToString();
+        }
+
+        /// <summary>
+        /// A station for a Hold or Sequence objective: somewhere to stand, visible, and
+        /// <b>inert</b>.
+        /// <para>
+        /// No <see cref="CombatActor"/>, so the player cannot shoot down an objective and leave
+        /// the area unclearable, and no collider, so the thing they have to stand on does not
+        /// push them off it or swallow their own fire. A Prototype primitive until there is art;
+        /// the dwell radius is what actually decides where counts, not this plate.
+        /// </para>
+        /// </summary>
+        private Transform SpawnStation(string name, AreaLayout layout, AreaCell cell, Transform parent)
+        {
+            GameObject plate = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            plate.name = $"{name} (Prototype)";
+            plate.transform.SetParent(parent, worldPositionStays: false);
+            plate.transform.position = PositionOf(layout, cell);
+            plate.transform.localScale = new Vector3(
+                AreaObjectives.DraftHoldRadiusUnits * 2f, 0.05f, AreaObjectives.DraftHoldRadiusUnits * 2f);
+
+            // Disabled rather than destroyed: Destroy takes until the end of the frame, and for
+            // that frame the plate would still be solid - which is a tick where the station the
+            // player is told to stand on is in their way.
+            Collider collider = plate.GetComponent<Collider>();
+            if (collider != null)
+                collider.enabled = false;
+
+            return plate.transform;
+        }
+
         private Transform Marker(string name, AreaLayout layout, AreaCell cell, Transform parent)
         {
             var marker = new GameObject(name);

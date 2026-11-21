@@ -194,6 +194,54 @@ namespace NeonVoid.Tests.PlayModeTests
             return offset.magnitude;
         }
 
+        /// <summary>
+        /// Completes every 소목표 an area placed, whichever shape each one is: a Destroy device is
+        /// killed, a Hold or Sequence station is walked to and stood on for its dwell.
+        /// <para>
+        /// Here rather than in each test because the shapes are per hardware
+        /// (<see cref="AreaObjectives"/>), so a test that destroyed three devices would only
+        /// ever be a test of CPU - and would break the day a hardware's table changed, for a
+        /// reason that has nothing to do with what the test is about.
+        /// </para>
+        /// <para>
+        /// The chain nodes are visited in array order, which is chain order: the hardware table
+        /// puts them first and in sequence, and a test that walked them in some other order
+        /// would be testing the reset rather than the clear.
+        /// </para>
+        /// </summary>
+        public IEnumerator ClearObjectives(AreaBuildResult area)
+        {
+            for (int i = 0; i < area.Devices.Length; ++i)
+            {
+                AreaObjectiveDevice objective = area.Devices[i];
+                if (objective == null || objective.IsCompleted)
+                    continue;
+
+                if (objective.Kind == AreaObjectiveKind.Destroy)
+                {
+                    Kill(objective.Device);
+                    yield return Tick(1);
+                    continue;
+                }
+
+                Vector3 at = objective.Station.position;
+                Driver.TeleportTo(new Vector2(at.x, at.z));
+                yield return Tick(objective.Dwell.RequiredTicks + 1);
+            }
+        }
+
+        /// <summary>
+        /// Gives the player enough health that a fight they are not the subject of cannot end
+        /// the test. For a test that has to spend hundreds of ticks standing still in a room
+        /// the generator may have put enemies in.
+        /// </summary>
+        public void MakePlayerUnkillable()
+        {
+            CombatStats tough = PlayerStats();
+            tough.MaxHealth = 1_000_000f;
+            Player.Configure(PlayerTeam, tough);
+        }
+
         /// <summary>Kills an actor outright, through the normal damage entry point.</summary>
         public static void Kill(CombatActor actor)
         {

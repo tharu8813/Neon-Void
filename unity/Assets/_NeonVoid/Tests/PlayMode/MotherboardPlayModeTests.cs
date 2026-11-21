@@ -118,10 +118,10 @@ namespace NeonVoid.Tests.PlayModeTests
             AreaBuildResult area = _motherboard.CurrentArea;
             Assert.IsNotNull(area, "no area is standing");
 
-            for (int i = 0; i < area.Devices.Length; ++i)
-                PrototypeArena.Kill(area.Devices[i].Device);
-
-            yield return _arena.Tick(1);
+            // Whatever this hardware's objectives are: the player chose the area, so the
+            // shapes are not known here.
+            _arena.MakePlayerUnkillable();
+            yield return _arena.ClearObjectives(area);
             Assert.AreEqual(AreaProgressPhase.Boss, Flow.AreaPhase, Flow.LastRefusal);
 
             PrototypeArena.Kill(area.BossGate.Boss);

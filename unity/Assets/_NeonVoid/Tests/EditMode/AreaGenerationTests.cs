@@ -89,6 +89,69 @@ namespace NeonVoid.Tests
         }
 
         [Test]
+        public void EverySweptSeedOfEveryHardwareIsWalkable()
+        {
+            // docs/07's P5 gate: 맵 100개 이상 시드 이동 경로 검사. The sweeps above are CPU's,
+            // because that is the area that was built first - and a check that only ever ran on
+            // one of the five would pass for as long as nothing hardware-specific went wrong,
+            // which is exactly when it would matter.
+            foreach (HardwareId hardware in HardwareIds.All)
+            {
+                for (uint seed = 1; seed <= SweptSeeds; ++seed)
+                {
+                    for (int objectives = AreaSpec.DraftMinObjectives;
+                         objectives <= AreaSpec.DraftMaxObjectives;
+                         ++objectives)
+                    {
+                        var spec = new AreaSpec(hardware, seed, objectives);
+                        Assert.IsTrue(
+                            AreaGenerator.TryGenerate(spec, out AreaLayout layout, out string failure),
+                            $"{hardware} seed {seed} with {objectives} objective(s): {failure}");
+
+                        AreaLayoutVerdict verdict = AreaLayoutValidator.Validate(layout);
+                        Assert.IsTrue(verdict.IsValid, $"{hardware} seed {seed}: {verdict.Reason}");
+
+                        foreach (AreaCell cell in layout.AllSpawns)
+                        {
+                            Assert.IsTrue(
+                                layout.Grid.PathExists(layout.Start, cell),
+                                $"{hardware} seed {seed}: {cell} cannot be walked to");
+                        }
+
+                        Assert.IsTrue(
+                            layout.Grid.PathExists(layout.Boss, layout.Start),
+                            $"{hardware} seed {seed}: no way back from the boss");
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void EveryHardwareDrawsFromItsOwnEnemyMix()
+        {
+            // docs/01 section 2's 적 성향 column. Asserted here rather than only in the table,
+            // because the thing that would go wrong is an area built with the wrong hardware's
+            // mix - and the generator is the only place that choice is made.
+            var mixes = new Dictionary<string, HardwareId>();
+
+            foreach (HardwareId hardware in HardwareIds.All)
+            {
+                EnemyArchetypeId[] mix = AreaGenerator.DraftArchetypeMixFor(hardware);
+                Assert.IsNotEmpty(mix, $"{hardware} draws from nothing");
+
+                var signature = new System.Text.StringBuilder();
+                for (int i = 0; i < mix.Length; ++i)
+                    signature.Append(mix[i]).Append('/');
+
+                Assert.IsFalse(
+                    mixes.TryGetValue(signature.ToString(), out HardwareId other),
+                    $"{hardware} fights exactly what {other} fights");
+
+                mixes[signature.ToString()] = hardware;
+            }
+        }
+
+        [Test]
         public void EverySweptSeedPlacesTheObjectivesTheSpecAskedFor()
         {
             // The area runtime takes its objective count from the devices placed, so a map that
