@@ -31,19 +31,28 @@ namespace NeonVoid.Combat
 
         private CombatActor _actor;
         private bool _reacted;
+        private Vector3 _livingScale;
+        private Material _livingMaterial;
+        private bool _remembered;
 
         private void Awake() => _actor = GetComponent<CombatActor>();
 
         private void OnEnable()
         {
-            if (_actor != null)
-                _actor.Died += OnDied;
+            if (_actor == null)
+                return;
+
+            _actor.Died += OnDied;
+            _actor.Revived += OnRevived;
         }
 
         private void OnDisable()
         {
-            if (_actor != null)
-                _actor.Died -= OnDied;
+            if (_actor == null)
+                return;
+
+            _actor.Died -= OnDied;
+            _actor.Revived -= OnRevived;
         }
 
         private void OnDied(CombatActor actor)
@@ -54,8 +63,72 @@ namespace NeonVoid.Combat
                 return;
             _reacted = true;
 
+            Remember();
             StopTakingPartInPhysics();
             LookDead();
+        }
+
+        /// <summary>
+        /// Puts the body back: physics on, the living shape and material returned.
+        /// <para>
+        /// The living scale and material are remembered when the body is parked rather than
+        /// read at Awake, because whatever set them may have done so after Awake - a generated
+        /// area sizes its bodies as it spawns them - and a revive that restored a prefab's
+        /// scale would resurrect the player at the wrong size.
+        /// </para>
+        /// </summary>
+        private void OnRevived(CombatActor actor)
+        {
+            if (!_reacted)
+                return;
+
+            TakePartInPhysicsAgain();
+            LookAliveAgain();
+            _reacted = false;
+        }
+
+        private void Remember()
+        {
+            if (_remembered)
+                return;
+
+            _livingScale = transform.localScale;
+
+            var renderer = GetComponent<Renderer>();
+            _livingMaterial = renderer != null ? renderer.sharedMaterial : null;
+            _remembered = true;
+        }
+
+        private void TakePartInPhysicsAgain()
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>(includeInactive: true);
+            for (int i = 0; i < colliders.Length; ++i)
+                colliders[i].enabled = true;
+
+            // Last, and after the colliders: a CharacterController that is enabled while its
+            // own collider is off spends a frame able to walk through the world.
+            var controller = GetComponent<CharacterController>();
+            if (controller != null)
+                controller.enabled = true;
+        }
+
+        private void LookAliveAgain()
+        {
+            if (!_remembered)
+                return;
+
+            Vector3 squashed = transform.localScale;
+            Vector3 position = transform.position;
+            position.y += _livingScale.y - squashed.y;
+            transform.position = position;
+            transform.localScale = _livingScale;
+
+            if (_livingMaterial == null)
+                return;
+
+            var renderer = GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.sharedMaterial = _livingMaterial;
         }
 
         /// <summary>

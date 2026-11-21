@@ -97,8 +97,12 @@ namespace NeonVoid.Progression.Save
             SaveCommitResult result = _store.Commit(new RegisterDeathCommand(report.Id, settlement));
             LastCommit = result;
 
+            // Read back from the committed snapshot rather than worked out from the death
+            // count here: [확정] docs/04 section 2 makes the fourth death 영구 파기, and the file
+            // is the only thing that knows which death this was - including when the commit was
+            // an AlreadyApplied replay of one this process never performed.
             Announce(result.Acknowledged
-                ? DeathCommitAck.Success(report.Id)
+                ? DeathCommitAck.Success(report.Id, _store.Snapshot.vaccine.alive)
                 : DeathCommitAck.Failure(report.Id, Describe(result)));
         }
 

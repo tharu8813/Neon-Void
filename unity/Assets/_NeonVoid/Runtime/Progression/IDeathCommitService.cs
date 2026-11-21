@@ -14,17 +14,37 @@ namespace NeonVoid.Progression
         /// <summary>Why it failed, for the recovery screen. Empty on success.</summary>
         public readonly string FailureReason;
 
-        private DeathCommitAck(DeathId id, bool succeeded, string failureReason)
+        /// <summary>
+        /// Whether permanent state says the vaccine is still alive after this death. False on a
+        /// failure, because nothing is known then.
+        /// <para>
+        /// It is on the answer rather than inferred by whoever reads it, because the only place
+        /// that knows is the write itself: [확정] docs/04 section 2 makes the fourth death
+        /// 영구 파기, and the third and the fourth are told apart by a counter in the file.
+        /// A revive decided on anything else would put a destroyed vaccine back on its feet.
+        /// </para>
+        /// </summary>
+        public readonly bool VaccineSurvived;
+
+        private DeathCommitAck(DeathId id, bool succeeded, string failureReason, bool vaccineSurvived)
         {
             Id = id;
             Succeeded = succeeded;
             FailureReason = failureReason ?? string.Empty;
+            VaccineSurvived = vaccineSurvived;
         }
 
-        public static DeathCommitAck Success(DeathId id) => new DeathCommitAck(id, true, string.Empty);
+        /// <summary>
+        /// A committed death. <paramref name="vaccineSurvived"/> has no default on purpose: a
+        /// caller that forgot it would be voting to revive, and the one death it matters for is
+        /// the one that destroys the vaccine.
+        /// </summary>
+        public static DeathCommitAck Success(DeathId id, bool vaccineSurvived) =>
+            new DeathCommitAck(id, true, string.Empty, vaccineSurvived);
 
         public static DeathCommitAck Failure(DeathId id, string reason) =>
-            new DeathCommitAck(id, false, string.IsNullOrEmpty(reason) ? "unspecified failure" : reason);
+            new DeathCommitAck(
+                id, false, string.IsNullOrEmpty(reason) ? "unspecified failure" : reason, false);
     }
 
     /// <summary>

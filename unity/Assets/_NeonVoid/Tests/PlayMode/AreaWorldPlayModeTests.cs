@@ -446,7 +446,11 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.AreEqual(
                 aliveBefore - 1, gate.AliveCount,
                 $"{gate.name} does not hold {victimName}, so its death was nobody's");
-            Assert.AreEqual(killsBefore + 1, Flow.EnemiesKilledInMission, "the kill was not counted");
+            Assert.AreEqual(
+                killsBefore + 1, Flow.EnemiesKilledInMission,
+                $"the kill was not counted. phase={Flow.Phase}/{Flow.Run.Phase}/{Flow.AreaPhase} " +
+                $"entered={area.Runtime.HasEntered} runtimeEnabled={area.Runtime.isActiveAndEnabled} " +
+                $"refusal='{Flow.LastRefusal}' gate={gate.name} victim={victimName}");
             Assert.AreEqual(
                 xpBefore + MissionXpBudget.XpForNormalKill(0), Flow.Run.MissionXp,
                 "the kill did not pay its 의뢰 XP");

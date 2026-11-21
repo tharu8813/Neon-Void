@@ -92,6 +92,14 @@ namespace NeonVoid.Progression
                 if (saves != null)
                     saves.ConnectDeathsTo(this);
             }
+
+            // The mission director checks this ledger before it begins a mission, and it is told
+            // which one rather than going looking. It runs at -200 and begins the first mission
+            // in its own Awake, so a search from there would run before this component exists -
+            // and would find whichever death director happened to be in the scene, which in a
+            // test run is the previous test's.
+            if (missionDirector != null)
+                missionDirector.ConnectDeaths(this);
         }
 
         private void OnDisable()
@@ -188,7 +196,10 @@ namespace NeonVoid.Progression
             if (verdict == DeathAckVerdict.Applied)
             {
                 if (ack.Succeeded)
+                {
                     Debug.Log($"Death {ack.Id} committed. Results may now be shown.", this);
+                    PutTheVaccineBackOnItsFeet(ack);
+                }
                 else
                     Debug.LogError($"Death {ack.Id} failed to commit ({ack.FailureReason}). " +
                                    "No result released; the same death may be retried.", this);
@@ -232,6 +243,39 @@ namespace NeonVoid.Progression
                 Debug.Log($"Death ledger cleared: {settled} was committed. The next mission may begin.", this);
 
             return verdict;
+        }
+
+        /// <summary>
+        /// [확정] docs/04 section 2: 1~3번째 사망은 잔여 복제를 차감하고 허브에서 재시도. The
+        /// retry is the vaccine standing up again, and this is the only place it may happen -
+        /// after the write that spent the clone, which is what CLAUDE.md's
+        /// 저장 커밋 승인 후 UI 및 게임 상태 확정 asks for.
+        /// <para>
+        /// A vaccine the save says did not survive stays down. Whether this death was the
+        /// fourth is in permanent state and nowhere else, so the answer is carried on the
+        /// acknowledgement rather than guessed from anything in the scene.
+        /// </para>
+        /// </summary>
+        private void PutTheVaccineBackOnItsFeet(in DeathCommitAck ack)
+        {
+            if (!ack.VaccineSurvived)
+            {
+                Debug.Log(
+                    $"{ack.Id} committed and permanent state says the vaccine did not survive it. " +
+                    "It stays down: [확정] docs/04 section 2, 4번째 사망은 영구 파기.", this);
+                return;
+            }
+
+            if (playerActor == null)
+            {
+                Debug.LogWarning(
+                    $"{name}: {ack.Id} committed and the vaccine survived, but there is no actor to " +
+                    "revive, so the next mission would begin with a corpse.", this);
+                return;
+            }
+
+            if (playerActor.Revive())
+                Debug.Log($"Vaccine revived after {ack.Id}. 허브에서 재시도.", this);
         }
 
         /// <summary>Re-sends a failed commit, keeping the original death id.</summary>

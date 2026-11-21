@@ -566,13 +566,11 @@ namespace NeonVoid.Tests.PlayModeTests
         // --- 세션의 두 번째 사망 ---------------------------------------------------------
 
         /// <summary>
-        /// Puts the player back on their feet after a death.
+        /// Puts the player back on their feet by hand.
         /// <para>
-        /// Nothing in the game does this yet: [확정] docs/04 section 2 says 1~3번째 사망은 잔여
-        /// 복제를 차감하고 허브에서 재시도, and the retry currently begins with the vaccine still
-        /// at zero health. That gap is its own piece of work - the revive belongs after the
-        /// commit that spends the clone, and the ack does not yet say whether the vaccine
-        /// survived it. Here, so that this test is about the ledger and not about that.
+        /// Only for the test where nothing can commit: the game revives the vaccine after the
+        /// write that spends the clone, so a death that never commits leaves it down - which is
+        /// correct, and is the state that test is about.
         /// </para>
         /// </summary>
         private void PutThePlayerBackOnTheirFeet()
@@ -621,8 +619,47 @@ namespace NeonVoid.Tests.PlayModeTests
                 Assert.AreEqual(
                     mission, _store.Snapshot.vaccine.deathCount, $"death {mission} was not recorded");
 
-                PutThePlayerBackOnTheirFeet();
+                // [확정] docs/04 section 2: 허브에서 재시도. The retry is the vaccine standing up
+                // again, and it happens on the commit that spent the clone - not on the return
+                // to the hub, which has not been paid for yet.
+                Assert.IsTrue(
+                    _arena.Player.IsAlive,
+                    $"after death {mission} the vaccine was not revived, so the retry begins with a corpse");
+                Assert.AreEqual(
+                    _arena.Player.Health.Max, _arena.Player.Health.Current,
+                    $"after death {mission} the vaccine stood up on partial health");
             }
+        }
+
+        [UnityTest]
+        public IEnumerator TheFourthDeathLeavesTheVaccineDown()
+        {
+            // [확정] docs/04 section 2: 4번째 사망은 영구 파기. Whether this death was the fourth
+            // is in permanent state and nowhere else, so the revive is decided by the
+            // acknowledgement rather than by anything the scene can see.
+            yield return Hub();
+
+            int deaths = 0;
+            while (_store.Snapshot.vaccine.alive)
+            {
+                ++deaths;
+                Assert.IsTrue(
+                    _hub.TryUseTerminal(HubTerminalKind.Mission), $"mission {deaths} would not begin");
+                yield return _arena.Tick(1);
+                yield return EnterArea(HardwareId.Cpu);
+
+                PrototypeArena.Kill(_arena.Player);
+                yield return _arena.Tick(4);
+
+                Assert.Less(deaths, 10, "the vaccine never ran out of clones");
+            }
+
+            Assert.AreEqual(
+                VaccineSaveState.DesignStartingCopies + 1, deaths,
+                "the vaccine was destroyed on a different death than the fourth");
+            Assert.AreEqual(0, _store.Snapshot.vaccine.copiesRemaining);
+            Assert.IsFalse(
+                _arena.Player.IsAlive, "a destroyed vaccine was put back on its feet");
         }
 
         [UnityTest]

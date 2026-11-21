@@ -114,7 +114,7 @@ namespace NeonVoid.Tests
 
             Assert.AreEqual(
                 DeathAckVerdict.RejectedNothingPending,
-                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1))));
+                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true)));
             Assert.IsFalse(ledger.MayReleaseResults);
         }
 
@@ -126,7 +126,7 @@ namespace NeonVoid.Tests
 
             Assert.AreEqual(
                 DeathAckVerdict.RejectedWrongDeath,
-                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, SecondActor, 1))));
+                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, SecondActor, 1), vaccineSurvived: true)));
 
             Assert.AreEqual(RunDeathPhase.AwaitingCommit, ledger.Phase);
             Assert.IsFalse(ledger.MayReleaseResults,
@@ -140,7 +140,7 @@ namespace NeonVoid.Tests
             ledger.TryRegisterDeath(FirstDeath());
 
             Assert.AreEqual(DeathAckVerdict.Applied,
-                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1))));
+                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true)));
 
             Assert.AreEqual(RunDeathPhase.Committed, ledger.Phase);
             Assert.IsTrue(ledger.MayReleaseResults);
@@ -165,10 +165,10 @@ namespace NeonVoid.Tests
         {
             var ledger = new RunDeathLedger();
             ledger.TryRegisterDeath(FirstDeath());
-            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1)));
+            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true));
 
             Assert.AreEqual(DeathAckVerdict.DuplicateIgnored,
-                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1))));
+                ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true)));
             Assert.AreEqual(RunDeathPhase.Committed, ledger.Phase);
         }
 
@@ -179,7 +179,7 @@ namespace NeonVoid.Tests
             // Taking that answer would un-commit a write that happened.
             var ledger = new RunDeathLedger();
             ledger.TryRegisterDeath(FirstDeath());
-            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1)));
+            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true));
 
             ledger.Acknowledge(DeathCommitAck.Failure(DeathId.For(Run, PlayerActor, 1), "late timeout"));
 
@@ -193,7 +193,7 @@ namespace NeonVoid.Tests
         {
             var ledger = new RunDeathLedger();
             ledger.TryRegisterDeath(FirstDeath());
-            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1)));
+            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true));
 
             Assert.AreEqual(DeathRegistrationVerdict.DuplicateIgnored, ledger.TryRegisterDeath(FirstDeath()));
             Assert.AreEqual(RunDeathPhase.Committed, ledger.Phase);
@@ -226,7 +226,7 @@ namespace NeonVoid.Tests
             ledger.TryRegisterDeath(FirstDeath());
             Assert.IsFalse(ledger.TryBeginRetry(out _), "Retried while the first attempt was still open.");
 
-            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1)));
+            ledger.Acknowledge(DeathCommitAck.Success(DeathId.For(Run, PlayerActor, 1), vaccineSurvived: true));
             Assert.IsFalse(ledger.TryBeginRetry(out _), "Retried a death that was already committed.");
         }
 
@@ -238,7 +238,7 @@ namespace NeonVoid.Tests
             ledger.Acknowledge(DeathCommitAck.Failure(DeathId.For(Run, PlayerActor, 1), "io error"));
             ledger.TryBeginRetry(out DeathReport retry);
 
-            Assert.AreEqual(DeathAckVerdict.Applied, ledger.Acknowledge(DeathCommitAck.Success(retry.Id)));
+            Assert.AreEqual(DeathAckVerdict.Applied, ledger.Acknowledge(DeathCommitAck.Success(retry.Id, vaccineSurvived: true)));
             Assert.IsTrue(ledger.MayReleaseResults);
             Assert.IsEmpty(ledger.LastFailureReason);
         }
@@ -277,7 +277,7 @@ namespace NeonVoid.Tests
             var ledger = new RunDeathLedger();
             DeathReport first = FirstDeath();
             Assert.AreEqual(DeathRegistrationVerdict.Accepted, ledger.TryRegisterDeath(first));
-            Assert.AreEqual(DeathAckVerdict.Applied, ledger.Acknowledge(DeathCommitAck.Success(first.Id)));
+            Assert.AreEqual(DeathAckVerdict.Applied, ledger.Acknowledge(DeathCommitAck.Success(first.Id, vaccineSurvived: true)));
 
             Assert.AreEqual(RunResetVerdict.Reset, ledger.TryStartNewRun());
             Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase);
@@ -330,11 +330,11 @@ namespace NeonVoid.Tests
             var ledger = new RunDeathLedger();
             DeathReport first = FirstDeath();
             ledger.TryRegisterDeath(first);
-            ledger.Acknowledge(DeathCommitAck.Success(first.Id));
+            ledger.Acknowledge(DeathCommitAck.Success(first.Id, vaccineSurvived: true));
             ledger.TryStartNewRun();
 
             Assert.AreEqual(
-                DeathAckVerdict.RejectedNothingPending, ledger.Acknowledge(DeathCommitAck.Success(first.Id)));
+                DeathAckVerdict.RejectedNothingPending, ledger.Acknowledge(DeathCommitAck.Success(first.Id, vaccineSurvived: true)));
             Assert.AreEqual(RunDeathPhase.Alive, ledger.Phase, "a stale ack moved the new run's phase");
         }
 
@@ -344,7 +344,7 @@ namespace NeonVoid.Tests
             var ledger = new RunDeathLedger();
             DeathReport first = FirstDeath();
             ledger.TryRegisterDeath(first);
-            ledger.Acknowledge(DeathCommitAck.Success(first.Id));
+            ledger.Acknowledge(DeathCommitAck.Success(first.Id, vaccineSurvived: true));
 
             Assert.AreEqual(RunResetVerdict.Reset, ledger.TryStartNewRun());
             Assert.AreEqual(RunResetVerdict.AlreadyClean, ledger.TryStartNewRun());

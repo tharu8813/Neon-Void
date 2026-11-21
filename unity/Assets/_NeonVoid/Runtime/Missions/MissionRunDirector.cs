@@ -69,15 +69,15 @@ namespace NeonVoid.Missions
         public RunIdentity Identity => State.Identity;
 
         /// <summary>
-        /// The session's death ledger, looked up when it is first needed rather than cached in
-        /// <see cref="Awake"/>: this director runs at -200 and a scene is free to create the
-        /// death director afterwards, so an Awake lookup would cache a nothing and never check
-        /// again.
+        /// Names the death ledger this director checks before beginning a mission.
+        /// <para>
+        /// Pushed in by <see cref="RunDeathDirector"/> as it enables, never searched for. This
+        /// director runs at -200 and begins the first mission in its own Awake, so a search
+        /// from there would run before the death director exists and would pick up whatever
+        /// else was in the scene - in a test run, the previous test's, with the previous test's
+        /// unsettled death in it.
+        /// </para>
         /// </summary>
-        private RunDeathDirector Deaths =>
-            deaths != null ? deaths : (deaths = FindFirstObjectByType<RunDeathDirector>());
-
-        /// <summary>Names the death ledger. The injection seam for a test.</summary>
         public void ConnectDeaths(RunDeathDirector director) => deaths = director;
 
         /// <summary>
@@ -128,8 +128,7 @@ namespace NeonVoid.Missions
             // be settled. [확정] CLAUDE.md asks that 사망 be confirmed by a save commit before
             // game state is, and a ledger still holding an unsettled death would refuse the next
             // mission's death outright - charging nothing for it.
-            RunDeathDirector ledger = Deaths;
-            if (ledger != null && ledger.TryStartNewRun() == RunResetVerdict.RefusedUnsettled)
+            if (deaths != null && deaths.TryStartNewRun() == RunResetVerdict.RefusedUnsettled)
                 return false;
 
             int ordinal = _missionsBegun + 1;

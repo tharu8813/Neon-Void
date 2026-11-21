@@ -166,6 +166,12 @@ namespace NeonVoid.Combat
         /// <summary>Raised once, after health reaches zero.</summary>
         public event Action<CombatActor> Died;
 
+        /// <summary>
+        /// Raised when a dead actor is put back on its feet. The body listens, to undo whatever
+        /// it did to look dead.
+        /// </summary>
+        public event Action<CombatActor> Revived;
+
         /// <summary>Raised for every landed hit, for HUD and VFX. Read-only information.</summary>
         public event Action<CombatActor, DamageOutcome> DamageTaken;
 
@@ -494,6 +500,38 @@ namespace NeonVoid.Combat
 
             _health = HealthPool.Full(_baseStats.MaxHealth);
             _statsDirty = true;
+        }
+
+        /// <summary>
+        /// Puts a dead actor back on its feet: full health, full mana, no statuses. Returns
+        /// false when it was not dead, and changes nothing.
+        /// <para>
+        /// Separate from <see cref="Configure"/>, which also replaces the stat block. A vaccine
+        /// returning to the hub keeps what it has permanently invested, so reviving through
+        /// Configure would quietly undo the growth terminal's work - and reviving an enemy
+        /// through it would hand it the wrong archetype.
+        /// </para>
+        /// <para>
+        /// <b>Whether a vaccine may be revived at all is not this type's call.</b> [확정]
+        /// docs/04 section 2 makes the fourth death 영구 파기, and whether a death was the
+        /// fourth is in permanent state. Combat does what it is told; the save decides.
+        /// </para>
+        /// </summary>
+        public bool Revive()
+        {
+            if (IsAlive)
+            {
+                Debug.LogWarning($"{name}: asked to revive while still alive; ignored.", this);
+                return false;
+            }
+
+            _health = HealthPool.Full(_baseStats.MaxHealth);
+            _mana = ManaPool.Starting();
+            _status.Clear();
+            _statsDirty = true;
+
+            Revived?.Invoke(this);
+            return true;
         }
 
         /// <summary>True when this actor may damage the other one.</summary>
