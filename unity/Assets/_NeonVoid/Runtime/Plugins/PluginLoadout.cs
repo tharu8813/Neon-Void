@@ -128,6 +128,22 @@ namespace NeonVoid.Plugins
             || card.Effect == PluginEffectKind.ChargedPassive;
 
         /// <summary>
+        /// Every carried card that fires when the carrier is hurt and low. The health check is
+        /// not here: the loadout cannot see the carrier.
+        /// </summary>
+        public void CollectTriggeredByOwnerLowHealth(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Trigger == PluginTriggerKind.OnOwnerLowHealth)
+                    into.Add(_carried[i]);
+            }
+        }
+
+        /// <summary>
         /// Every carried card whose passive waits on a gauge. The gauge itself is not here: the
         /// loadout has no clock and hears nothing about hits.
         /// </summary>

@@ -64,6 +64,17 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         OnKill = 7,
+
+        /// <summary>
+        /// The carrier is hurt and is at or below this card's health threshold. docs/03 R03
+        /// 위기 반발 is 플레이어 HP 30% 이하일 때.
+        /// <para>
+        /// Raised on taking damage rather than polled every tick, so the card fires on the hit
+        /// that put the carrier in danger. Polling would also fire it on the tick the threshold
+        /// was crossed by a max-health change, which is not 위기.
+        /// </para>
+        /// </summary>
+        OnOwnerLowHealth = 8,
     }
 
     /// <summary>What the plugin does once it has been allowed to fire.</summary>
@@ -150,6 +161,12 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         ChargedPassive = 10,
+
+        /// <summary>
+        /// Shoves every hostile around the carrier away from them. docs/03 R03 위기 반발 is
+        /// 주변 적 넉백, and deals no damage at all.
+        /// </summary>
+        KnockbackAroundOwner = 11,
     }
 
     /// <summary>
@@ -189,6 +206,14 @@ namespace NeonVoid.Plugins
 
         [Tooltip("Projectiles a FireProjectile effect fires. docs/03 G14 추적 응답 fires 1.")]
         public int ProjectilesFired;
+
+        [Tooltip(
+            "Health fraction at or below which an OnOwnerLowHealth card fires. docs/03 R03 " +
+            "위기 반발 is 30%. 0 for every other trigger.")]
+        public float OwnerHealthThresholdFraction;
+
+        [Tooltip("[초안] units a knockback shoves an enemy. 0 for every other effect.")]
+        public float KnockbackUnits;
 
         [Tooltip("Status applied by a marking effect, or None.")]
         public StatusEffectId AppliedStatus;
@@ -323,6 +348,42 @@ namespace NeonVoid.Plugins
             // effect id.
             if (ReachesProcQueue)
                 Rule.Validate();
+
+            if (Trigger == PluginTriggerKind.OnOwnerLowHealth)
+            {
+                if (OwnerHealthThresholdFraction <= 0f || OwnerHealthThresholdFraction > 1f)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a threshold of {OwnerHealthThresholdFraction} is not a health " +
+                        "fraction, so the card would fire never or always.");
+                }
+            }
+            else if (OwnerHealthThresholdFraction != 0f)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only an {nameof(PluginTriggerKind.OnOwnerLowHealth)} card has a " +
+                    "health threshold.");
+            }
+
+            if (Effect == PluginEffectKind.KnockbackAroundOwner)
+            {
+                if (float.IsNaN(KnockbackUnits) || KnockbackUnits <= 0f)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a knockback of {KnockbackUnits} units moves nobody.");
+                }
+
+                if (float.IsNaN(RadiusUnits) || RadiusUnits <= 0f)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: 주변 적 needs a reach, or the shove finds nobody to shove.");
+                }
+            }
+            else if (KnockbackUnits != 0f)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.KnockbackAroundOwner)} shoves anybody.");
+            }
 
             if (Effect == PluginEffectKind.FireProjectile)
             {

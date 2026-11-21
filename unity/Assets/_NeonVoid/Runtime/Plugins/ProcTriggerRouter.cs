@@ -203,6 +203,40 @@ namespace NeonVoid.Plugins
         /// The actor is both source and target: what these cards do, they do to the mover.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// 위기 반발: the carrier has been hurt and is at or below a card's threshold. The
+        /// caller has already checked the health, because the router cannot see it; what the
+        /// router adds is the internal cooldown and the chain rules, which is the whole reason
+        /// this does not simply fire from the damage handler.
+        /// </summary>
+        public void OnOwnerLowHealth(int actorId, long tick, float healthFraction, int runId = 0)
+        {
+            _triggered.Clear();
+            _loadout.CollectTriggeredByOwnerLowHealth(_triggered);
+
+            for (int i = 0; i < _triggered.Count; ++i)
+            {
+                PluginDefinition plugin = _triggered[i];
+                if (healthFraction > plugin.OwnerHealthThresholdFraction)
+                    continue;
+
+                _queue.TryEnqueue(
+                    plugin.EffectId,
+                    actorId,
+                    actorId,
+                    _activePath,
+                    tick,
+                    runId,
+                    attackId: 0,
+                    plugin.Damage.Type,
+                    plugin.Damage.IsArea,
+                    plugin.Damage.IsPeriodic,
+                    isCritical: false,
+                    randomStreamId: 0,
+                    onHitEffectScale: _activeScale);
+            }
+        }
+
         public void OnMovementAction(int actorId, long tick, int runId = 0)
         {
             _triggered.Clear();

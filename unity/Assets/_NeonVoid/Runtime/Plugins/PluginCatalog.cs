@@ -234,6 +234,55 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 R03 위기 반발: 플레이어 HP 30% 이하.</summary>
+        public const float StatedCrisisThresholdFraction = 0.30f;
+
+        /// <summary>[초안] docs/03 R03 states no distance, only 넉백.</summary>
+        public const float DraftCrisisKnockbackUnits = 4f;
+
+        /// <summary>[초안] docs/03 R03 leaves 내부 CD 미확정. 600 is ten seconds.</summary>
+        public const int DraftCrisisCooldownTicks = 600;
+
+        /// <summary>[초안] how far 주변 적 reaches.</summary>
+        public const float DraftCrisisRadiusUnits = 5f;
+
+        /// <summary>
+        /// R03 위기 반발 - 플레이어 HP 30% 이하일 때 주변 적 넉백.
+        /// <para>
+        /// The 30% is the document's own number. 내부 CD is [미확정] and a card with none would
+        /// fire on every hit taken while low, which is a permanent no-contact field exactly
+        /// when the player is cornered - so there is a draft cooldown rather than no cooldown,
+        /// and it is one line to change.
+        /// </para>
+        /// <para>
+        /// <b>보스 저항 [초안]: a boss is not moved.</b> docs/03 leaves the policy open and
+        /// docs/01 section 3 is explicit that 강한 CC는 강인함·저항/회피창 검증 없이는 넣지
+        /// 않는다. Shoving a boss out of its own telegraphed pattern is the strongest version
+        /// of that, and none of the verification that rule asks for has happened - so the
+        /// cautious reading is the one that can be loosened later, rather than a boss fight
+        /// that has already been built around being pushable.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition CrisisRepulse() => new PluginDefinition
+        {
+            ProposalId = "R03",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.OnOwnerLowHealth,
+            Effect = PluginEffectKind.KnockbackAroundOwner,
+            Rule = new ProcEffectRule
+            {
+                EffectId = 3,
+                CanRetriggerItself = false,
+                MaxOccurrencesPerChain = 1,
+                InternalCooldownTicks = DraftCrisisCooldownTicks,
+            },
+            Damage = default,                 // 넉백 only; the card deals none
+            RadiusUnits = DraftCrisisRadiusUnits,
+            OwnerHealthThresholdFraction = StatedCrisisThresholdFraction,
+            KnockbackUnits = DraftCrisisKnockbackUnits,
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>[초안] docs/03 L03 피버타임 leaves 충전 단위 미확정; one point per landed hit.</summary>
         public const float DraftFeverChargePerHit = 1f;
 

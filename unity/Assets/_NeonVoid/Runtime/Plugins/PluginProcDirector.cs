@@ -475,6 +475,8 @@ namespace NeonVoid.Plugins
 
         private void OnOwnerDamaged(CombatActor actor, DamageOutcome outcome)
         {
+            OfferLowHealthCards();
+
             // Any damage at all, including a hit that was fully absorbed: docs/03 says
             // 피해를 받으면 비활성화, and a card that stayed on through a blocked hit would be a
             // different card. The resolver only raises this when a hit actually resolved.
@@ -596,6 +598,76 @@ namespace NeonVoid.Plugins
         /// which is the shape of failure this project keeps finding.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// 위기 반발: offers every low-health card, which the router then filters by its own
+        /// threshold and bounds by its internal cooldown.
+        /// </summary>
+        private void OfferLowHealthCards()
+        {
+            if (owner == null || _router == null || owner.Health.Max <= 0f)
+                return;
+
+            float fraction = owner.Health.Current / owner.Health.Max;
+            _router.OnOwnerLowHealth(
+                owner.ActorId, _runner != null ? _runner.TickIndex : 0L, fraction);
+        }
+
+        /// <summary>
+        /// R03 위기 반발: shoves every hostile near the carrier away from them.
+        /// <para>
+        /// <b>보스 저항 [초안]: a boss is not moved.</b> docs/03 leaves the policy open and
+        /// docs/01 section 3 says 강한 CC는 강인함·저항/회피창 검증 없이는 넣지 않는다 -
+        /// shoving a boss out of a telegraphed pattern is the strongest form of that, and none
+        /// of the verification that rule asks for has happened. The cautious reading can be
+        /// loosened later; a boss fight already built around being pushable cannot.
+        /// </para>
+        /// <para>
+        /// Applied through each enemy's own CharacterController at Effects + 1, which is after
+        /// the agents have moved at Actors + 1 - so the shove is the last word on where an
+        /// enemy stands this tick rather than something their own movement overwrites. The
+        /// order the physics query returns them in does not matter, because each enemy is
+        /// pushed away from the carrier independently of the others.
+        /// </para>
+        /// </summary>
+        private void ShoveEverybodyBack(in PluginDefinition plugin)
+        {
+            if (owner == null)
+                return;
+
+            Vector3 centre = owner.transform.position;
+            Collider[] near = Physics.OverlapSphere(
+                centre, plugin.RadiusUnits, ~0, QueryTriggerInteraction.Ignore);
+
+            int shoved = 0;
+            for (int i = 0; i < near.Length; ++i)
+            {
+                var actor = near[i].GetComponentInParent<CombatActor>();
+                if (actor == null || !actor.IsAlive || !owner.IsHostileTo(actor))
+                    continue;
+
+                if (actor.GetComponentInParent<Combat.AI.AreaBossBrain>() != null)
+                    continue;
+
+                Vector3 away = actor.transform.position - centre;
+                away.y = 0f;
+                if (away.sqrMagnitude < 1e-6f)
+                    continue;
+
+                Vector3 step = away.normalized * plugin.KnockbackUnits;
+
+                var character = actor.GetComponent<CharacterController>();
+                if (character != null && character.enabled)
+                    character.Move(step);
+                else
+                    actor.transform.position += step;
+
+                ++shoved;
+            }
+
+            if (shoved > 0)
+                Debug.Log($"{plugin.ProposalId} 위기 반발: {shoved} enemy/enemies shoved back.", this);
+        }
+
         /// <summary>
         /// G14 추적 응답: the basic attack goes off because a skill landed.
         /// <para>
@@ -853,6 +925,9 @@ namespace NeonVoid.Plugins
                     break;
                 case PluginEffectKind.FireProjectile:
                     FireRespondingShot(plugin);
+                    break;
+                case PluginEffectKind.KnockbackAroundOwner:
+                    ShoveEverybodyBack(plugin);
                     break;
             }
         }
