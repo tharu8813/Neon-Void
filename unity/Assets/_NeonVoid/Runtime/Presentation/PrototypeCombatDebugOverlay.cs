@@ -138,7 +138,9 @@ namespace NeonVoid.Presentation
 
         private void DrawPanel()
         {
-            var box = new Rect(12f, 12f, 360f, 332f);
+            // Tall enough for the area line plus its 2~3 objectives, which only appear while the
+            // player is actually inside a hardware area.
+            var box = new Rect(12f, 12f, 400f, 416f);
             GUI.Box(box, GUIContent.none);
             GUILayout.BeginArea(new Rect(box.x + 10f, box.y + 8f, box.width - 20f, box.height - 16f));
 
@@ -162,7 +164,10 @@ namespace NeonVoid.Presentation
             if (hub != null)
                 GUILayout.Label(hub.StatusLine(), _panelLabel);
             if (motherboard != null)
+            {
                 GUILayout.Label(motherboard.StatusLine(), _panelLabel);
+                DrawStandingArea();
+            }
 
             if (player != null)
             {
@@ -190,6 +195,59 @@ namespace NeonVoid.Presentation
                 DrawProcCounters();
 
             GUILayout.EndArea();
+        }
+
+        /// <summary>
+        /// The area the player is actually in: its phase, and what each 소목표 is asking for.
+        /// <para>
+        /// The objectives are listed by name and state rather than counted, because they are no
+        /// longer all the same thing - AreaObjectives gives each hardware its own shapes, and a
+        /// player cannot tell a station they have to stand on from a device they have to shoot
+        /// by looking at a Prototype primitive. Until there is real art and a real HUD, this is
+        /// the only thing in the build that says which is which.
+        /// </para>
+        /// </summary>
+        private void DrawStandingArea()
+        {
+            NeonVoid.Missions.AreaBuildResult area = motherboard.CurrentArea;
+            if (area == null || area.Runtime == null)
+                return;
+
+            GUILayout.Label(area.Runtime.StatusLine(), _panelLabel);
+
+            NeonVoid.Missions.AreaObjectiveDevice[] objectives = area.Devices;
+            for (int i = 0; i < objectives.Length; ++i)
+            {
+                NeonVoid.Missions.AreaObjectiveDevice objective = objectives[i];
+                if (objective == null)
+                    continue;
+
+                GUILayout.Label($"  {ObjectiveLine(objective)}", _panelLabel);
+            }
+        }
+
+        /// <summary>One objective: what it is, where it stands, and how far through it is.</summary>
+        private static string ObjectiveLine(NeonVoid.Missions.AreaObjectiveDevice objective)
+        {
+            if (objective.IsCompleted)
+                return $"{objective.ObjectiveName} · 완료";
+
+            switch (objective.Kind)
+            {
+                case NeonVoid.Missions.AreaObjectiveKind.Destroy:
+                    float health = objective.Device != null ? objective.Device.Health.Current : 0f;
+                    return $"{objective.ObjectiveName} · 파괴 HP {health:0}";
+
+                case NeonVoid.Missions.AreaObjectiveKind.Hold:
+                    return $"{objective.ObjectiveName} · 점거 {objective.Dwell.Progress:P0}";
+
+                case NeonVoid.Missions.AreaObjectiveKind.Sequence:
+                    string lit = objective.IsLit ? "점화" : $"{objective.Dwell.Progress:P0}";
+                    return $"{objective.ObjectiveName} · 순서 {objective.ChainIndex + 1} · {lit}";
+
+                default:
+                    return objective.ToString();
+            }
         }
 
         /// <summary>
