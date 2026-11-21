@@ -1,0 +1,223 @@
+.hud {
+    flex-grow: 1;
+    justify-content: space-between;
+    padding-top: 18px;
+    padding-right: 24px;
+    padding-bottom: 18px;
+    padding-left: 24px;
+}
+
+.hud__top {
+    flex-direction: row;
+    justify-content: center;
+}
+
+.hud__bottom {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.hidden {
+    display: none;
+}
+
+/* --- boss ------------------------------------------------------------------ */
+
+.boss {
+    width: 46%;
+    align-items: center;
+}
+
+.boss__name {
+    font-size: 15px;
+    color: rgb(255, 120, 160);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+    -unity-font-style: bold;
+}
+
+/* --- vitals ---------------------------------------------------------------- */
+
+.vitals {
+    width: 280px;
+}
+
+.vitals__shield {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.vitals__shield-label {
+    font-size: 13px;
+    color: rgb(120, 230, 255);
+    letter-spacing: 1px;
+    margin-right: 6px;
+}
+
+.vitals__shield-value {
+    font-size: 14px;
+    color: rgb(190, 245, 255);
+    -unity-font-style: bold;
+}
+
+/* --- skills ---------------------------------------------------------------- */
+
+.skills {
+    flex-direction: row;
+    align-items: flex-end;
+}
+
+.skill {
+    width: 62px;
+    margin-left: 10px;
+    align-items: center;
+}
+
+.skill__key {
+    font-size: 12px;
+    color: rgb(150, 160, 190);
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+}
+
+.skill--ready .skill__key {
+    color: rgb(130, 255, 215);
+}
+
+.skill--empty {
+    opacity: 0.35;
+}
+
+/* --- area ------------------------------------------------------------------ */
+
+.area {
+    width: 260px;
+    align-items: flex-end;
+}
+
+.area__name {
+    font-size: 15px;
+    color: rgb(120, 230, 255);
+    letter-spacing: 3px;
+    -unity-font-style: bold;
+}
+
+.area__objectives {
+    font-size: 20px;
+    color: rgb(235, 245, 255);
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.area__gauge {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.area__gauge-label {
+    font-size: 13px;
+    color: rgb(150, 160, 190);
+    letter-spacing: 1px;
+}
+
+.area__gauge--armed .area__gauge-label {
+    color: rgb(130, 255, 215);
+}
+
+/* --- bars ------------------------------------------------------------------ */
+/*
+ * ProgressBar is several elements under one root, so the neon look has to reach its
+ * children as well as the element written in the UXML.
+ */
+
+.bar {
+    height: 18px;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.bar .unity-progress-bar__container {
+    height: 18px;
+    min-height: 18px;
+}
+
+.bar .unity-progress-bar__background {
+    background-color: rgba(10, 16, 28, 0.85);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(120, 230, 255, 0.4);
+    border-right-color: rgba(120, 230, 255, 0.4);
+    border-top-color: rgba(120, 230, 255, 0.4);
+    border-bottom-color: rgba(120, 230, 255, 0.4);
+}
+
+.bar .unity-progress-bar__progress {
+    background-color: rgb(120, 230, 255);
+    margin-top: 2px;
+    margin-right: 2px;
+    margin-bottom: 2px;
+    margin-left: 2px;
+}
+
+.bar .unity-progress-bar__title {
+    font-size: 13px;
+    color: rgb(235, 245, 255);
+    -unity-font-style: bold;
+}
+
+.bar--health .unity-progress-bar__progress {
+    background-color: rgb(255, 92, 134);
+}
+
+.bar--mana .unity-progress-bar__progress {
+    background-color: rgb(126, 150, 255);
+}
+
+.bar--boss {
+    height: 22px;
+    width: 100%;
+}
+
+.bar--boss .unity-progress-bar__container {
+    height: 22px;
+    min-height: 22px;
+}
+
+.bar--boss .unity-progress-bar__progress {
+    background-color: rgb(255, 92, 134);
+}
+
+.bar--skill {
+    height: 8px;
+    width: 100%;
+}
+
+.bar--skill .unity-progress-bar__container {
+    height: 8px;
+    min-height: 8px;
+}
+
+.bar--skill .unity-progress-bar__progress {
+    background-color: rgb(90, 110, 150);
+}
+
+.skill--ready .bar--skill .unity-progress-bar__progress {
+    background-color: rgb(130, 255, 215);
+}
+
+.bar--gauge {
+    height: 10px;
+}
+
+.bar--gauge .unity-progress-bar__container {
+    height: 10px;
+    min-height: 10px;
+}
+
+.bar--gauge .unity-progress-bar__progress {
+    background-color: rgb(190, 140, 255);
+}

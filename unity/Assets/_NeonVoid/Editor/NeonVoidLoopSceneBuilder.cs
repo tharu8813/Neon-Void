@@ -7,10 +7,12 @@ using NeonVoid.Player;
 using NeonVoid.Presentation;
 using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
+using NeonVoid.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 using static NeonVoid.EditorTools.NeonVoidSceneWiring;
 
 namespace NeonVoid.EditorTools
@@ -169,6 +171,10 @@ namespace NeonVoid.EditorTools
             PrototypeGrowthPanel panel = deathObject.AddComponent<PrototypeGrowthPanel>();
             AssignSerialized(panel, "hub", hub);
 
+            // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
+            // to be chosen 실제 검증 후 - which needs a HUD to verify.
+            BuildHud(vaccine.Actor, motherboard);
+
             CreateDirectionalLight();
 
             bool saved = EditorSceneManager.SaveScene(scene, ScenePath);
@@ -224,6 +230,38 @@ namespace NeonVoid.EditorTools
 
             cameraObject.AddComponent<AudioListener>();
             return camera;
+        }
+    
+        /// <summary>
+        /// The UI Toolkit HUD: a UIDocument with the project's PanelSettings and the
+        /// controller that fills it from the simulation.
+        /// </summary>
+        private static void BuildHud(NeonVoid.Combat.CombatActor player, MotherboardDirector board)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
+                "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
+            var settings = AssetDatabase.LoadAssetAtPath<PanelSettings>(
+                "Assets/_NeonVoid/UI/NeonVoidPanelSettings.asset");
+
+            if (asset == null || settings == null)
+            {
+                Debug.LogError(
+                    "Neon Void HUD assets are missing, so the loop scene has no HUD. " +
+                    "Expected NeonVoidHud.uxml and NeonVoidPanelSettings.asset.");
+                return;
+            }
+
+            var host = new GameObject("HUD");
+            host.SetActive(false);
+
+            UIDocument document = host.AddComponent<UIDocument>();
+            document.panelSettings = settings;
+            document.visualTreeAsset = asset;
+
+            HudController controller = host.AddComponent<HudController>();
+            controller.Configure(player, board);
+
+            host.SetActive(true);
         }
     }
 }

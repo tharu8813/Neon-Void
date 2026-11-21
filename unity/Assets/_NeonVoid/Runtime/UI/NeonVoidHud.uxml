@@ -1,0 +1,53 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="NeonVoidHud.uss" />
+  <ui:VisualElement name="hud" class="hud" picking-mode="Ignore">
+
+    <ui:VisualElement name="hudTop" class="hud__top" picking-mode="Ignore">
+      <ui:VisualElement name="bossPanel" class="boss hidden" picking-mode="Ignore">
+        <ui:Label name="bossName" class="boss__name" text="BOSS" />
+        <ui:ProgressBar name="bossHealthBar" class="bar bar--boss" low-value="0" high-value="1" value="1" />
+      </ui:VisualElement>
+    </ui:VisualElement>
+
+    <ui:VisualElement name="hudBottom" class="hud__bottom" picking-mode="Ignore">
+
+      <ui:VisualElement name="vitalsPanel" class="vitals" picking-mode="Ignore">
+        <ui:VisualElement name="shieldRow" class="vitals__shield hidden" picking-mode="Ignore">
+          <ui:Label name="shieldLabel" class="vitals__shield-label" text="보호막" />
+          <ui:Label name="shieldValue" class="vitals__shield-value" text="0" />
+        </ui:VisualElement>
+        <ui:ProgressBar name="healthBar" class="bar bar--health" low-value="0" high-value="1" value="1" />
+        <ui:ProgressBar name="manaBar" class="bar bar--mana" low-value="0" high-value="1" value="1" />
+      </ui:VisualElement>
+
+      <ui:VisualElement name="skillsPanel" class="skills" picking-mode="Ignore">
+        <ui:VisualElement name="skillSlot0" class="skill" picking-mode="Ignore">
+          <ui:Label name="skillKey0" class="skill__key" text="Q" />
+          <ui:ProgressBar name="skillBar0" class="bar bar--skill" low-value="0" high-value="1" value="1" />
+        </ui:VisualElement>
+        <ui:VisualElement name="skillSlot1" class="skill" picking-mode="Ignore">
+          <ui:Label name="skillKey1" class="skill__key" text="E" />
+          <ui:ProgressBar name="skillBar1" class="bar bar--skill" low-value="0" high-value="1" value="1" />
+        </ui:VisualElement>
+        <ui:VisualElement name="skillSlot2" class="skill" picking-mode="Ignore">
+          <ui:Label name="skillKey2" class="skill__key" text="R" />
+          <ui:ProgressBar name="skillBar2" class="bar bar--skill" low-value="0" high-value="1" value="1" />
+        </ui:VisualElement>
+      </ui:VisualElement>
+
+      <ui:VisualElement name="areaPanel" class="area hidden" picking-mode="Ignore">
+        <ui:Label name="areaName" class="area__name" text="CPU" />
+        <ui:Label name="areaObjectives" class="area__objectives" text="0 / 3" />
+        <ui:VisualElement name="purificationGauge" class="area__gauge hidden" picking-mode="Ignore">
+          <ui:Label name="purificationLabel" class="area__gauge-label" text="정화" />
+          <ui:ProgressBar name="purificationBar" class="bar bar--gauge" low-value="0" high-value="1" value="0" />
+        </ui:VisualElement>
+        <ui:VisualElement name="extractionGauge" class="area__gauge hidden" picking-mode="Ignore">
+          <ui:Label name="extractionLabel" class="area__gauge-label" text="철수" />
+          <ui:ProgressBar name="extractionBar" class="bar bar--gauge" low-value="0" high-value="1" value="0" />
+        </ui:VisualElement>
+      </ui:VisualElement>
+
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

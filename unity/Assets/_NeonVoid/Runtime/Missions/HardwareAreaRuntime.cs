@@ -122,6 +122,9 @@ namespace NeonVoid.Missions
         /// </summary>
         public AreaObjectiveChain ObjectiveChain => _chain;
 
+        /// <summary>This area's boss gate, or null. Read by the HUD, which draws its bar.</summary>
+        public AreaBossGate BossGate => bossGate;
+
         /// <summary>The 정화 dwell, for a progress ring.</summary>
         public DwellGate PurificationDwell => _console;
 
