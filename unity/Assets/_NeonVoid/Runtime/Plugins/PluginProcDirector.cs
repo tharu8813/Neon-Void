@@ -355,6 +355,14 @@ namespace NeonVoid.Plugins
             _extraShotBuffer.Clear();
             _router.Loadout.CollectExtraShots(_extraShotBuffer);
             _attacker.SetExtraShots(_extraShotBuffer);
+
+            // G06 스로틀 증폭 and G03 확장 탄두 change the shape of the basic attack rather than
+            // a stat, so they go the same way the extra shots do: pushed to the attacker, never
+            // read from Plugins by Combat.
+            _attacker.SetPassiveShotShape(
+                _router.Loadout.PassiveAttackSpeedFraction(),
+                _router.Loadout.PassiveProjectileSpeedFraction(),
+                _router.Loadout.PassiveProjectileSizeFraction());
         }
 
         /// <summary>

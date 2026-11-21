@@ -22,6 +22,15 @@ namespace NeonVoid.Plugins
         [Tooltip("[초안] fraction added to base movement speed, e.g. 0.12 for +12%.")]
         public float MoveSpeedFraction;
 
+        [Tooltip("[초안] fraction added to the base attack rate, e.g. 0.15 for +15%. docs/03 G06.")]
+        public float AttackSpeedFraction;
+
+        [Tooltip("[초안] fraction added to base projectile speed. docs/03 G06.")]
+        public float ProjectileSpeedFraction;
+
+        [Tooltip("[초안] fraction added to the shot's collision radius. docs/03 G03 확장 탄두.")]
+        public float ProjectileSizeFraction;
+
         [Tooltip("How many distinct stats to roll. docs/03 G01 랜덤 패치 rolls 3.")]
         public int RandomStatCount;
 
@@ -32,6 +41,9 @@ namespace NeonVoid.Plugins
         public bool IsEmpty =>
             (StatModifiers == null || StatModifiers.Length == 0)
             && Mathf.Approximately(MoveSpeedFraction, 0f)
+            && Mathf.Approximately(AttackSpeedFraction, 0f)
+            && Mathf.Approximately(ProjectileSpeedFraction, 0f)
+            && Mathf.Approximately(ProjectileSizeFraction, 0f)
             && RandomStatCount <= 0;
 
         public static PluginPassive None => default;
@@ -53,11 +65,28 @@ namespace NeonVoid.Plugins
             ModifiedStat.CritChancePercent,
         };
 
+        private static void RequireFinite(float value, string name)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                throw new InvalidOperationException($"{name} must be finite.");
+        }
+
         public void Validate()
         {
             if (!Mathf.Approximately(MoveSpeedFraction, 0f)
                 && (float.IsNaN(MoveSpeedFraction) || float.IsInfinity(MoveSpeedFraction)))
                 throw new InvalidOperationException($"{nameof(MoveSpeedFraction)} must be finite.");
+
+            RequireFinite(AttackSpeedFraction, nameof(AttackSpeedFraction));
+            RequireFinite(ProjectileSpeedFraction, nameof(ProjectileSpeedFraction));
+            RequireFinite(ProjectileSizeFraction, nameof(ProjectileSizeFraction));
+
+            // A shot of no size passes through everything, and one of negative size is not a
+            // shot. The card is 확장 탄두 - it only ever grows.
+            if (ProjectileSizeFraction < 0f)
+                throw new InvalidOperationException(
+                    $"{nameof(ProjectileSizeFraction)} of {ProjectileSizeFraction} would shrink the shot, " +
+                    "and a shot that shrinks to nothing hits nothing.");
 
             if (RandomStatCount < 0)
                 throw new InvalidOperationException($"{nameof(RandomStatCount)} must not be negative.");

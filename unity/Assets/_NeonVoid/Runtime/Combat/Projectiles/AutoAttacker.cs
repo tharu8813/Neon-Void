@@ -54,6 +54,15 @@ namespace NeonVoid.Combat.Projectiles
         private int _ticksUntilNextShot;
         private StatCaps _caps = StatCaps.Draft();
 
+        /// <summary>
+        /// What the carried plugins add to the shape of the basic attack, pushed in by whatever
+        /// grants them - the same direction as <see cref="SetExtraShots"/>, so Combat still
+        /// knows nothing about Plugins.
+        /// </summary>
+        private float _passiveAttackSpeedFraction;
+        private float _passiveProjectileSpeedFraction;
+        private float _passiveProjectileSizeFraction;
+
         /// <summary>Extra projectiles per volley, pushed in by whatever grants them.</summary>
         private readonly List<ExtraShotSpec> _extraShots = new List<ExtraShotSpec>();
 
@@ -81,12 +90,54 @@ namespace NeonVoid.Combat.Projectiles
         /// </summary>
         public int IntervalTicks => AttackRateMath.IntervalTicksFor(
             attacksPerSecond,
-            _actor != null ? StatusStatContribution.AttackSpeedMultiplier(_actor.Status) : 1f,
+            StatusAttackSpeedMultiplier + _passiveAttackSpeedFraction,
             _caps.MaxAttacksPerSecond);
 
-        /// <summary>Projectile speed after 탄환속도 증가.</summary>
-        public float EffectiveProjectileSpeed => projectileSpeed
-            * (_actor != null ? StatusStatContribution.ProjectileSpeedMultiplier(_actor.Status) : 1f);
+        /// <summary>
+        /// Projectile speed after 탄환속도 증가 and G06 스로틀 증폭.
+        /// <para>
+        /// The passive fraction is <b>added to</b> the status multiplier rather than compounded
+        /// with it, for the reason AttackRateMath gives for its own single multiplier: a
+        /// fraction is of the base, so the result does not depend on which contribution arrived
+        /// first.
+        /// </para>
+        /// </summary>
+        public float EffectiveProjectileSpeed =>
+            projectileSpeed * (StatusProjectileSpeedMultiplier + _passiveProjectileSpeedFraction);
+
+        /// <summary>
+        /// The collision radius this attacker's shots fly with, after G03 확장 탄두.
+        /// docs/03's 유효 충돌크기 - what the sweep tests with, not what the body looks like.
+        /// </summary>
+        public float EffectiveProjectileRadius =>
+            CombatProjectile.BaseRadiusUnits * (1f + Mathf.Max(0f, _passiveProjectileSizeFraction));
+
+        private float StatusAttackSpeedMultiplier =>
+            _actor != null ? StatusStatContribution.AttackSpeedMultiplier(_actor.Status) : 1f;
+
+        private float StatusProjectileSpeedMultiplier =>
+            _actor != null ? StatusStatContribution.ProjectileSpeedMultiplier(_actor.Status) : 1f;
+
+        /// <summary>
+        /// Hands the attacker what the carried plugins do to the shape of its basic attack:
+        /// G06 스로틀 증폭's rate and projectile speed, G03 확장 탄두's size. All [초안].
+        /// <para>
+        /// The attack rate still goes through <see cref="AttackRateMath"/> and therefore still
+        /// meets the cap [확정] docs/02 section 3 asks for - which is the 공격속도 상한 검사
+        /// docs/03 lists against G06 by name. A card that could stack past it would end at an
+        /// interval of one tick, sixty attacks a second.
+        /// </para>
+        /// </summary>
+        public void SetPassiveShotShape(
+            float attackSpeedFraction, float projectileSpeedFraction, float projectileSizeFraction)
+        {
+            _passiveAttackSpeedFraction = Sane(attackSpeedFraction);
+            _passiveProjectileSpeedFraction = Sane(projectileSpeedFraction);
+            _passiveProjectileSizeFraction = Mathf.Max(0f, Sane(projectileSizeFraction));
+        }
+
+        private static float Sane(float fraction) =>
+            float.IsNaN(fraction) || float.IsInfinity(fraction) ? 0f : fraction;
 
         /// <summary>Distinct enemies one shot may damage, after 관통.</summary>
         public int EffectiveMaxTargets => maxTargetsPerShot
@@ -279,7 +330,7 @@ namespace NeonVoid.Combat.Projectiles
             orb.AddComponent<CombatProjectile>().Launch(
                 _actor, request, direction,
                 EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets,
-                onHitEffectScale);
+                onHitEffectScale, EffectiveProjectileRadius);
         }
     }
 }

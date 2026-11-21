@@ -255,7 +255,8 @@ namespace NeonVoid.Tests.PlayModeTests
         /// shot, 0.70 for a G13 4중 캐시 burst shot.
         /// </param>
         public CombatProjectile FireAt(
-            CombatActor target, float adRatio = 1f, int maxTargets = 1, float onHitEffectScale = 1f)
+            CombatActor target, float adRatio = 1f, int maxTargets = 1, float onHitEffectScale = 1f,
+            float radiusUnits = CombatProjectile.BaseRadiusUnits)
         {
             Vector3 direction = target.transform.position - PlayerObject.transform.position;
             direction.y = 0f;
@@ -272,7 +273,8 @@ namespace NeonVoid.Tests.PlayModeTests
 
             CombatProjectile projectile = orb.AddComponent<CombatProjectile>();
             projectile.Launch(
-                Player, request, direction.normalized, 15f, 180, maxTargets, onHitEffectScale);
+                Player, request, direction.normalized, 15f, 180, maxTargets, onHitEffectScale,
+                radiusUnits);
             return projectile;
         }
 

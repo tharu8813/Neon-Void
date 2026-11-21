@@ -18,7 +18,18 @@ namespace NeonVoid.Combat.Projectiles
     /// </summary>
     public sealed class CombatProjectile : MonoBehaviour, ISimulationTickReceiver
     {
-        private const float Radius = 0.13f;
+        /// <summary>
+        /// [초안] the collision radius of an ordinary shot. G03 확장 탄두 scales it.
+        /// <para>
+        /// docs/03 asks for 유효 충돌크기·VFX 크기 분리 by name, and this is the 충돌크기 half:
+        /// what the sweep tests with. Nothing about the body's visible size reaches this - a
+        /// bigger-looking shot that hit no wider would be a card that reads as working and is
+        /// not, which is the failure shape this project has already shipped three times.
+        /// </para>
+        /// </summary>
+        public const float BaseRadiusUnits = 0.13f;
+
+        private float _radiusUnits = BaseRadiusUnits;
 
         private CombatActor _attacker;
         private CombatStats _attackerStats;
@@ -55,8 +66,12 @@ namespace NeonVoid.Combat.Projectiles
             float speedUnitsPerSecond,
             int lifetimeTicks,
             int maxTargets,
-            float onHitEffectScale = 1f)
+            float onHitEffectScale = 1f,
+            float radiusUnits = BaseRadiusUnits)
         {
+            _radiusUnits = radiusUnits > 0f && !float.IsNaN(radiusUnits) && !float.IsInfinity(radiusUnits)
+                ? radiusUnits
+                : BaseRadiusUnits;
             _onHitEffectScale = onHitEffectScale;
             _attacker = attacker;
             _attackerStats = attacker != null ? attacker.Stats : CombatStats.StartingVaccine();
@@ -90,7 +105,8 @@ namespace NeonVoid.Combat.Projectiles
 
             // RaycastHitAll rather than the first hit: a piercing shot must consider every
             // enemy on the segment, and the ledger decides which of them it may damage.
-            RaycastHit[] hits = Physics.SphereCastAll(origin, Radius, _direction, step, ~0, QueryTriggerInteraction.Ignore);
+            RaycastHit[] hits = Physics.SphereCastAll(
+                origin, _radiusUnits, _direction, step, ~0, QueryTriggerInteraction.Ignore);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
 
             for (int i = 0; i < hits.Length; ++i)

@@ -10,10 +10,12 @@ namespace NeonVoid.Plugins
     /// The prototype plugins, as verifiable data in one place - the same shape
     /// <see cref="StatusCatalog"/> uses for the status catalogue.
     /// <para>
-    /// Three of the original 27, chosen because each one needs a different guarantee from the
-    /// proc queue that nothing was exercising: G10 needs a per-target internal cooldown and a
-    /// bounded self-chain, G17 needs an internal cooldown on an area effect, and G12 needs a
-    /// status applied through the target's own tenacity path.
+    /// Fifteen of the original 27. Each was built because it needed a guarantee nothing else
+    /// was exercising: G10 a per-target internal cooldown and a bounded self-chain, G17 an
+    /// internal cooldown on an area effect, G12 a status applied through the target's own
+    /// tenacity path, G06 and G03 a carried card that changes the shape of the basic attack
+    /// rather than a stat - there is no 공격속도, 탄환속도 or 탄환 크기 in
+    /// <see cref="CombatStats"/>, because docs/02's stat block does not have them.
     /// </para>
     /// <para>
     /// Numbers the original design states are reproduced exactly: G10 and G17 both have
@@ -150,6 +152,72 @@ namespace NeonVoid.Plugins
             Passive = new PluginPassive
             {
                 MoveSpeedFraction = 0.12f,      // [초안]
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>[초안] docs/03 G06 states no numbers at all, only the two things it raises.</summary>
+        public const float DraftThrottleAttackSpeedFraction = 0.15f;
+
+        /// <summary>[초안] docs/03 G06.</summary>
+        public const float DraftThrottleProjectileSpeedFraction = 0.20f;
+
+        /// <summary>[초안] docs/03 G03 states no number, only 탄환 크기 증가.</summary>
+        public const float DraftWarheadSizeFraction = 0.40f;
+
+        /// <summary>
+        /// G06 스로틀 증폭 - 공격속도 + 탄환속도 증가.
+        /// <para>
+        /// The attack rate still goes through <see cref="AttackRateMath"/>, so this card meets
+        /// the cap [확정] docs/02 section 3 requires - docs/03 lists 공격속도 상한 검사 against
+        /// G06 by name, and a rate contribution that bypassed the cap would be the one card in
+        /// the set that could reach an interval of one tick.
+        /// </para>
+        /// <para>
+        /// Both halves are one card and neither is a stat: there is no 공격속도 or 탄환속도 in
+        /// <see cref="CombatStats"/>, because docs/02's stat block does not have them - the
+        /// attack rate lives on the attacker and the shot's speed on the shot.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition ThrottleAmplifier() => new PluginDefinition
+        {
+            ProposalId = "G06",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                AttackSpeedFraction = DraftThrottleAttackSpeedFraction,
+                ProjectileSpeedFraction = DraftThrottleProjectileSpeedFraction,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// G03 확장 탄두 - 탄환 크기 증가.
+        /// <para>
+        /// It grows the shot's <b>collision</b> radius, which is the 유효 충돌크기 half of the
+        /// 유효 충돌크기·VFX 크기 분리 docs/03 asks for against this card. The visible body is a
+        /// separate concern on purpose: a card that made the shot look bigger without hitting
+        /// any wider would read as working and would not be, and that is the exact failure this
+        /// project has shipped before.
+        /// </para>
+        /// <para>
+        /// It only ever grows. <see cref="PluginPassive.Validate"/> refuses a negative fraction
+        /// rather than letting a retune shrink a shot until it passes through everything.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition ExpandedWarhead() => new PluginDefinition
+        {
+            ProposalId = "G03",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.Passive,
+            Damage = default,
+            Passive = new PluginPassive
+            {
+                ProjectileSizeFraction = DraftWarheadSizeFraction,
             },
             StatusDurationTicksOverride = -1,
         };

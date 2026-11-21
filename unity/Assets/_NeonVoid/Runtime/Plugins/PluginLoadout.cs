@@ -143,6 +143,36 @@ namespace NeonVoid.Plugins
             return total;
         }
 
+        /// <summary>[초안] G06 스로틀 증폭: fraction added to the base attack rate.</summary>
+        public float PassiveAttackSpeedFraction()
+        {
+            float total = 0f;
+            for (int i = 0; i < _carried.Count; ++i)
+                total += _carried[i].Passive.AttackSpeedFraction;
+
+            return total;
+        }
+
+        /// <summary>[초안] G06 스로틀 증폭: fraction added to base projectile speed.</summary>
+        public float PassiveProjectileSpeedFraction()
+        {
+            float total = 0f;
+            for (int i = 0; i < _carried.Count; ++i)
+                total += _carried[i].Passive.ProjectileSpeedFraction;
+
+            return total;
+        }
+
+        /// <summary>[초안] G03 확장 탄두: fraction added to the shot's collision radius.</summary>
+        public float PassiveProjectileSizeFraction()
+        {
+            float total = 0f;
+            for (int i = 0; i < _carried.Count; ++i)
+                total += _carried[i].Passive.ProjectileSizeFraction;
+
+            return total;
+        }
+
         /// <summary>
         /// Appends every carried plugin's extra volley shots, each with its own effect fraction.
         /// <para>

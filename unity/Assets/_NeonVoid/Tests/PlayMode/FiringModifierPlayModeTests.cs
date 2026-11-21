@@ -1,6 +1,7 @@
 using System.Collections;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Projectiles;
+using NeonVoid.Combat.Stats;
 using NeonVoid.Plugins;
 using NUnit.Framework;
 using UnityEngine;
@@ -221,6 +222,136 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.AreEqual(
                 0.7f, reducedLoss / fullLoss, 0.08f,
                 "The reduction is not the 70% docs/03 states for G13.");
+        }
+    
+        // --- G06 스로틀 증폭 and G03 확장 탄두 ---------------------------------------------
+
+        /// <summary>The arena's enemies are spheres of scale 1.4, so half a body is 0.7 units.</summary>
+        private const float EnemyBodyRadius = 0.7f;
+
+        [UnityTest]
+        public IEnumerator ThrottleAmplifierFiresFasterAndSendsTheShotFaster()
+        {
+            // docs/03 G06 스로틀 증폭: 공격속도 + 탄환속도 증가. Both halves are read off the
+            // attacker rather than off a stat block, because docs/02's stat block has neither.
+            _arena = PrototypeArena.Build();
+            yield return WithAnEmptyLoadout();
+
+            int plainInterval = _arena.Attacker.IntervalTicks;
+            float plainSpeed = _arena.Attacker.EffectiveProjectileSpeed;
+
+            Assert.AreEqual(
+                PluginGrantVerdict.Granted,
+                _arena.Procs.Loadout.TryGrant(PluginCatalog.ThrottleAmplifier(), out string why), why);
+            _arena.Procs.PushPassivesToOwner();
+
+            Assert.Less(
+                _arena.Attacker.IntervalTicks, plainInterval,
+                "G06 did not shorten the interval between basic attacks");
+            Assert.Greater(
+                _arena.Attacker.EffectiveProjectileSpeed, plainSpeed,
+                "G06 did not speed the shot up");
+            Assert.AreEqual(
+                plainSpeed * (1f + PluginCatalog.DraftThrottleProjectileSpeedFraction),
+                _arena.Attacker.EffectiveProjectileSpeed, 0.001f,
+                "the projectile speed fraction is not of the base");
+        }
+
+        [UnityTest]
+        public IEnumerator NoStackOfThrottleAmplifiersBeatsTheAttackSpeedCap()
+        {
+            // [확정] docs/02 section 3: 공격속도에 상한은 있지만 값 미확정, and docs/03 lists
+            // 공격속도 상한 검사 against G06 by name. A rate contribution that went around
+            // AttackRateMath would be the one card in the set that could reach one tick.
+            _arena = PrototypeArena.Build();
+            yield return WithAnEmptyLoadout();
+
+            // One card with an absurd fraction rather than a stack of forty: the loadout keeps
+            // one of each card, so granting 스로틀 증폭 forty times grants it once - and the test
+            // would then be asserting the cap while nothing was pushing against it.
+            PluginDefinition runaway = PluginCatalog.ThrottleAmplifier();
+            runaway.Passive.AttackSpeedFraction = 100f;
+            Assert.AreEqual(
+                PluginGrantVerdict.Granted, _arena.Procs.Loadout.TryGrant(runaway, out string why), why);
+
+            _arena.Procs.PushPassivesToOwner();
+
+            Assert.GreaterOrEqual(
+                _arena.Attacker.IntervalTicks, 1,
+                "a runaway 스로틀 증폭 drove the interval below a tick");
+
+            int capped = AttackRateMath.IntervalTicks(StatCaps.Draft().MaxAttacksPerSecond);
+            Assert.AreEqual(
+                capped, _arena.Attacker.IntervalTicks,
+                "a runaway 스로틀 증폭 went past the attack speed cap");
+        }
+
+        [UnityTest]
+        public IEnumerator AWiderShotHitsWhatANarrowOneMisses()
+        {
+            // The 유효 충돌크기 half of G03. Fired directly at two radii rather than through the
+            // card, so the margins are generous and the assertion is about the sweep taking the
+            // radius at all - the card's own 40% is [초안] and would make this geometry depend
+            // on a tuning number.
+            const float Offset = 1.2f;
+            _arena = PrototypeArena.Build(new Vector3(Offset, 0.7f, 6f));
+            CombatActor enemy = _arena.Enemies[0];
+
+            // Aimed straight down +Z, so the enemy is Offset units off the shot's line.
+            CombatActor aimPoint = _arena.SpawnEnemyNear(_arena.Player, "Aim Point", 0f);
+            aimPoint.transform.position = new Vector3(0f, 0.7f, 20f);
+
+            float before = enemy.Health.Current;
+            _arena.FireAt(aimPoint, adRatio: 20f, radiusUnits: CombatProjectile.BaseRadiusUnits);
+            yield return _arena.Tick(40);
+
+            Assert.AreEqual(
+                before, enemy.Health.Current, 0.001f,
+                $"an ordinary shot reached a body {Offset}u off its line");
+
+            float wide = Offset - EnemyBodyRadius + 0.2f;
+            _arena.FireAt(aimPoint, adRatio: 20f, radiusUnits: wide);
+            yield return _arena.Tick(40);
+
+            Assert.Less(
+                enemy.Health.Current, before,
+                $"a shot of radius {wide}u still missed a body {Offset}u off its line");
+        }
+
+        [UnityTest]
+        public IEnumerator ACarriedSizeCardReachesTheShotsTheAttackerFires()
+        {
+            // The whole chain: card → loadout → director → attacker → the sweep. A generous
+            // fraction rather than G03's own, for the same reason as above.
+            const float Offset = 1.2f;
+            _arena = PrototypeArena.Build(new Vector3(Offset, 0.7f, 6f));
+            _arena.PlayerObject.transform.forward = Vector3.forward;
+            CombatActor enemy = _arena.Enemies[0];
+            yield return WithAnEmptyLoadout();
+
+            _arena.Attacker.enabled = true;
+            float before = enemy.Health.Current;
+            yield return _arena.Tick(_arena.Attacker.IntervalTicks + 40);
+
+            Assert.AreEqual(
+                before, enemy.Health.Current, 0.001f,
+                "the basic attack already reached a body off its line");
+
+            PluginDefinition wide = PluginCatalog.ExpandedWarhead();
+            wide.Passive.ProjectileSizeFraction = 6f;   // 0.13 → 0.91, comfortably past the body
+            Assert.AreEqual(
+                PluginGrantVerdict.Granted, _arena.Procs.Loadout.TryGrant(wide, out string why), why);
+            _arena.Procs.PushPassivesToOwner();
+
+            Assert.AreEqual(
+                CombatProjectile.BaseRadiusUnits * 7f, _arena.Attacker.EffectiveProjectileRadius, 0.001f,
+                "the carried card never reached the attacker");
+
+            yield return _arena.Tick(_arena.Attacker.IntervalTicks + 40);
+
+            Assert.Less(
+                enemy.Health.Current, before,
+                "a carried 확장 탄두 did not widen the shots the attacker fires");
         }
     }
 }
