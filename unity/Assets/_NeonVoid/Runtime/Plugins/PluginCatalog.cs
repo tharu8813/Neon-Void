@@ -234,6 +234,74 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[초안] docs/03 L03 피버타임 leaves 충전 단위 미확정; one point per landed hit.</summary>
+        public const float DraftFeverChargePerHit = 1f;
+
+        /// <summary>[초안] a kill is worth this much on top of the hit that caused it.</summary>
+        public const float DraftFeverChargePerKill = 4f;
+
+        /// <summary>[초안] gauge needed to set 피버타임 off.</summary>
+        public const float DraftFeverChargeRequired = 30f;
+
+        /// <summary>[초안] ticks 피버타임 lasts. 일정시간 is not a number; 480 is eight seconds.</summary>
+        public const int DraftFeverActiveTicks = 480;
+
+        /// <summary>[초안] what 전체 능력치 증가 is worth, per stat, while it runs.</summary>
+        public const float DraftFeverAttackDamage = 6f;
+        public const float DraftFeverAbilityPower = 10f;
+        public const float DraftFeverArmor = 8f;
+        public const float DraftFeverMagicResistance = 8f;
+        public const float DraftFeverSkillHaste = 15f;
+        public const float DraftFeverCritChancePercent = 10f;
+        public const float DraftFeverOmnivampPercent = 5f;
+        public const float DraftFeverMoveSpeedFraction = 0.2f;
+
+        /// <summary>
+        /// L03 피버타임 - 적중 또는 처치로 게이지, 충전 완료 후 일정시간 전체 능력치 증가.
+        /// <para>
+        /// The first 전설 in the catalogue, and the only one of the three that is not blocked:
+        /// L01 레이저 코어 and L02 부메랑 프로토콜 both redefine what a projectile is, which is
+        /// the 여러 탄환 형태의 합성 question D-005 has open. This one touches no projectile at
+        /// all.
+        /// </para>
+        /// <para>
+        /// Every number is [초안]. docs/03 states none of them and lists
+        /// 버프 스택·충전 단위·계수 미확정 by name, so 전체 능력치 is spelled out here as the
+        /// stats this game actually has rather than as a single multiplier applied to a notion
+        /// of "all stats" that <see cref="CombatStats"/> does not define.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition FeverTime() => new PluginDefinition
+        {
+            ProposalId = "L03",
+            Rarity = PluginRarity.Legendary,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.ChargedPassive,
+            Damage = default,
+            Charge = new PluginCharge
+            {
+                PerHit = DraftFeverChargePerHit,
+                PerKill = DraftFeverChargePerKill,
+                Required = DraftFeverChargeRequired,
+                ActiveTicks = DraftFeverActiveTicks,
+            },
+            Passive = new PluginPassive
+            {
+                MoveSpeedFraction = DraftFeverMoveSpeedFraction,
+                StatModifiers = new[]
+                {
+                    StatModifier.Add(ModifiedStat.AttackDamage, DraftFeverAttackDamage),
+                    StatModifier.Add(ModifiedStat.AbilityPower, DraftFeverAbilityPower),
+                    StatModifier.Add(ModifiedStat.PhysicalArmor, DraftFeverArmor),
+                    StatModifier.Add(ModifiedStat.MagicResistance, DraftFeverMagicResistance),
+                    StatModifier.Add(ModifiedStat.SkillHaste, DraftFeverSkillHaste),
+                    StatModifier.Add(ModifiedStat.CritChancePercent, DraftFeverCritChancePercent),
+                    StatModifier.Add(ModifiedStat.OmnivampPercent, DraftFeverOmnivampPercent),
+                },
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>[원안 수치] docs/03 G14 추적 응답: 자동발사 탄환 1개.</summary>
         public const int StatedSkillResponseShots = 1;
 

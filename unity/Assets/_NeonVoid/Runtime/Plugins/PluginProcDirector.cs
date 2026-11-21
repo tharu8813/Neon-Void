@@ -60,6 +60,15 @@ namespace NeonVoid.Plugins
         private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _growthBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _conditionBuffer = new List<PluginDefinition>();
+        private readonly List<PluginDefinition> _chargeBuffer = new List<PluginDefinition>();
+
+        /// <summary>Gauge held per charged card, by its proposal id. L03 피버타임.</summary>
+        private readonly Dictionary<string, float> _charge = new Dictionary<string, float>();
+
+        /// <summary>Ticks left on each card's open window, by proposal id.</summary>
+        private readonly Dictionary<string, int> _feverTicks = new Dictionary<string, int>();
+
+        private readonly List<string> _prunedFeverKeys = new List<string>();
 
         /// <summary>
         /// Ticks since the owner last took damage, for G11 무피격 가속.
@@ -271,7 +280,9 @@ namespace NeonVoid.Plugins
             _passiveBuffer.Clear();
             _router.Loadout.CollectPassiveModifiers(_passiveBuffer);
             AppendGrowthModifiers(_passiveBuffer);
-            float moveSpeed = _router.Loadout.PassiveMoveSpeedFraction() + AppendMetConditionals(_passiveBuffer);
+            float moveSpeed = _router.Loadout.PassiveMoveSpeedFraction()
+                + AppendMetConditionals(_passiveBuffer)
+                + AppendOpenFevers(_passiveBuffer);
             owner.SetPassiveModifiers(_passiveBuffer, moveSpeed);
 
             PushFiringToAttacker();
@@ -296,6 +307,142 @@ namespace NeonVoid.Plugins
         /// because the change is what triggers the publish.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Fills every carried gauge, and opens a window the moment one is full.
+        /// <para>
+        /// <b>A gauge does not fill while its own buff is running [초안].</b> docs/03 leaves
+        /// 충전 단위 미확정 and says nothing either way, and the alternative is a card that
+        /// charges itself back up during the strongest seconds of the fight - which is how a
+        /// 피버타임 stops being a 타임 and becomes a permanent buff on anybody killing fast
+        /// enough. Choosing the bounded reading leaves the decision reversible.
+        /// </para>
+        /// </summary>
+        private void ChargeFeverGauges(bool killed)
+        {
+            _chargeBuffer.Clear();
+            _router.Loadout.CollectChargedPassives(_chargeBuffer);
+            if (_chargeBuffer.Count == 0)
+                return;
+
+            bool started = false;
+            for (int i = 0; i < _chargeBuffer.Count; ++i)
+            {
+                PluginDefinition card = _chargeBuffer[i];
+
+                _feverTicks.TryGetValue(card.ProposalId, out int running);
+                if (running > 0)
+                    continue;
+
+                _charge.TryGetValue(card.ProposalId, out float charge);
+                charge = card.Charge.Add(charge, killed);
+
+                if (!card.Charge.IsFull(charge))
+                {
+                    _charge[card.ProposalId] = charge;
+                    continue;
+                }
+
+                // Spent in full rather than reduced by the requirement: banking the overflow
+                // would let a long fight hold a second 피버타임 ready the instant the first
+                // ended, which is the same permanent-buff shape by another route.
+                _charge[card.ProposalId] = 0f;
+                _feverTicks[card.ProposalId] = card.Charge.ActiveTicks;
+                started = true;
+
+                Debug.Log($"{card.ProposalId} 피버타임: {card.Charge.ActiveTicks} ticks.", this);
+            }
+
+            if (started)
+                PushPassivesToOwner();
+        }
+
+        /// <summary>
+        /// Counts down every open window and republishes on the tick one closes.
+        /// <para>
+        /// Over a snapshot of the keys, because a dictionary cannot be written while it is
+        /// being walked - and the whole point of this pass is to remove the ones that ran out.
+        /// </para>
+        /// </summary>
+        private void TickFeverWindows()
+        {
+            if (_feverTicks.Count == 0)
+                return;
+
+            _prunedFeverKeys.Clear();
+            foreach (string card in _feverTicks.Keys)
+                _prunedFeverKeys.Add(card);
+
+            bool ended = false;
+            for (int i = 0; i < _prunedFeverKeys.Count; ++i)
+            {
+                string card = _prunedFeverKeys[i];
+                int left = _feverTicks[card] - 1;
+
+                if (left > 0)
+                {
+                    _feverTicks[card] = left;
+                    continue;
+                }
+
+                _feverTicks.Remove(card);
+                ended = true;
+            }
+
+            if (ended)
+                PushPassivesToOwner();
+        }
+
+        /// <summary>Gauge held by a charged card, 0 to 1. For a HUD and for a test.</summary>
+        public float FeverCharge(string proposalId)
+        {
+            _chargeBuffer.Clear();
+            _router.Loadout.CollectChargedPassives(_chargeBuffer);
+
+            for (int i = 0; i < _chargeBuffer.Count; ++i)
+            {
+                if (_chargeBuffer[i].ProposalId != proposalId)
+                    continue;
+
+                _charge.TryGetValue(proposalId, out float charge);
+                return _chargeBuffer[i].Charge.Fraction(charge);
+            }
+
+            return 0f;
+        }
+
+        /// <summary>Ticks left on a card's open window, or 0 when it is not running.</summary>
+        public int FeverTicksLeft(string proposalId) =>
+            _feverTicks.TryGetValue(proposalId, out int left) ? left : 0;
+
+        /// <summary>Adds the contribution of every charged card whose window is open.</summary>
+        private float AppendOpenFevers(List<StatModifier> into)
+        {
+            if (_feverTicks.Count == 0)
+                return 0f;
+
+            _chargeBuffer.Clear();
+            _router.Loadout.CollectChargedPassives(_chargeBuffer);
+
+            float moveSpeed = 0f;
+            for (int i = 0; i < _chargeBuffer.Count; ++i)
+            {
+                PluginDefinition card = _chargeBuffer[i];
+                if (!_feverTicks.ContainsKey(card.ProposalId))
+                    continue;
+
+                moveSpeed += card.Passive.MoveSpeedFraction;
+
+                StatModifier[] modifiers = card.Passive.StatModifiers;
+                if (modifiers == null)
+                    continue;
+
+                for (int m = 0; m < modifiers.Length; ++m)
+                    into.Add(modifiers[m]);
+            }
+
+            return moveSpeed;
+        }
+
         private void TickConditions()
         {
             if (_ticksSinceDamage < int.MaxValue)
@@ -575,6 +722,9 @@ namespace NeonVoid.Plugins
             // was written and nothing read it until now.
             if (report.Killed)
                 CountKillTowardsGrowth();
+
+            // 적중 또는 처치로 게이지 for L03.
+            ChargeFeverGauges(report.Killed);
         }
 
         void ISimulationTickReceiver.OnSimulationTick(long tickIndex)
@@ -583,6 +733,7 @@ namespace NeonVoid.Plugins
             // Effects + 1, after the player has already moved at Player order, so the position
             // swept is where the dash actually is.
             TickConditions();
+            TickFeverWindows();
 
             SweepDashPath(tickIndex);
 

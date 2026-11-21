@@ -124,7 +124,24 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         private static bool IsGated(in PluginDefinition card) =>
-            card.Effect == PluginEffectKind.ConditionalPassive;
+            card.Effect == PluginEffectKind.ConditionalPassive
+            || card.Effect == PluginEffectKind.ChargedPassive;
+
+        /// <summary>
+        /// Every carried card whose passive waits on a gauge. The gauge itself is not here: the
+        /// loadout has no clock and hears nothing about hits.
+        /// </summary>
+        public void CollectChargedPassives(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Effect == PluginEffectKind.ChargedPassive)
+                    into.Add(_carried[i]);
+            }
+        }
 
         public void CollectPassiveModifiers(List<StatModifier> into)
         {

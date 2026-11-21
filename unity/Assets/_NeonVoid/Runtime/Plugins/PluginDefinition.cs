@@ -139,6 +139,17 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         FireProjectile = 9,
+
+        /// <summary>
+        /// A passive that is off until a gauge fills, then on for a while. docs/03 L03
+        /// 피버타임 is 적중 또는 처치로 게이지, 충전 완료 후 일정시간 전체 능력치 증가.
+        /// <para>
+        /// Distinct from <see cref="ConditionalPassive"/>, whose gate is a fact about the
+        /// carrier that it reads every tick. This one is a resource the carrier spends: it has
+        /// to be filled, it is consumed when it fires, and it runs on a clock of its own.
+        /// </para>
+        /// </summary>
+        ChargedPassive = 10,
     }
 
     /// <summary>
@@ -200,6 +211,9 @@ namespace NeonVoid.Plugins
         [Tooltip("What has to hold for a ConditionalPassive to contribute. None for every other kind.")]
         public PluginCondition Condition;
 
+        [Tooltip("The gauge a ChargedPassive fills and spends. Empty for every other kind.")]
+        public PluginCharge Charge;
+
         /// <summary>The effect id the proc queue knows this plugin by.</summary>
         public int EffectId => Rule.EffectId;
 
@@ -216,7 +230,8 @@ namespace NeonVoid.Plugins
             Effect != PluginEffectKind.Passive
             && Effect != PluginEffectKind.FiringModifier
             && Effect != PluginEffectKind.GrowingPassive
-            && Effect != PluginEffectKind.ConditionalPassive;
+            && Effect != PluginEffectKind.ConditionalPassive
+            && Effect != PluginEffectKind.ChargedPassive;
 
         public void Validate()
         {
@@ -230,7 +245,8 @@ namespace NeonVoid.Plugins
             // it is not in this set even though it shares the "no chain rule" half below.
             bool untriggered = Effect == PluginEffectKind.Passive
                 || Effect == PluginEffectKind.FiringModifier
-                || Effect == PluginEffectKind.ConditionalPassive;
+                || Effect == PluginEffectKind.ConditionalPassive
+                || Effect == PluginEffectKind.ChargedPassive;
             if (Trigger == PluginTriggerKind.None && !untriggered)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
 
@@ -270,6 +286,21 @@ namespace NeonVoid.Plugins
             {
                 throw new InvalidOperationException(
                     $"{ProposalId}: only a {nameof(PluginEffectKind.ConditionalPassive)} may carry a condition.");
+            }
+
+            if (Effect == PluginEffectKind.ChargedPassive)
+            {
+                Charge.Validate(ProposalId);
+
+                if (Passive.IsEmpty)
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a charged passive that contributes nothing is a gauge that " +
+                        "fills and buys nothing.");
+            }
+            else if (!Charge.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.ChargedPassive)} may carry a gauge.");
             }
 
             if (Effect == PluginEffectKind.GrowingPassive)
