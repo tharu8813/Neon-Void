@@ -123,6 +123,13 @@ namespace NeonVoid.EditorTools
             AssignSerialized(banner, "deathDirector", deaths);
             AssignSerialized(saveDirector, "deathDirector", deaths);
 
+            // 백신 성장: 영구 능력치 포인트 투자와 무료 재분배, through the same transaction
+            // everything else commits through. On the save object because it is the save it
+            // reads and writes.
+            VaccineGrowthDirector growth = saveObject.AddComponent<VaccineGrowthDirector>();
+            AssignSerialized(growth, "playerActor", vaccine.Actor);
+            AssignSerialized(growth, "saveDirector", saveDirector);
+
             // 메인보드: five portals and the builder that puts an area up behind one of them.
             var boardObject = new GameObject("Motherboard");
             boardObject.transform.position = MotherboardAt;
@@ -139,6 +146,7 @@ namespace NeonVoid.EditorTools
             AssignSerialized(hub, "motherboard", motherboard);
             AssignSerialized(hub, "player", vaccine.Object.transform);
             AssignSerialized(hub, "input", vaccine.Router);
+            AssignSerialized(hub, "growth", growth);
 
             Camera camera = CreateCamera(vaccine);
             AssignSerialized(vaccine.Router, "aimCamera", camera);
@@ -155,6 +163,11 @@ namespace NeonVoid.EditorTools
             AssignSerialized(overlay, "mission", mission);
             AssignSerialized(overlay, "hub", hub);
             AssignSerialized(overlay, "motherboard", motherboard);
+
+            // The 백신 성장 터미널's screen. Drawn only while the player is standing at it:
+            // docs/00 makes the hub a place you walk around, not a menu you open anywhere.
+            PrototypeGrowthPanel panel = deathObject.AddComponent<PrototypeGrowthPanel>();
+            AssignSerialized(panel, "hub", hub);
 
             CreateDirectionalLight();
 

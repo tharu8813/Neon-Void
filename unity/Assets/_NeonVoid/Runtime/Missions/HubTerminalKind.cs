@@ -67,7 +67,8 @@ namespace NeonVoid.Missions
         /// player interacts with one is to say so - see <see cref="WhyNotConnected"/>.
         /// </para>
         /// </summary>
-        public static bool IsConnected(HubTerminalKind kind) => kind == HubTerminalKind.Mission;
+        public static bool IsConnected(HubTerminalKind kind) =>
+            kind == HubTerminalKind.Mission || kind == HubTerminalKind.Growth;
 
         /// <summary>Why a terminal does nothing yet, in one line, or empty when it works.</summary>
         public static string WhyNotConnected(HubTerminalKind kind)
@@ -75,11 +76,8 @@ namespace NeonVoid.Missions
             switch (kind)
             {
                 case HubTerminalKind.Mission:
-                    return string.Empty;
-
                 case HubTerminalKind.Growth:
-                    return "영구 능력치 투자는 저장 스키마에 permanentInvestments가 들어간 뒤에 연결된다 " +
-                           "(docs/04 section 6 윤곽). 지금 저장 문서는 미사용 포인트만 담는다";
+                    return string.Empty;
 
                 case HubTerminalKind.Database:
                     return "보관 DB↔출전 이동은 MovePluginCommand로 커밋되지만, 무엇이 이동 대상인지 " +

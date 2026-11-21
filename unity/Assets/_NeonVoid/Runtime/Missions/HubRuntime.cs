@@ -48,6 +48,9 @@ namespace NeonVoid.Missions
         [Tooltip("Reads 상호작용. Found in the scene when left empty; a hub without one is driven by code.")]
         [SerializeField] private PlayerInputRouter input;
 
+        [Tooltip("영구 능력치 포인트 투자와 무료 재분배. Found in the scene when left empty.")]
+        [SerializeField] private NeonVoid.Progression.VaccineGrowthDirector growth;
+
         [Header("Geometry [초안]")]
         [Tooltip("[초안] how far the four terminals stand from the middle of the hub.")]
         [SerializeField, Min(2f)] private float terminalRingRadiusUnits = 7f;
@@ -76,6 +79,12 @@ namespace NeonVoid.Missions
 
         /// <summary>The flow this hub drives, or null before it is resolved.</summary>
         public MissionFlow Flow => mission != null ? mission.Flow : null;
+
+        /// <summary>
+        /// 백신 성장, or null in a scene without one. Exposed so a panel can offer the table
+        /// without going looking for it, and so the reach check stays this component's job.
+        /// </summary>
+        public NeonVoid.Progression.VaccineGrowthDirector Growth => growth;
 
         /// <summary>Where a terminal stands, or null when none was built.</summary>
         public Transform Terminal(HubTerminalKind kind) =>
@@ -128,6 +137,8 @@ namespace NeonVoid.Missions
                 motherboard = FindFirstObjectByType<MotherboardDirector>();
             if (input == null)
                 input = FindFirstObjectByType<PlayerInputRouter>();
+            if (growth == null)
+                growth = FindFirstObjectByType<NeonVoid.Progression.VaccineGrowthDirector>();
             if (player == null)
             {
                 var driver = FindFirstObjectByType<PlayerSimulationDriver>();
@@ -228,6 +239,9 @@ namespace NeonVoid.Missions
                 case HubTerminalKind.Mission:
                     return BeginMission();
 
+                case HubTerminalKind.Growth:
+                    return ReadTheGrowthSheet();
+
                 default:
                     // Unreachable while Mission is the only connected kind; here so that
                     // connecting another one is a compile-time decision rather than a silent no.
@@ -257,6 +271,29 @@ namespace NeonVoid.Missions
             RunIdentity identity = mission.Identity;
             Debug.Log($"의뢰 시작: {identity} (mission {mission.MissionsBegun} of this session).", this);
             MissionBegun?.Invoke(identity);
+            return true;
+        }
+
+        /// <summary>
+        /// What 상호작용 at the 백신 성장 터미널 does: says where the vaccine's points stand.
+        /// <para>
+        /// <b>It does not choose a stat.</b> docs/05 gives 수치 비교 to a 2D 오버레이 and the
+        /// table has twenty-two rows; a keypress cannot pick one. Spending goes through
+        /// <see cref="Growth"/>, which the panel calls - this is the part of the terminal that
+        /// is a place in the world rather than a screen.
+        /// </para>
+        /// </summary>
+        private bool ReadTheGrowthSheet()
+        {
+            if (growth == null)
+            {
+                Debug.LogWarning(
+                    $"{name}: {HubTerminals.NameOf(HubTerminalKind.Growth)} has no " +
+                    "VaccineGrowthDirector in the scene, so there is nothing to invest with.", this);
+                return false;
+            }
+
+            Debug.Log(growth.Sheet(), this);
             return true;
         }
 

@@ -87,6 +87,14 @@ namespace NeonVoid.Tests
             }
         }
 
+        /// <summary>
+        /// The schema field exactly as this build writes it. Taken from the constant rather
+        /// than typed out: the two tests that rewrite it broke the moment the version was
+        /// bumped, and a test that fails because the text it edits moved is noise, not a
+        /// finding.
+        /// </summary>
+        private static string Written => "\"schemaVersion\":" + SaveDocument.CurrentSchemaVersion;
+
         [SetUp]
         public void SetUp()
         {
@@ -538,7 +546,7 @@ namespace NeonVoid.Tests
             // build would quietly replace a newer build's save with its own older copy.
             SaveStore store = Opened();
             store.Commit(new AddXp("xp:1", 250L));
-            _files.Rewrite(_layout.SnapshotPath, "\"schemaVersion\":1", "\"schemaVersion\":99");
+            _files.Rewrite(_layout.SnapshotPath, Written, "\"schemaVersion\":99");
             string newer = _files.Peek(_layout.SnapshotPath);
 
             var reopened = new SaveStore(_files, _layout);
@@ -554,7 +562,7 @@ namespace NeonVoid.Tests
         public void AnOlderSchemaHaltsBecauseThereIsNoAutomaticMigration()
         {
             Opened();
-            _files.Rewrite(_layout.SnapshotPath, "\"schemaVersion\":1", "\"schemaVersion\":0");
+            _files.Rewrite(_layout.SnapshotPath, Written, "\"schemaVersion\":0");
 
             var reopened = new SaveStore(_files, _layout);
 

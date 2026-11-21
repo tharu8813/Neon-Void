@@ -5,6 +5,7 @@ using System.Reflection;
 using NeonVoid.Combat;
 using NeonVoid.Missions;
 using NeonVoid.Missions.Generation;
+using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using NUnit.Framework;
 using UnityEngine;
@@ -39,9 +40,11 @@ namespace NeonVoid.Tests.PlayModeTests
         private PrototypeArena _arena;
         private GameObject _saveObject;
         private GameObject _boardObject;
+        private GameObject _growthObject;
         private GameObject _hubObject;
         private MotherboardDirector _motherboard;
         private HubRuntime _hub;
+        private VaccineGrowthDirector _growth;
         private SaveStore _store;
 
         [SetUp]
@@ -60,6 +63,8 @@ namespace NeonVoid.Tests.PlayModeTests
                 UnityEngine.Object.Destroy(_hubObject);
             if (_boardObject != null)
                 UnityEngine.Object.Destroy(_boardObject);
+            if (_growthObject != null)
+                UnityEngine.Object.Destroy(_growthObject);
             if (_saveObject != null)
                 UnityEngine.Object.Destroy(_saveObject);
 
@@ -67,6 +72,7 @@ namespace NeonVoid.Tests.PlayModeTests
             _arena = null;
             _motherboard = null;
             _hub = null;
+            _growth = null;
             _store = null;
 
             if (_root != null && Directory.Exists(_root))
@@ -113,6 +119,15 @@ namespace NeonVoid.Tests.PlayModeTests
             _motherboard.Configure(_arena.Mission, null, _arena.PlayerObject.transform);
             _boardObject.SetActive(true);
             _motherboard.ConfigurePortals(RingRadius, PortalRadius, DwellTicks);
+
+            // 백신 성장, added after the player's stats are set so the block it captures as
+            // "uninvested" is the one this test configured.
+            var growthObject = new GameObject("Vaccine Growth Director");
+            growthObject.SetActive(false);
+            _growth = growthObject.AddComponent<VaccineGrowthDirector>();
+            _growth.Configure(_arena.Player, _saveObject.GetComponent<VaccineSaveDirector>());
+            growthObject.SetActive(true);
+            _growthObject = growthObject;
 
             _hubObject = new GameObject("Defender Hub");
             _hubObject.SetActive(false);
@@ -275,10 +290,16 @@ namespace NeonVoid.Tests.PlayModeTests
         [UnityTest]
         public IEnumerator AnUnconnectedTerminalRefusesAndSaysWhy()
         {
+            // 스킬 장착, which is waiting on D-009 - 스킬 키·초기 스킬·전체 풀 미확정. Building
+            // the equip screen before the pool is approved would show an unapproved list as if
+            // it were the game's, so the post is placed and says what it is waiting for.
             yield return Hub();
+            Assert.IsFalse(
+                HubTerminals.IsConnected(HubTerminalKind.Skills),
+                "스킬 장착 was connected; this test needs a terminal that is not");
 
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("백신 성장 터미널"));
-            Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Growth));
+            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("스킬 장착 터미널"));
+            Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Skills));
             Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase, "an unfinished terminal started something");
         }
 
@@ -332,6 +353,79 @@ namespace NeonVoid.Tests.PlayModeTests
             Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Mission), "a second mission began on top of one");
             Assert.AreEqual(first, Flow.Run.Identity.RunId);
             Assert.AreEqual(1, _arena.Mission.MissionsBegun);
+        }
+
+        // --- 백신 성장 ------------------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator SpendingAPointRaisesTheStatAndSurvivesAReload()
+        {
+            // [확정] GDD v1 section 4.3: 레벨업마다 영구 포인트를 지급하고 허브에서 투자한다.
+            // Until the terminal existed every level-up added to a number that did nothing.
+            yield return Hub();
+            _store.Snapshot.vaccine.unusedStatPoints = 6;
+
+            float before = _arena.Player.Stats.MaxHealth;
+            Assert.IsTrue(_growth.TryInvest(InvestableStat.MaxHealth, 4), _growth.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(
+                before + (StatInvestments.DraftMaxHealthPerStep * 4f), _arena.Player.Stats.MaxHealth, 0.01f,
+                "the investment never reached the player");
+            Assert.AreEqual(2, _growth.UnusedStatPoints);
+
+            // Read back from a second store, so this is what is on disk and not what the one
+            // that wrote it remembers.
+            var reopened = new SaveStore(new DiskSaveFileSystem(), SaveSlotLayout.Under(_root));
+            reopened.Open();
+            Assert.AreEqual(SaveStoreState.Ready, reopened.State, reopened.HaltReason);
+            Assert.AreEqual(4, VaccineInvestments.PointsSpent(reopened.Snapshot.vaccine));
+        }
+
+        [UnityTest]
+        public IEnumerator RedistributingIsFreeAndPutsThePlayerBackWhereTheyStarted()
+        {
+            // [확정] 재분배 비용 없이 언제든 초기화·재투자.
+            yield return Hub();
+            _store.Snapshot.vaccine.unusedStatPoints = 9;
+
+            float before = _arena.Player.Stats.MaxHealth;
+            Assert.IsTrue(_growth.TryInvest(InvestableStat.MaxHealth, 5), _growth.LastRefusal);
+            Assert.IsTrue(_growth.TryInvest(InvestableStat.Tenacity, 2), _growth.LastRefusal);
+            yield return _arena.Tick(1);
+            Assert.AreNotEqual(before, _arena.Player.Stats.MaxHealth);
+
+            Assert.IsTrue(_growth.TryRedistribute(), _growth.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(before, _arena.Player.Stats.MaxHealth, 0.01f, "the stat did not come back down");
+            Assert.AreEqual(9, _growth.UnusedStatPoints, "재분배가 무료가 아니다");
+            Assert.AreEqual(0, _growth.PointsSpent);
+        }
+
+        [UnityTest]
+        public IEnumerator AStatWithNoFieldToLandOnIsRefusedBeforeAnythingIsSpent()
+        {
+            yield return Hub();
+            _store.Snapshot.vaccine.unusedStatPoints = 10;
+
+            Assert.IsFalse(_growth.TryInvest(InvestableStat.MoveSpeed), "a point was spent on nothing");
+            Assert.AreEqual(10, _growth.UnusedStatPoints);
+            Assert.IsNotEmpty(_growth.LastRefusal);
+        }
+
+        [UnityTest]
+        public IEnumerator TheGrowthTerminalIsReachableFromTheHubAndNotFromAMission()
+        {
+            yield return Hub();
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Growth), "the growth terminal did nothing");
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            yield return _arena.Tick(1);
+            Assert.IsFalse(
+                _hub.TryUseTerminal(HubTerminalKind.Growth),
+                "the hub's terminal answered from the motherboard");
         }
 
         // --- and back again ----------------------------------------------------------------

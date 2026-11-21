@@ -16,6 +16,43 @@ namespace NeonVoid.Progression.Save
     /// rule rather than trusting a later reader to remember it.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// One stat's share of a vaccine's 영구 능력치 포인트 투자. docs/04 section 6's schema
+    /// outline names <c>permanentInvestments</c>; this is one of its entries.
+    /// <para>
+    /// <b>Both numbers are kept.</b> <see cref="steps"/> is what the player bought - the effect
+    /// is this many times the stat's increment - and <see cref="pointsSpent"/> is what they
+    /// paid for it. Deriving one from the other would mean reading today's [초안] cost, and the
+    /// costs will be retuned (D-011): a refund computed from a cost that has since changed
+    /// would hand back more points than were ever spent, or fewer. [확정] 재분배 비용 없이
+    /// 초기화 means the player gets their points back, not a different number of them.
+    /// </para>
+    /// <para>
+    /// The stat is a string, not the enum, for the same reason the plugin instance is an opaque
+    /// id: a save file outlives a build, and an enum's numeric value moves the moment somebody
+    /// inserts a row. <see cref="NeonVoid.Progression.StatInvestments"/> owns the keys and they
+    /// never change.
+    /// </para>
+    /// </summary>
+    [Serializable]
+    public sealed class StatInvestmentState
+    {
+        public string stat = string.Empty;
+
+        /// <summary>How many times this stat was invested in. At least 1.</summary>
+        public int steps;
+
+        /// <summary>Points actually paid. At least <see cref="steps"/>, since a step costs 1 or more.</summary>
+        public int pointsSpent;
+
+        public StatInvestmentState Clone() => new StatInvestmentState
+        {
+            stat = stat,
+            steps = steps,
+            pointsSpent = pointsSpent,
+        };
+    }
+
     [Serializable]
     public sealed class VaccineSaveState
     {
@@ -65,6 +102,13 @@ namespace NeonVoid.Progression.Save
         public int unusedStatPoints;
 
         /// <summary>
+        /// 영구 능력치 포인트 투자. [확정] GDD v1 section 4.3: 허브에서 재분배 비용 없이 언제든
+        /// 초기화·재투자. Empty is the normal state of a new vaccine, and 최종 파기 clears it
+        /// along with everything else.
+        /// </summary>
+        public List<StatInvestmentState> permanentInvestments = new List<StatInvestmentState>();
+
+        /// <summary>
         /// Instance ids carried into a mission. [확정] docs/04 section 3.5: lost on death.
         /// </summary>
         public List<string> carriedPluginInstanceIds = new List<string>();
@@ -105,7 +149,23 @@ namespace NeonVoid.Progression.Save
             unusedStatPoints = unusedStatPoints,
             carriedPluginInstanceIds = new List<string>(carriedPluginInstanceIds),
             archivePluginInstanceIds = new List<string>(archivePluginInstanceIds),
+            permanentInvestments = CloneInvestments(permanentInvestments),
         };
+
+        private static List<StatInvestmentState> CloneInvestments(List<StatInvestmentState> source)
+        {
+            // Element-wise, because a shallow List copy would share the records and a rejected
+            // command's edits to one would survive - the thing docs/04 section 5 step 2's
+            // immutable next-state exists to prevent.
+            var copy = new List<StatInvestmentState>(source != null ? source.Count : 0);
+            if (source == null)
+                return copy;
+
+            for (int i = 0; i < source.Count; ++i)
+                copy.Add(source[i] != null ? source[i].Clone() : null);
+
+            return copy;
+        }
 
         public void Validate()
         {
@@ -172,6 +232,46 @@ namespace NeonVoid.Progression.Save
 
             RequireDistinct(carriedPluginInstanceIds, nameof(carriedPluginInstanceIds));
             RequireDistinct(archivePluginInstanceIds, nameof(archivePluginInstanceIds));
+            ValidateInvestments();
+        }
+
+        /// <summary>
+        /// The allocation's own invariants. Deliberately does NOT check the stat key against
+        /// this build's table: a save written by a later build may hold a stat this one has
+        /// never heard of, and refusing to load over it would strand the player's whole save
+        /// rather than ignoring one row. The schema version is what guards a real format
+        /// change; this guards nonsense.
+        /// </summary>
+        private void ValidateInvestments()
+        {
+            if (permanentInvestments == null)
+                throw new InvalidOperationException("permanentInvestments must be a list, not null.");
+
+            for (int i = 0; i < permanentInvestments.Count; ++i)
+            {
+                StatInvestmentState entry = permanentInvestments[i];
+                if (entry == null)
+                    throw new InvalidOperationException($"permanentInvestments holds nothing at {i}.");
+                if (string.IsNullOrWhiteSpace(entry.stat))
+                    throw new InvalidOperationException($"permanentInvestments[{i}] names no stat.");
+                if (entry.steps < 1)
+                    throw new InvalidOperationException(
+                        $"{entry.stat} is recorded with {entry.steps} steps; an entry exists because a " +
+                        "point was spent on it.");
+                if (entry.pointsSpent < entry.steps)
+                {
+                    // A step costs at least one point, so fewer points than steps means the two
+                    // numbers disagree - and a refund would then hand back less than was paid.
+                    throw new InvalidOperationException(
+                        $"{entry.stat} records {entry.steps} steps bought with {entry.pointsSpent} points.");
+                }
+
+                for (int j = i + 1; j < permanentInvestments.Count; ++j)
+                {
+                    if (permanentInvestments[j] != null && permanentInvestments[j].stat == entry.stat)
+                        throw new InvalidOperationException($"permanentInvestments holds {entry.stat} twice.");
+                }
+            }
         }
 
         private static void RequireNoBlanks(List<string> ids, string name)
@@ -264,8 +364,17 @@ namespace NeonVoid.Progression.Save
         /// <summary>
         /// The only version this build writes. A file claiming a higher one is from a newer
         /// build and is never parsed further; see <see cref="SaveStore"/>.
+        /// <para>
+        /// <b>2 adds <c>permanentInvestments</c>, and that halts every version 1 save.</b> The
+        /// checksum is taken over the serialized text, so a document with a new field cannot
+        /// verify against a checksum written before the field existed - and [확정] docs/04
+        /// section 7 answers an older schema with 안전 오류, never 자동 변환·삭제. A version 1
+        /// slot is therefore read-only and says so; nothing in it is touched, and nothing is
+        /// migrated. Bumping this is the deliberate, documented cost of a schema change, and
+        /// it is only acceptable while every save in existence is a prototype one.
+        /// </para>
         /// </summary>
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 2;
 
         /// <summary>
         /// Product tag. Present so a file that is not ours - a legacy Python save that
