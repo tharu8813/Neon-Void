@@ -256,7 +256,7 @@ namespace NeonVoid.Combat.Projectiles
         /// </summary>
         private void FireVolley(Vector3 direction)
         {
-            Fire(direction, 1f);
+            Fire(direction, 1f, homingTurnDegreesPerTick: 0f);
 
             // Spread symmetrically around the aim so an odd number of extras does not pull the
             // volley to one side. The angle is [초안]; docs/03 only says there is an extra shot.
@@ -269,7 +269,10 @@ namespace NeonVoid.Combat.Projectiles
                     fired++;
                     float side = (fired % 2 == 1) ? 1f : -1f;
                     float degrees = extraShotSpreadDegrees * Mathf.Ceil(fired / 2f) * side;
-                    Fire(Quaternion.Euler(0f, degrees, 0f) * direction, spec.OnHitEffectScale);
+                    Fire(
+                        Quaternion.Euler(0f, degrees, 0f) * direction,
+                        spec.OnHitEffectScale,
+                        spec.HomingTurnDegreesPerTick);
                 }
             }
         }
@@ -298,11 +301,13 @@ namespace NeonVoid.Combat.Projectiles
             if (direction.sqrMagnitude < 1e-4f)
                 return;
 
-            Fire(direction.normalized, _pendingBurstShots.Dequeue());
+            // A burst shot is a straight one: G13 is 추가 연사, and guiding it would hand
+            // R07's behaviour to a card that does not have it.
+            Fire(direction.normalized, _pendingBurstShots.Dequeue(), homingTurnDegreesPerTick: 0f);
             _ticksUntilNextBurstShot = burstShotGapTicks;
         }
 
-        private void Fire(Vector3 direction, float onHitEffectScale)
+        private void Fire(Vector3 direction, float onHitEffectScale, float homingTurnDegreesPerTick)
         {
             var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             orb.name = "NV Shot";
@@ -330,7 +335,7 @@ namespace NeonVoid.Combat.Projectiles
             orb.AddComponent<CombatProjectile>().Launch(
                 _actor, request, direction,
                 EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets,
-                onHitEffectScale, EffectiveProjectileRadius);
+                onHitEffectScale, EffectiveProjectileRadius, homingTurnDegreesPerTick);
         }
     }
 }

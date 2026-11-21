@@ -27,6 +27,11 @@ namespace NeonVoid.Plugins
         [Tooltip("[원안 수치] fraction of effect damage those extra shots deal. R06: 0.80.")]
         public float ExtraShotOnHitScale;
 
+        [Tooltip(
+            "[초안] degrees per tick the extra shots steer towards a target. docs/03 R07 " +
+            "자동 추적탄 is 유도탄 발사 and gives no number. 0 for every other card.")]
+        public float ExtraShotHomingTurnDegreesPerTick;
+
         [Tooltip("Resolved hit effects that earn a burst. docs/03 G13 4중 캐시 counts 4.")]
         public int HitEffectsPerBurst;
 
@@ -51,6 +56,23 @@ namespace NeonVoid.Plugins
 
             if (AddsExtraShots)
                 RequireFraction(ExtraShotOnHitScale, $"{proposalId}: {nameof(ExtraShotOnHitScale)}");
+
+            if (float.IsNaN(ExtraShotHomingTurnDegreesPerTick)
+                || float.IsInfinity(ExtraShotHomingTurnDegreesPerTick)
+                || ExtraShotHomingTurnDegreesPerTick < 0f)
+            {
+                throw new InvalidOperationException(
+                    $"{proposalId}: {nameof(ExtraShotHomingTurnDegreesPerTick)} must be zero or a " +
+                    "positive turn rate.");
+            }
+
+            // A turn rate on a card that adds no shots is a rate nothing ever reads: the card
+            // would read as 유도탄 발사 and fire nothing to guide.
+            if (ExtraShotHomingTurnDegreesPerTick > 0f && !AddsExtraShots)
+            {
+                throw new InvalidOperationException(
+                    $"{proposalId}: declares a homing turn rate but adds no shots to guide.");
+            }
 
             // A burst counter with no shots, or shots with no counter, is a card that looks like
             // it does something and never will. Either half alone is the silent-no-op shape

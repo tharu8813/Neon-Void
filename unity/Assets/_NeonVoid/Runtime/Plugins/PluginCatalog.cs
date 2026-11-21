@@ -234,6 +234,45 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[초안] docs/03 R07 자동 추적탄 states no number, only 유도탄 발사.</summary>
+        public const float DraftSeekerTurnDegreesPerTick = 3.5f;
+
+        /// <summary>[초안] effect damage R07's guided shot carries, read across from R06's 80%.</summary>
+        public const float DraftSeekerOnHitScale = 0.8f;
+
+        /// <summary>
+        /// R07 자동 추적탄 - 유도탄 발사.
+        /// <para>
+        /// <b>It adds a guided shot rather than guiding the basic attack.</b> docs/03 says
+        /// 유도탄 발사 - it fires one - and the additive reading is the one that keeps this card
+        /// out of D-005. Converting the basic attack is what L01 레이저 코어 and L02 부메랑
+        /// 프로토콜 do, and 여러 탄환 형태의 합성 is exactly the undecided question those two
+        /// are blocked on. A card that redefined every shot would have to answer it.
+        /// </para>
+        /// <para>
+        /// The three exceptions docs/03 lists against it are answered in
+        /// <see cref="CombatProjectile"/>, where the steering is, and each one is [초안]:
+        /// 타깃 소실 flies on straight, 벽 gets no special rule because the sweep already stops
+        /// a shot on geometry, and 관통/연쇄 gets none because the shot keeps the ledger it was
+        /// launched with.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition SeekerRound() => new PluginDefinition
+        {
+            ProposalId = "R07",
+            Rarity = PluginRarity.Rare,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.FiringModifier,
+            Damage = default,
+            Firing = new PluginFiring
+            {
+                ExtraShotsPerVolley = 1,
+                ExtraShotOnHitScale = DraftSeekerOnHitScale,
+                ExtraShotHomingTurnDegreesPerTick = DraftSeekerTurnDegreesPerTick,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>
         /// G03 확장 탄두 - 탄환 크기 증가.
         /// <para>

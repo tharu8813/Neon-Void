@@ -353,5 +353,103 @@ namespace NeonVoid.Tests.PlayModeTests
                 enemy.Health.Current, before,
                 "a carried 확장 탄두 did not widen the shots the attacker fires");
         }
+    
+        // --- R07 자동 추적탄 ----------------------------------------------------------------
+
+        /// <summary>Somewhere straight ahead, so a shot aimed at it travels down +Z.</summary>
+        private CombatActor AimPointAhead()
+        {
+            CombatActor aim = _arena.SpawnEnemyNear(_arena.Player, "Aim Point", 0f);
+            aim.transform.position = new Vector3(0f, 0.7f, 40f);
+            return aim;
+        }
+
+        [UnityTest]
+        public IEnumerator AGuidedShotCurvesIntoWhatAStraightOneMisses()
+        {
+            // 유도탄 발사. The assertion is health removed, not the projectile's heading: a shot
+            // that turned correctly and still swept the old direction would pass a heading test
+            // and hit nothing.
+            const float Offset = 5f;
+            _arena = PrototypeArena.Build(new Vector3(Offset, 0.7f, 20f));
+            CombatActor enemy = _arena.Enemies[0];
+            CombatActor aim = AimPointAhead();
+
+            float before = enemy.Health.Current;
+            _arena.FireAt(aim, adRatio: 20f);
+            yield return _arena.Tick(160);
+
+            Assert.AreEqual(
+                before, enemy.Health.Current, 0.001f,
+                "a straight shot reached a body it was not aimed at");
+
+            _arena.FireAt(aim, adRatio: 20f, homingTurnDegreesPerTick: 6f);
+            yield return _arena.Tick(160);
+
+            Assert.Less(
+                enemy.Health.Current, before, "a 유도탄 did not curve into its target");
+        }
+
+        [UnityTest]
+        public IEnumerator AGuidedShotThatLosesItsTargetFliesOnStraight()
+        {
+            // [초안] 타깃 소실: it does not despawn, which would delete a shot the player had
+            // already earned, and it does not re-acquire, which would make it a weapon that
+            // cannot miss - a different and far stronger card than 유도탄 발사.
+            _arena = PrototypeArena.Build(new Vector3(4f, 0.7f, 18f));
+            CombatActor enemy = _arena.Enemies[0];
+            CombatActor aim = AimPointAhead();
+
+            CombatProjectile shot = _arena.FireAt(aim, adRatio: 1f, homingTurnDegreesPerTick: 6f);
+            yield return _arena.Tick(10);
+
+            Assert.IsTrue(shot.IsHoming, "the shot was not guided to begin with");
+            Assert.AreEqual(enemy, shot.HomingTarget, "it followed something other than the only enemy");
+
+            Vector3 heading = shot.Direction;
+            PrototypeArena.Kill(enemy);
+            yield return _arena.Tick(5);
+
+            Assert.IsTrue(shot != null, "losing its target deleted the shot");
+            Assert.IsFalse(shot.IsHoming, "it went looking for somebody else");
+            Assert.AreEqual(
+                heading, shot.Direction,
+                "it kept turning after it had nothing to turn towards");
+        }
+
+        [UnityTest]
+        public IEnumerator SeekerRoundGuidesItsOwnShotAndNotTheMainOne()
+        {
+            // The additive reading: R07 adds a guided shot. Converting the basic attack is what
+            // L01 and L02 do, and that is the question D-005 has open.
+            _arena = PrototypeArena.Build(new Vector3(0f, 0.7f, 30f));
+            _arena.PlayerObject.transform.forward = Vector3.forward;
+            yield return WithAnEmptyLoadout();
+
+            Assert.AreEqual(
+                PluginGrantVerdict.Granted,
+                _arena.Procs.Loadout.TryGrant(PluginCatalog.SeekerRound(), out string why), why);
+            _arena.Procs.PushPassivesToOwner();
+
+            Assert.AreEqual(1, _arena.Attacker.ExtraShotsPerVolley, "R07 added no shot");
+
+            _arena.Attacker.enabled = true;
+            yield return _arena.Tick(1);
+
+            CombatProjectile[] volley =
+                Object.FindObjectsByType<CombatProjectile>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, volley.Length, "the volley was not one shot plus R07's");
+
+            int guided = 0;
+            for (int i = 0; i < volley.Length; ++i)
+            {
+                if (volley[i].IsHoming)
+                    ++guided;
+            }
+
+            Assert.AreEqual(
+                1, guided,
+                "R07 guided the wrong number of shots - the main attack must stay straight");
+        }
     }
 }

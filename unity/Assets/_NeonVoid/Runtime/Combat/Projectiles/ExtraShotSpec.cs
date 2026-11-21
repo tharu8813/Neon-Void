@@ -27,17 +27,33 @@ namespace NeonVoid.Combat.Projectiles
         /// <summary>Fraction of their damage the effects these shots trigger deal.</summary>
         public readonly float OnHitEffectScale;
 
-        public ExtraShotSpec(int count, float onHitEffectScale)
+        /// <summary>
+        /// Degrees these shots may turn per tick towards what they follow. 0 is an ordinary
+        /// straight shot; docs/03 R07 자동 추적탄 is the only card that sets it.
+        /// </summary>
+        public readonly float HomingTurnDegreesPerTick;
+
+        public ExtraShotSpec(int count, float onHitEffectScale, float homingTurnDegreesPerTick = 0f)
         {
             Count = count < 0 ? 0 : count;
             OnHitEffectScale =
                 float.IsNaN(onHitEffectScale) || float.IsInfinity(onHitEffectScale) || onHitEffectScale < 0f
                     ? 1f
                     : onHitEffectScale;
+            HomingTurnDegreesPerTick =
+                float.IsNaN(homingTurnDegreesPerTick) || float.IsInfinity(homingTurnDegreesPerTick)
+                || homingTurnDegreesPerTick < 0f
+                    ? 0f
+                    : homingTurnDegreesPerTick;
         }
+
+        /// <summary>Whether these shots follow something.</summary>
+        public bool IsHoming => HomingTurnDegreesPerTick > 0f;
 
         public bool IsEmpty => Count <= 0;
 
-        public override string ToString() => $"{Count} shot(s) at {OnHitEffectScale:0.##}x effects";
+        public override string ToString() =>
+            $"{Count} shot(s) at {OnHitEffectScale:0.##}x effects" +
+            (IsHoming ? $", homing {HomingTurnDegreesPerTick:0.#}deg/t" : string.Empty);
     }
 }

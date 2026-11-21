@@ -256,7 +256,8 @@ namespace NeonVoid.Tests.PlayModeTests
         /// </param>
         public CombatProjectile FireAt(
             CombatActor target, float adRatio = 1f, int maxTargets = 1, float onHitEffectScale = 1f,
-            float radiusUnits = CombatProjectile.BaseRadiusUnits)
+            float radiusUnits = CombatProjectile.BaseRadiusUnits,
+            float homingTurnDegreesPerTick = 0f)
         {
             Vector3 direction = target.transform.position - PlayerObject.transform.position;
             direction.y = 0f;
@@ -274,7 +275,7 @@ namespace NeonVoid.Tests.PlayModeTests
             CombatProjectile projectile = orb.AddComponent<CombatProjectile>();
             projectile.Launch(
                 Player, request, direction.normalized, 15f, 180, maxTargets, onHitEffectScale,
-                radiusUnits);
+                radiusUnits, homingTurnDegreesPerTick);
             return projectile;
         }
 

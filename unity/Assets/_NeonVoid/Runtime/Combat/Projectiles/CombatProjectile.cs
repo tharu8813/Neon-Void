@@ -31,6 +31,16 @@ namespace NeonVoid.Combat.Projectiles
 
         private float _radiusUnits = BaseRadiusUnits;
 
+        /// <summary>
+        /// [초안] how far a 유도탄 looks for something to follow. docs/03 R07 gives no number.
+        /// </summary>
+        public const float DraftHomingAcquireRangeUnits = 18f;
+
+        /// <summary>Degrees this shot may turn per tick. 0 is an ordinary straight shot.</summary>
+        private float _homingTurnDegreesPerTick;
+
+        private CombatActor _homingTarget;
+
         private CombatActor _attacker;
         private CombatStats _attackerStats;
         private DamageRequest _damage;
@@ -67,8 +77,14 @@ namespace NeonVoid.Combat.Projectiles
             int lifetimeTicks,
             int maxTargets,
             float onHitEffectScale = 1f,
-            float radiusUnits = BaseRadiusUnits)
+            float radiusUnits = BaseRadiusUnits,
+            float homingTurnDegreesPerTick = 0f)
         {
+            _homingTurnDegreesPerTick =
+                float.IsNaN(homingTurnDegreesPerTick) || float.IsInfinity(homingTurnDegreesPerTick)
+                    ? 0f
+                    : Mathf.Max(0f, homingTurnDegreesPerTick);
+            _homingTarget = null;
             _radiusUnits = radiusUnits > 0f && !float.IsNaN(radiusUnits) && !float.IsInfinity(radiusUnits)
                 ? radiusUnits
                 : BaseRadiusUnits;
@@ -95,10 +111,114 @@ namespace NeonVoid.Combat.Projectiles
                 _runner.Unregister(this);
         }
 
+        /// <summary>Whether this shot follows something. docs/03 R07 자동 추적탄.</summary>
+        public bool IsHoming => _homingTurnDegreesPerTick > 0f;
+
+        /// <summary>What it is following, or null when it has nothing to follow.</summary>
+        public CombatActor HomingTarget => _homingTarget;
+
+        /// <summary>The direction it is travelling, for a test.</summary>
+        public Vector3 Direction => _direction;
+
+        /// <summary>
+        /// Turns a 유도탄 towards what it is following, by at most its turn rate.
+        /// <para>
+        /// <b>타깃 소실 [초안]:</b> a shot whose target dies or disappears keeps flying in the
+        /// direction it was last pointing. The two alternatives both change what the card is:
+        /// despawning deletes a shot the player had already earned, and re-acquiring makes it a
+        /// weapon that cannot miss, which is a different and much stronger card than 유도탄 발사.
+        /// It may acquire again only if it never had a target at all.
+        /// </para>
+        /// <para>
+        /// <b>벽:</b> no special rule, and that is deliberate. The sweep below already stops a
+        /// shot on geometry, so a 유도탄 flies into a wall exactly like any other shot. A
+        /// missile that steered around walls would need pathing the projectile has no business
+        /// owning.
+        /// </para>
+        /// <para>
+        /// <b>관통/연쇄:</b> also no special rule. The shot keeps the ledger it was launched
+        /// with, so following a target grants no extra pierce - docs/03 leaves the policy open
+        /// and granting one here would decide it.
+        /// </para>
+        /// </summary>
+        private void Steer()
+        {
+            if (!IsHoming)
+                return;
+
+            if (_homingTarget != null && !_homingTarget.IsAlive)
+            {
+                // Lost, and not replaced: see 타깃 소실 above.
+                _homingTarget = null;
+                _homingTurnDegreesPerTick = 0f;
+                return;
+            }
+
+            if (_homingTarget == null)
+            {
+                _homingTarget = NearestHostile();
+                if (_homingTarget == null)
+                    return;
+            }
+
+            Vector3 toTarget = _homingTarget.transform.position - transform.position;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < 1e-6f)
+                return;
+
+            float radians = _homingTurnDegreesPerTick * Mathf.Deg2Rad;
+            _direction = Vector3.RotateTowards(_direction, toTarget.normalized, radians, 0f).normalized;
+        }
+
+        /// <summary>
+        /// The closest living hostile within acquisition range, ties broken by actor id.
+        /// <para>
+        /// The tiebreak is not decoration. Physics queries return their results in no defined
+        /// order, so two enemies at the same distance would otherwise be chosen by whatever the
+        /// engine happened to list first - and a shot that picked a different target on a replay
+        /// of the same seed would make the whole run non-reproducible.
+        /// </para>
+        /// </summary>
+        private CombatActor NearestHostile()
+        {
+            if (_attacker == null)
+                return null;
+
+            Collider[] near = Physics.OverlapSphere(
+                transform.position, DraftHomingAcquireRangeUnits, ~0, QueryTriggerInteraction.Ignore);
+
+            CombatActor best = null;
+            float bestDistance = float.MaxValue;
+
+            for (int i = 0; i < near.Length; ++i)
+            {
+                var candidate = near[i].GetComponentInParent<CombatActor>();
+                if (candidate == null || !candidate.IsAlive || !_attacker.IsHostileTo(candidate))
+                    continue;
+
+                Vector3 offset = candidate.transform.position - transform.position;
+                offset.y = 0f;
+                float distance = offset.sqrMagnitude;
+
+                if (distance > bestDistance)
+                    continue;
+
+                if (distance < bestDistance || best == null || candidate.ActorId < best.ActorId)
+                {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
         void ISimulationTickReceiver.OnSimulationTick(long tickIndex)
         {
             if (!_launched)
                 return;
+
+            Steer();
 
             float step = _speedUnitsPerSecond * (float)SimulationClock.TickDeltaSeconds;
             Vector3 origin = transform.position;

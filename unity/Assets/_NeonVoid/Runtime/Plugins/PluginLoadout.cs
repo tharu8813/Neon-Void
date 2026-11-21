@@ -218,7 +218,12 @@ namespace NeonVoid.Plugins
             {
                 PluginFiring firing = _carried[i].Firing;
                 if (firing.AddsExtraShots)
-                    into.Add(new ExtraShotSpec(firing.ExtraShotsPerVolley, firing.ExtraShotOnHitScale));
+                {
+                    into.Add(new ExtraShotSpec(
+                        firing.ExtraShotsPerVolley,
+                        firing.ExtraShotOnHitScale,
+                        firing.ExtraShotHomingTurnDegreesPerTick));
+                }
             }
         }
 
