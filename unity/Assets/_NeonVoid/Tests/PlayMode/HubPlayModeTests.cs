@@ -691,5 +691,53 @@ namespace NeonVoid.Tests.PlayModeTests
                 _hub.TryUseTerminal(HubTerminalKind.Mission),
                 "a new mission began on top of a death nobody had paid for");
         }
+    
+        // --- what the HUD says you are standing next to -----------------------------------
+
+        [UnityTest]
+        public IEnumerator ThePromptNamesTheTerminalInReachAndSaysWhenOneIsNotReady()
+        {
+            // The prompt is the only thing in the build that tells a player what a pillar is.
+            // Asserted on the controller's own model rather than the panel, which
+            // HudPlayModeTests covers - here the question is whether it reads the hub right.
+            yield return Hub();
+
+            // Left inactive on purpose: this test is about what the controller READS, and an
+            // active one would also try to draw, which needs the real document. The panel half
+            // is HudPlayModeTests, which loads it.
+            var hudObject = new GameObject("HUD Model");
+            hudObject.SetActive(false);
+            hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(_arena.Player, _motherboard, null, _hub);
+
+            try
+            {
+                StandOn(HubAt);
+                yield return _arena.Tick(1);
+                Assert.IsFalse(
+                    hud.GatherPrompt().HasSubject,
+                    "the middle of the hub offered something to use");
+
+                StandOn(_hub.Terminal(HubTerminalKind.Mission).position);
+                yield return _arena.Tick(1);
+
+                NeonVoid.UI.HudPrompt mission = hud.GatherPrompt();
+                Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Mission), mission.Subject);
+                Assert.IsTrue(mission.Available, "the 의뢰 터미널 works and the prompt said otherwise");
+
+                StandOn(_hub.Terminal(HubTerminalKind.Skills).position);
+                yield return _arena.Tick(1);
+
+                NeonVoid.UI.HudPrompt skills = hud.GatherPrompt();
+                Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Skills), skills.Subject);
+                Assert.IsFalse(skills.Available, "an unfinished terminal offered itself as usable");
+                Assert.AreEqual(HubTerminals.PendingLabel(HubTerminalKind.Skills), skills.Detail);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(hudObject);
+            }
+        }
     }
 }

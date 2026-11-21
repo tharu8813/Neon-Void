@@ -173,7 +173,7 @@ namespace NeonVoid.EditorTools
 
             // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
             // to be chosen 실제 검증 후 - which needs a HUD to verify.
-            BuildHud(vaccine.Actor, motherboard);
+            BuildHud(vaccine.Actor, motherboard, hub);
 
             CreateDirectionalLight();
 
@@ -236,7 +236,7 @@ namespace NeonVoid.EditorTools
         /// The UI Toolkit HUD: a UIDocument with the project's PanelSettings and the
         /// controller that fills it from the simulation.
         /// </summary>
-        private static void BuildHud(NeonVoid.Combat.CombatActor player, MotherboardDirector board)
+        private static void BuildHud(NeonVoid.Combat.CombatActor player, MotherboardDirector board, HubRuntime hub)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -259,7 +259,7 @@ namespace NeonVoid.EditorTools
             document.visualTreeAsset = asset;
 
             HudController controller = host.AddComponent<HudController>();
-            controller.Configure(player, board);
+            controller.Configure(player, board, null, hub);
 
             host.SetActive(true);
         }

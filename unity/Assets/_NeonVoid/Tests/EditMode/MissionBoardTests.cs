@@ -331,5 +331,37 @@ namespace NeonVoid.Tests
 
             return string.Join(", ", parts.ToArray());
         }
+    
+        // --- the HUD's own wording for a terminal that is not finished ---------------------
+
+        [Test]
+        public void EveryUnconnectedTerminalHasAShortLabelAndEveryConnectedOneHasNone()
+        {
+            // Two strings per terminal on purpose: WhyNotConnected names the decision for
+            // whoever finishes it, PendingLabel is what fits on the HUD while the player walks
+            // past. A terminal that gained one and not the other would be silent in one of the
+            // two places.
+            for (int i = 0; i < HubTerminals.All.Length; ++i)
+            {
+                HubTerminalKind kind = HubTerminals.All[i];
+                bool connected = HubTerminals.IsConnected(kind);
+
+                string label = HubTerminals.PendingLabel(kind);
+                string why = HubTerminals.WhyNotConnected(kind);
+
+                if (connected)
+                {
+                    Assert.IsEmpty(label, $"{kind} works and still says it is pending");
+                    Assert.IsEmpty(why, $"{kind} works and still explains why it does not");
+                    continue;
+                }
+
+                Assert.IsNotEmpty(label, $"{kind} is unconnected and the HUD has nothing to say");
+                Assert.IsNotEmpty(why, $"{kind} is unconnected and nothing records why");
+                Assert.Less(
+                    label.Length, why.Length,
+                    $"{kind}'s HUD label is not shorter than its explanation, so it is the explanation");
+            }
+        }
     }
 }

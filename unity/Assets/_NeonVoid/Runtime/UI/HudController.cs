@@ -41,9 +41,15 @@ namespace NeonVoid.UI
         [Tooltip("An area runtime to read directly, for a scene with no motherboard.")]
         [SerializeField] private HardwareAreaRuntime area;
 
+        [Tooltip("The 디펜더 허브, whose terminals the prompt names. Found when left empty.")]
+        [SerializeField] private HubRuntime hub;
+
         [Header("[초안] labels")]
         [Tooltip("[초안] D-009 has not settled the keys; these are the prototype's Q/E/R.")]
         [SerializeField] private string[] skillKeys = { "Q", "E", "R" };
+
+        [Tooltip("[초안] docs/02 section 7 drafts F for 상호작용. D-009 has not settled it.")]
+        [SerializeField] private string interactKey = "F";
 
         private UIDocument _document;
         private SimulationRunner _runner;
@@ -61,6 +67,11 @@ namespace NeonVoid.UI
         private readonly ProgressBar[] _skillBars = new ProgressBar[HudSnapshot.SkillSlots];
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
+        private VisualElement _promptPanel;
+        private Label _promptSubject;
+        private Label _promptDetail;
+        private ProgressBar _promptBar;
+
         private VisualElement _areaPanel;
         private Label _areaName;
         private Label _areaObjectives;
@@ -75,19 +86,27 @@ namespace NeonVoid.UI
         private const string SkillReady = "skill--ready";
         private const string SkillEmpty = "skill--empty";
         private const string GaugeArmed = "area__gauge--armed";
+        private const string PromptUnavailable = "prompt--unavailable";
 
         /// <summary>The last snapshot drawn. For a test, and for the debug overlay.</summary>
         public HudSnapshot Last { get; private set; }
+
+        /// <summary>What the player could act on when the HUD last drew. For a test.</summary>
+        public HudPrompt Prompt { get; private set; }
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects + 10;
 
         /// <summary>Names what the HUD reads. The injection seam for a test.</summary>
         public void Configure(
-            CombatActor vaccine, MotherboardDirector board = null, HardwareAreaRuntime areaRuntime = null)
+            CombatActor vaccine,
+            MotherboardDirector board = null,
+            HardwareAreaRuntime areaRuntime = null,
+            HubRuntime hubRuntime = null)
         {
             player = vaccine;
             motherboard = board;
             area = areaRuntime;
+            hub = hubRuntime;
         }
 
         private void Awake()
@@ -102,6 +121,9 @@ namespace NeonVoid.UI
 
             if (motherboard == null)
                 motherboard = FindFirstObjectByType<MotherboardDirector>();
+
+            if (hub == null)
+                hub = FindFirstObjectByType<HubRuntime>();
         }
 
         private void OnEnable()
@@ -135,6 +157,10 @@ namespace NeonVoid.UI
             HudSnapshot snapshot = Gather();
             Last = snapshot;
             Draw(snapshot);
+
+            HudPrompt prompt = GatherPrompt();
+            Prompt = prompt;
+            DrawPrompt(prompt);
         }
 
         /// <summary>
@@ -201,6 +227,101 @@ namespace NeonVoid.UI
                 standing.PurificationDwell != null ? standing.PurificationDwell.Progress : 0f,
                 standing.ExtractionDwell != null ? standing.ExtractionDwell.Progress : 0f,
                 standing.IsExtractionArmed);
+        }
+
+        /// <summary>
+        /// What the player could act on where they are standing.
+        /// <para>
+        /// Asked in the order the loop happens in - the thing you are doing now beats the
+        /// thing you could do next - so walking onto the 철수 패드 while the 정화 콘솔 is
+        /// still in reach reads as 철수 rather than flickering between the two.
+        /// </para>
+        /// </summary>
+        public HudPrompt GatherPrompt()
+        {
+            HardwareAreaRuntime standing = CurrentArea();
+            if (standing != null)
+                return AreaPrompt(standing);
+
+            HudPrompt portal = PortalPrompt();
+            if (portal.HasSubject)
+                return portal;
+
+            return TerminalPrompt();
+        }
+
+        private HudPrompt AreaPrompt(HardwareAreaRuntime standing)
+        {
+            if (standing.IsExtractionArmed)
+                return new HudPrompt("철수 패드", "철수 준비 완료", true);
+
+            DwellGate pad = standing.ExtractionDwell;
+            if (pad != null && pad.IsOccupied)
+                return HudPrompt.Holding("철수 패드", "유지하여 철수", pad.Progress);
+
+            DwellGate console = standing.PurificationDwell;
+            if (console != null && console.IsOccupied)
+                return HudPrompt.Holding("정화 콘솔", "유지하여 정화", console.Progress);
+
+            return HudPrompt.None;
+        }
+
+        private HudPrompt PortalPrompt()
+        {
+            if (motherboard == null)
+                return HudPrompt.None;
+
+            for (int i = 0; i < HardwareIds.All.Length; ++i)
+            {
+                HardwareId hardware = HardwareIds.All[i];
+                DwellGate gate = motherboard.PortalDwell(hardware);
+                if (gate == null || !gate.IsOccupied)
+                    continue;
+
+                return HudPrompt.Holding($"{hardware} 포털", "유지하여 진입", gate.Progress);
+            }
+
+            return HudPrompt.None;
+        }
+
+        private HudPrompt TerminalPrompt()
+        {
+            if (hub == null)
+                return HudPrompt.None;
+
+            for (int i = 0; i < HubTerminals.All.Length; ++i)
+            {
+                HubTerminalKind kind = HubTerminals.All[i];
+                if (!hub.IsInReach(kind))
+                    continue;
+
+                string name = HubTerminals.NameOf(kind);
+
+                // A terminal with nothing behind it still gets a prompt. A pillar the player
+                // walks up to and gets no answer from reads as a bug rather than as a thing
+                // that is not finished - and docs/00 fixes the set of four.
+                if (!HubTerminals.IsConnected(kind))
+                    return HudPrompt.Unavailable(name, HubTerminals.PendingLabel(kind));
+
+                return new HudPrompt(name, $"{interactKey} 키로 사용", true);
+            }
+
+            return HudPrompt.None;
+        }
+
+        private void DrawPrompt(in HudPrompt prompt)
+        {
+            Show(_promptPanel, prompt.HasSubject);
+            if (!prompt.HasSubject)
+                return;
+
+            _promptSubject.text = prompt.Subject;
+            _promptDetail.text = prompt.Detail;
+            Toggle(_promptPanel, PromptUnavailable, !prompt.Available);
+
+            Show(_promptBar, prompt.IsDwell);
+            if (prompt.IsDwell)
+                _promptBar.value = prompt.Progress;
         }
 
         private HardwareAreaRuntime CurrentArea()
@@ -294,6 +415,11 @@ namespace NeonVoid.UI
                 if (_skillKeyLabels[i] != null && skillKeys != null && i < skillKeys.Length)
                     _skillKeyLabels[i].text = skillKeys[i];
             }
+
+            _promptPanel = root.Q<VisualElement>("promptPanel");
+            _promptSubject = root.Q<Label>("promptSubject");
+            _promptDetail = root.Q<Label>("promptDetail");
+            _promptBar = root.Q<ProgressBar>("promptBar");
 
             _areaPanel = root.Q<VisualElement>("areaPanel");
             _areaName = root.Q<Label>("areaName");

@@ -163,5 +163,48 @@ namespace NeonVoid.Tests
             Assert.DoesNotThrow(() => snapshot.SkillAt(2));
             Assert.Throws<ArgumentOutOfRangeException>(() => snapshot.SkillAt(3));
         }
+    
+        // --- the interaction prompt ------------------------------------------------------
+
+        [Test]
+        public void NothingInReachIsDrawnAsNothing()
+        {
+            Assert.IsFalse(HudPrompt.None.HasSubject);
+            Assert.IsFalse(HudPrompt.None.IsDwell);
+        }
+
+        [Test]
+        public void SomethingHeldCarriesItsProgressAndSomethingPressedDoesNot()
+        {
+            // The difference the player acts on: a thing you stand on shows how far along you
+            // are, a thing you press does not pretend to.
+            HudPrompt held = HudPrompt.Holding("정화 콘솔", "유지하여 정화", 0.4f);
+            var pressed = new HudPrompt("의뢰 터미널", "F 키로 사용", true);
+
+            Assert.IsTrue(held.IsDwell);
+            Assert.AreEqual(0.4f, held.Progress, 0.0001f);
+            Assert.IsFalse(pressed.IsDwell);
+            Assert.IsTrue(pressed.Available);
+        }
+
+        [Test]
+        public void AHeldPromptsProgressStaysInsideItsBar()
+        {
+            Assert.AreEqual(1f, HudPrompt.Holding("x", "y", 4f).Progress, 0.0001f);
+            Assert.AreEqual(0f, HudPrompt.Holding("x", "y", -1f).Progress, 0.0001f);
+        }
+
+        [Test]
+        public void AnUnavailablePromptStillNamesWhatItIs()
+        {
+            // A pillar the player walks up to and gets no answer from reads as a bug. It has
+            // to say what it is and that it is not ready.
+            HudPrompt pending = HudPrompt.Unavailable("스킬 장착 터미널", "미연결 · 스킬 풀 미확정");
+
+            Assert.IsTrue(pending.HasSubject);
+            Assert.IsFalse(pending.Available);
+            Assert.IsNotEmpty(pending.Detail);
+            Assert.IsFalse(pending.IsDwell);
+        }
     }
 }

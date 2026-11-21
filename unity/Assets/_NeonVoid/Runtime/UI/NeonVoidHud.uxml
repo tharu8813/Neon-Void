@@ -9,6 +9,14 @@
       </ui:VisualElement>
     </ui:VisualElement>
 
+    <ui:VisualElement name="hudMiddle" class="hud__middle" picking-mode="Ignore">
+      <ui:VisualElement name="promptPanel" class="prompt hidden" picking-mode="Ignore">
+        <ui:Label name="promptSubject" class="prompt__subject" text="" />
+        <ui:Label name="promptDetail" class="prompt__detail" text="" />
+        <ui:ProgressBar name="promptBar" class="bar bar--prompt hidden" low-value="0" high-value="1" value="0" />
+      </ui:VisualElement>
+    </ui:VisualElement>
+
     <ui:VisualElement name="hudBottom" class="hud__bottom" picking-mode="Ignore">
 
       <ui:VisualElement name="vitalsPanel" class="vitals" picking-mode="Ignore">

@@ -22,6 +22,68 @@
     display: none;
 }
 
+/* --- prompt ---------------------------------------------------------------- */
+
+.hud__middle {
+    flex-grow: 1;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 48px;
+}
+
+.prompt {
+    align-items: center;
+    padding-top: 8px;
+    padding-right: 20px;
+    padding-bottom: 8px;
+    padding-left: 20px;
+    background-color: rgba(10, 16, 28, 0.82);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(120, 230, 255, 0.45);
+    border-right-color: rgba(120, 230, 255, 0.45);
+    border-top-color: rgba(120, 230, 255, 0.45);
+    border-bottom-color: rgba(120, 230, 255, 0.45);
+}
+
+.prompt__subject {
+    font-size: 18px;
+    color: rgb(235, 245, 255);
+    letter-spacing: 1px;
+    -unity-font-style: bold;
+}
+
+.prompt__detail {
+    font-size: 14px;
+    color: rgb(130, 255, 215);
+    margin-top: 2px;
+}
+
+.prompt--unavailable .prompt__subject {
+    color: rgb(160, 170, 195);
+}
+
+.prompt--unavailable .prompt__detail {
+    color: rgb(255, 170, 120);
+}
+
+.bar--prompt {
+    height: 8px;
+    width: 180px;
+    margin-top: 6px;
+}
+
+.bar--prompt .unity-progress-bar__container {
+    height: 8px;
+    min-height: 8px;
+}
+
+.bar--prompt .unity-progress-bar__progress {
+    background-color: rgb(130, 255, 215);
+}
+
 /* --- boss ------------------------------------------------------------------ */
 
 .boss {

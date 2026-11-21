@@ -70,6 +70,35 @@ namespace NeonVoid.Missions
         public static bool IsConnected(HubTerminalKind kind) =>
             kind == HubTerminalKind.Mission || kind == HubTerminalKind.Growth;
 
+        /// <summary>
+        /// Why a terminal does nothing yet, short enough to sit on the HUD, or empty when it
+        /// works.
+        /// <para>
+        /// Separate from <see cref="WhyNotConnected"/>, which is written for whoever has to
+        /// finish the terminal and names the decision. A prompt the player reads while walking
+        /// past needs the fact and not the reasoning, and putting the long one on screen was
+        /// a sixty-character paragraph in a one-line box.
+        /// </para>
+        /// </summary>
+        public static string PendingLabel(HubTerminalKind kind)
+        {
+            switch (kind)
+            {
+                case HubTerminalKind.Mission:
+                case HubTerminalKind.Growth:
+                    return string.Empty;
+
+                case HubTerminalKind.Database:
+                    return "미연결 · 플러그인 획득 이후";
+
+                case HubTerminalKind.Skills:
+                    return "미연결 · 스킬 풀 미확정";
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a hub terminal.");
+            }
+        }
+
         /// <summary>Why a terminal does nothing yet, in one line, or empty when it works.</summary>
         public static string WhyNotConnected(HubTerminalKind kind)
         {
