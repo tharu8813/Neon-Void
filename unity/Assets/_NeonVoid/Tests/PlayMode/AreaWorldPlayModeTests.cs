@@ -147,6 +147,71 @@ namespace NeonVoid.Tests.PlayModeTests
         /// Refills the health pool to something a room full of enemies cannot empty. Configure is
         /// the only revive this project has, and it is what the combat tests use.
         /// </summary>
+        [UnityTest]
+        public IEnumerator AnEliteKillIsPaidAndCountedAsAnElite()
+        {
+            // GDD v1 section 5.4 pays 정예 처치 32 XP against 일반 처치 8, and MissionFlow keeps
+            // the two counts apart. Only ever covered by pure tests until now - and the room
+            // the area actually builds holds both kinds, so the difference is reachable by
+            // whoever walks into it.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            AreaEnemySpawn target = default;
+            bool found = false;
+            for (int i = 0; i < area.Layout.Enemies.Count && !found; ++i)
+            {
+                if (!area.Layout.Enemies[i].IsElite)
+                {
+                    target = area.Layout.Enemies[i];
+                    found = true;
+                }
+            }
+
+            MakeUnkillable(_arena.Player);
+            StandOn(target.Cell);
+            yield return _arena.Tick(1);
+
+            AreaRoomGate gate = null;
+            for (int i = 0; i < area.RoomGates.Length; ++i)
+            {
+                if (area.RoomGates[i].IsOpen)
+                    gate = area.RoomGates[i];
+            }
+
+            Assert.IsNotNull(gate, "no room woke up");
+
+            int elites = 0;
+            CombatActor elite = null;
+            for (int i = 0; i < gate.HeldCount; ++i)
+            {
+                AreaRoomOccupant occupant = gate.OccupantAt(i);
+                if (!occupant.IsElite)
+                    continue;
+
+                ++elites;
+                if (elite == null && occupant.Actor.IsAlive)
+                    elite = occupant.Actor;
+            }
+
+            Assert.Greater(elites, 0, $"{gate.name} holds no 정예, so this test asserts nothing");
+            Assert.IsNotNull(elite, "no live 정예 was found in the opened room");
+
+            long xpBefore = Flow.Run.MissionXp;
+            PrototypeArena.Kill(elite);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(
+                xpBefore + MissionXpBudget.XpForEliteKill(0), Flow.Run.MissionXp,
+                "a 정예 kill did not pay 정예 XP");
+            Assert.AreEqual(1, Flow.ElitesKilledInMission, "the 정예 was not counted as one");
+            Assert.AreEqual(
+                0, Flow.EnemiesKilledInMission,
+                "a 정예 kill was counted as an ordinary one, so the two budgets are the same number");
+        }
+
         private static void MakeUnkillable(CombatActor actor)
         {
             CombatStats stats = PrototypeArena.PlayerStats();
@@ -423,21 +488,27 @@ namespace NeonVoid.Tests.PlayModeTests
             // One of the room's enemies, found by where it stands rather than by reaching into
             // the gate - and killed through the normal damage pipeline, so the gate's own
             // subscription is what reports it.
+            // An ORDINARY one, chosen in the room's own order.
+            //
+            // This test is about 일반 적 처치 8 XP, and MissionFlow counts a 정예 kill under
+            // ElitesKilledInMission instead - so killing a 정예 here leaves EnemiesKilledInMission
+            // at zero with nothing refused and nothing logged, which reads exactly like the kill
+            // having been dropped. The room this seed opens holds 16 enemies and two of them are
+            // 정예, and the search used to be over FindObjectsByType(FindObjectsSortMode.None),
+            // whose order is not defined and shifts with whatever else is in the scene. That is
+            // what made this test fail in full runs and pass on its own.
             CombatActor victim = null;
-            CombatActor[] everyActor = UnityEngine.Object.FindObjectsByType<CombatActor>(FindObjectsSortMode.None);
-            for (int i = 0; i < everyActor.Length && victim == null; ++i)
+            for (int i = 0; i < gate.HeldCount && victim == null; ++i)
             {
-                if (everyActor[i].TeamId == 1
-                    && everyActor[i].IsAlive
-                    && everyActor[i].gameObject.activeInHierarchy
-                    && gate.Contains(everyActor[i].transform.position)
-                    && everyActor[i].GetComponent<NeonVoid.Combat.AI.EnemyAgent>() != null)
-                {
-                    victim = everyActor[i];
-                }
+                AreaRoomOccupant occupant = gate.OccupantAt(i);
+                if (!occupant.IsElite && occupant.Actor != null && occupant.Actor.IsAlive)
+                    victim = occupant.Actor;
             }
 
-            Assert.IsNotNull(victim, "no live enemy was found in the opened room");
+            Assert.IsNotNull(victim, "no live ordinary enemy was found in the opened room");
+            Assert.IsTrue(
+                victim.gameObject.activeInHierarchy, "the room is open, so its enemies are awake");
+            Assert.IsTrue(gate.Contains(victim.transform.position), "an occupant is standing outside its room");
             string victimName = victim.name;
             PrototypeArena.Kill(victim);
             yield return _arena.Tick(1);
@@ -448,12 +519,17 @@ namespace NeonVoid.Tests.PlayModeTests
                 $"{gate.name} does not hold {victimName}, so its death was nobody's");
             Assert.AreEqual(
                 killsBefore + 1, Flow.EnemiesKilledInMission,
-                $"the kill was not counted. phase={Flow.Phase}/{Flow.Run.Phase}/{Flow.AreaPhase} " +
-                $"entered={area.Runtime.HasEntered} runtimeEnabled={area.Runtime.isActiveAndEnabled} " +
-                $"refusal='{Flow.LastRefusal}' gate={gate.name} victim={victimName}");
+                $"the kill was not counted. {victimName} in {gate.name}, " +
+                $"정예 {Flow.ElitesKilledInMission}, phase {Flow.Phase}/{Flow.AreaPhase}, " +
+                $"refusal '{Flow.LastRefusal}'");
             Assert.AreEqual(
                 xpBefore + MissionXpBudget.XpForNormalKill(0), Flow.Run.MissionXp,
                 "the kill did not pay its 의뢰 XP");
+
+            // The two counts are what tell an ordinary kill from a 정예 one, and a victim that
+            // drifted back to being a 정예 would otherwise fail this test as if the reporting
+            // had broken.
+            Assert.AreEqual(0, Flow.ElitesKilledInMission, "an ordinary enemy was counted as a 정예");
         }
 
         [UnityTest]
