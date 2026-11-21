@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NeonVoid.Combat;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
@@ -67,6 +68,12 @@ namespace NeonVoid.UI
         private readonly ProgressBar[] _skillBars = new ProgressBar[HudSnapshot.SkillSlots];
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
+        private VisualElement _boardPanel;
+        private VisualElement _boardRows;
+
+        /// <summary>The rows currently drawn, so an unchanged board is not rebuilt every tick.</summary>
+        private string _boardSignature = string.Empty;
+
         private VisualElement _promptPanel;
         private Label _promptSubject;
         private Label _promptDetail;
@@ -87,12 +94,21 @@ namespace NeonVoid.UI
         private const string SkillEmpty = "skill--empty";
         private const string GaugeArmed = "area__gauge--armed";
         private const string PromptUnavailable = "prompt--unavailable";
+        private const string BoardRowDone = "board-row--done";
 
         /// <summary>The last snapshot drawn. For a test, and for the debug overlay.</summary>
         public HudSnapshot Last { get; private set; }
 
         /// <summary>What the player could act on when the HUD last drew. For a test.</summary>
         public HudPrompt Prompt { get; private set; }
+
+        /// <summary>
+        /// The 메인보드 as the HUD last read it, or empty when the player is not on it.
+        /// docs/01 section 1: 현재 임무 위험도/환경 패널.
+        /// </summary>
+        public IReadOnlyList<HudBoardRow> Board => _board;
+
+        private readonly List<HudBoardRow> _board = new List<HudBoardRow>();
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects + 10;
 
@@ -161,6 +177,9 @@ namespace NeonVoid.UI
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
             DrawPrompt(prompt);
+
+            GatherBoard();
+            DrawBoard();
         }
 
         /// <summary>
@@ -250,6 +269,98 @@ namespace NeonVoid.UI
             return TerminalPrompt();
         }
 
+        /// <summary>
+        /// Reads the mission board while the player is standing on the motherboard, and empties
+        /// it everywhere else. Public, like the other two gathers, so what the HUD reads can be
+        /// checked without a panel to draw it on.
+        /// <para>
+        /// Only on the motherboard: the conditions belong to a mission that has begun, and a
+        /// board on screen in the hub would be showing the player a roll for a mission they
+        /// have not started.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<HudBoardRow> GatherBoard()
+        {
+            _board.Clear();
+
+            if (motherboard == null)
+                return _board;
+
+            MissionFlow flow = motherboard.Flow;
+            if (flow == null || flow.Phase != MissionFlowPhase.Motherboard)
+                return _board;
+
+            MissionBoardPlan plan = motherboard.Board;
+            IReadOnlyList<HardwareId> purified = flow.PurifiedAreas;
+
+            for (int i = 0; i < plan.Count; ++i)
+            {
+                AreaConditions conditions = plan[i];
+
+                bool done = false;
+                for (int p = 0; p < purified.Count && !done; ++p)
+                    done = purified[p] == conditions.Hardware;
+
+                _board.Add(new HudBoardRow(conditions, done));
+            }
+
+            return _board;
+        }
+
+        /// <summary>
+        /// Writes the board, rebuilding its rows only when it has actually changed.
+        /// <para>
+        /// A panel of five rows rebuilt sixty times a second would allocate five elements a
+        /// tick for a list that changes when a mission begins and when an area is purified.
+        /// </para>
+        /// </summary>
+        private void DrawBoard()
+        {
+            Show(_boardPanel, _board.Count > 0);
+            if (_board.Count == 0)
+            {
+                _boardSignature = string.Empty;
+                return;
+            }
+
+            string signature = BoardSignature();
+            if (signature == _boardSignature)
+                return;
+
+            _boardSignature = signature;
+            _boardRows.Clear();
+
+            for (int i = 0; i < _board.Count; ++i)
+            {
+                HudBoardRow row = _board[i];
+
+                var line = new VisualElement();
+                line.AddToClassList("board-row");
+                if (!row.IsOpen)
+                    line.AddToClassList(BoardRowDone);
+
+                var hardware = new Label(row.Hardware.ToString());
+                hardware.AddToClassList("board-row__hardware");
+
+                var conditions = new Label(
+                    row.IsOpen ? row.ConditionLine : $"{row.ConditionLine} · 정화됨");
+                conditions.AddToClassList("board-row__conditions");
+
+                line.Add(hardware);
+                line.Add(conditions);
+                _boardRows.Add(line);
+            }
+        }
+
+        private string BoardSignature()
+        {
+            var text = new System.Text.StringBuilder();
+            for (int i = 0; i < _board.Count; ++i)
+                text.Append(_board[i]).Append('|');
+
+            return text.ToString();
+        }
+
         private HudPrompt AreaPrompt(HardwareAreaRuntime standing)
         {
             if (standing.IsExtractionArmed)
@@ -278,11 +389,21 @@ namespace NeonVoid.UI
                 if (gate == null || !gate.IsOccupied)
                     continue;
 
-                return HudPrompt.Holding($"{hardware} 포털", "유지하여 진입", gate.Progress);
+                // What is behind the portal, where the choice is actually made. The board
+                // panel says the same thing for all five; this says it for the one the player
+                // is standing in.
+                AreaConditions conditions = motherboard.Board.For(hardware);
+                return HudPrompt.Holding(
+                    $"{hardware} 포털", $"{conditions.Difficulty} · {Describe(conditions)}", gate.Progress);
             }
 
             return HudPrompt.None;
         }
+
+        private static string Describe(in AreaConditions conditions) =>
+            conditions.Environment == EnvironmentKind.Mutation
+                ? $"{conditions.Environment} Lv.{conditions.MutationLevel}"
+                : conditions.Environment.ToString();
 
         private HudPrompt TerminalPrompt()
         {
@@ -415,6 +536,9 @@ namespace NeonVoid.UI
                 if (_skillKeyLabels[i] != null && skillKeys != null && i < skillKeys.Length)
                     _skillKeyLabels[i].text = skillKeys[i];
             }
+
+            _boardPanel = root.Q<VisualElement>("boardPanel");
+            _boardRows = root.Q<VisualElement>("boardRows");
 
             _promptPanel = root.Q<VisualElement>("promptPanel");
             _promptSubject = root.Q<Label>("promptSubject");

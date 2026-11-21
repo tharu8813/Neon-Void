@@ -2,6 +2,11 @@
   <ui:Style src="NeonVoidHud.uss" />
   <ui:VisualElement name="hud" class="hud" picking-mode="Ignore">
 
+    <ui:VisualElement name="boardPanel" class="board hidden" picking-mode="Ignore">
+      <ui:Label name="boardTitle" class="board__title" text="메인보드" />
+      <ui:VisualElement name="boardRows" picking-mode="Ignore" />
+    </ui:VisualElement>
+
     <ui:VisualElement name="hudTop" class="hud__top" picking-mode="Ignore">
       <ui:VisualElement name="bossPanel" class="boss hidden" picking-mode="Ignore">
         <ui:Label name="bossName" class="boss__name" text="BOSS" />

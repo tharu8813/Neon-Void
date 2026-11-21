@@ -1,4 +1,5 @@
 using System;
+using NeonVoid.Missions;
 using NeonVoid.UI;
 using NUnit.Framework;
 
@@ -205,6 +206,49 @@ namespace NeonVoid.Tests
             Assert.IsFalse(pending.Available);
             Assert.IsNotEmpty(pending.Detail);
             Assert.IsFalse(pending.IsDwell);
+        }
+    
+        // --- the 메인보드 row -------------------------------------------------------------
+
+        [Test]
+        public void ABoardRowNamesTheDifficultyAndTheEnvironment()
+        {
+            // docs/01 section 1: 현재 임무 위험도/환경 패널. Both halves, because the choice
+            // [확정] docs/01 calls 입장 순서는 자유 is made on them.
+            var clear = new HudBoardRow(
+                AreaConditions.Clear(HardwareId.Gpu, HardwareDifficulty.Easy), purified: false);
+
+            Assert.AreEqual(HardwareId.Gpu, clear.Hardware);
+            StringAssert.Contains("Easy", clear.ConditionLine);
+            StringAssert.Contains("Clear", clear.ConditionLine);
+            Assert.IsTrue(clear.IsOpen);
+        }
+
+        [Test]
+        public void AMutationRowCarriesItsLevel()
+        {
+            // The level is the whole difference between one 변이발생 area and another, so a
+            // row that dropped it would make two different areas read identically.
+            var mutated = new HudBoardRow(
+                new AreaConditions(
+                    HardwareId.Ram, HardwareDifficulty.Hard, EnvironmentKind.Mutation, 4),
+                purified: false);
+
+            StringAssert.Contains("Lv.4", mutated.ConditionLine);
+        }
+
+        [Test]
+        public void APurifiedAreaIsShownDoneRatherThanHidden()
+        {
+            // [확정] docs/01 section 1 forbids 중복 정화, so a purified area cannot be entered
+            // again - but hiding it would make the board look like the mission was rolled with
+            // fewer choices than it was.
+            var done = new HudBoardRow(
+                AreaConditions.Clear(HardwareId.Ssd, HardwareDifficulty.Normal), purified: true);
+
+            Assert.IsFalse(done.IsOpen);
+            Assert.IsTrue(done.Purified);
+            StringAssert.Contains("Ssd", done.ToString());
         }
     }
 }

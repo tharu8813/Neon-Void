@@ -333,5 +333,53 @@ namespace NeonVoid.Tests.PlayModeTests
             reopened.Open();
             Assert.Greater(reopened.Snapshot.vaccine.permanentXp, 0L, "the extraction banked nothing");
         }
+    
+        // --- 현재 임무 위험도/환경 패널 -----------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator TheHudReadsTheWholeBoardOnTheMotherboardAndNowhereElse()
+        {
+            // docs/01 section 1 asks the motherboard for this panel by name. Before it, the
+            // conditions were rolled per mission and shown only in the debug overlay, so
+            // 입장 순서는 자유 was a choice the player made blind.
+            yield return Motherboard();
+
+            var hudObject = new GameObject("HUD Model");
+            hudObject.SetActive(false);
+            hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(_arena.Player, _motherboard);
+
+            try
+            {
+                Assert.AreEqual(
+                    HardwareIds.All.Length, hud.GatherBoard().Count,
+                    "the board does not list every hardware the mission was rolled with");
+
+                for (int i = 0; i < hud.Board.Count; ++i)
+                {
+                    NeonVoid.UI.HudBoardRow row = hud.Board[i];
+                    AreaConditions rolled = _motherboard.Board.For(row.Hardware);
+
+                    Assert.AreEqual(
+                        rolled.Difficulty, row.Difficulty, $"{row.Hardware}'s 위험도 disagrees");
+                    Assert.AreEqual(
+                        rolled.Environment, row.Environment, $"{row.Hardware}'s 환경 disagrees");
+                    Assert.IsTrue(row.IsOpen, "nothing has been purified yet");
+                }
+
+                // And it is empty inside an area, where the board is not the player's business.
+                StandOn(_motherboard.Portal(HardwareId.Cpu).position);
+                yield return _arena.Tick(DwellTicks + 2);
+                Assert.IsNotNull(_motherboard.CurrentArea, "the portal never opened");
+
+                Assert.IsEmpty(
+                    hud.GatherBoard(), "the board stayed on screen inside a hardware area");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(hudObject);
+            }
+        }
     }
 }
