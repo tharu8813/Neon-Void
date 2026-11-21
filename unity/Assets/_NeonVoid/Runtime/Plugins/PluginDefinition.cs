@@ -116,6 +116,18 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         GrowingPassive = 7,
+
+        /// <summary>
+        /// A passive that only contributes while a condition holds. G11 무피격 가속 is
+        /// 이동속도 100% 증가, 피해를 받으면 비활성화.
+        /// <para>
+        /// A separate kind from <see cref="Passive"/> rather than a flag on it, so that the
+        /// place which publishes the stat snapshot has to decide what to do about the gate.
+        /// A condition nobody evaluated would be a card that is simply always on, which is
+        /// the stronger half of this one.
+        /// </para>
+        /// </summary>
+        ConditionalPassive = 8,
     }
 
     /// <summary>
@@ -171,6 +183,9 @@ namespace NeonVoid.Plugins
         [Tooltip("A stat contribution that grows with a counter, e.g. per kill.")]
         public PluginGrowth Growth;
 
+        [Tooltip("What has to hold for a ConditionalPassive to contribute. None for every other kind.")]
+        public PluginCondition Condition;
+
         /// <summary>The effect id the proc queue knows this plugin by.</summary>
         public int EffectId => Rule.EffectId;
 
@@ -186,7 +201,8 @@ namespace NeonVoid.Plugins
         public bool ReachesProcQueue =>
             Effect != PluginEffectKind.Passive
             && Effect != PluginEffectKind.FiringModifier
-            && Effect != PluginEffectKind.GrowingPassive;
+            && Effect != PluginEffectKind.GrowingPassive
+            && Effect != PluginEffectKind.ConditionalPassive;
 
         public void Validate()
         {
@@ -198,7 +214,9 @@ namespace NeonVoid.Plugins
             // everything else must say what sets it off or it can never do anything.
             // A growing passive IS triggered - by a kill - but still never reaches the queue, so
             // it is not in this set even though it shares the "no chain rule" half below.
-            bool untriggered = Effect == PluginEffectKind.Passive || Effect == PluginEffectKind.FiringModifier;
+            bool untriggered = Effect == PluginEffectKind.Passive
+                || Effect == PluginEffectKind.FiringModifier
+                || Effect == PluginEffectKind.ConditionalPassive;
             if (Trigger == PluginTriggerKind.None && !untriggered)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
 
@@ -220,6 +238,25 @@ namespace NeonVoid.Plugins
             Damage.Validate();
             Passive.Validate();
             Firing.Validate(ProposalId);
+
+            Condition.Validate(ProposalId);
+
+            if (Effect == PluginEffectKind.ConditionalPassive)
+            {
+                if (Condition.IsNone)
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a conditional passive with no condition is just a passive, " +
+                        "and naming it conditional would hide that nothing gates it.");
+
+                if (Passive.IsEmpty)
+                    throw new InvalidOperationException(
+                        $"{ProposalId}: a conditional passive that contributes nothing is a gate on nothing.");
+            }
+            else if (!Condition.IsNone)
+            {
+                throw new InvalidOperationException(
+                    $"{ProposalId}: only a {nameof(PluginEffectKind.ConditionalPassive)} may carry a condition.");
+            }
 
             if (Effect == PluginEffectKind.GrowingPassive)
                 Growth.Validate(ProposalId);

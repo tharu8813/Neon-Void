@@ -156,6 +156,46 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 G11 무피격 가속: 이동속도 100% 증가.</summary>
+        public const float StatedUntouchedMoveSpeedFraction = 1.0f;
+
+        /// <summary>
+        /// [초안] ticks without taking damage before 무피격 가속 comes back. docs/03 leaves
+        /// 재활성화 시점 미확정, so this is a draft bound to be decided, not an approved one.
+        /// 180 is three seconds.
+        /// </summary>
+        public const int DraftUntouchedRecoveryTicks = 180;
+
+        /// <summary>
+        /// G11 무피격 가속 - 이동속도 100% 증가, 피해를 받으면 비활성화.
+        /// <para>
+        /// The 100% is the document's own number. What it leaves open is 재활성화 시점, and that
+        /// is an [초안] on the card rather than a duration in the status catalogue: a status
+        /// would need a duration, and any duration written there answers the open question
+        /// silently and in a place nobody looks when the decision is made.
+        /// </para>
+        /// <para>
+        /// It is live from the start. A carrier who has never been hurt has gone an unbounded
+        /// number of ticks unhurt, so the card does not need a first hit before it begins -
+        /// which is the reading that matches 피해를 받으면 비활성화 rather than 피해를 받으면
+        /// 활성화.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition UntouchedAcceleration() => new PluginDefinition
+        {
+            ProposalId = "G11",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.ConditionalPassive,
+            Damage = default,
+            Condition = PluginCondition.UndamagedFor(DraftUntouchedRecoveryTicks),
+            Passive = new PluginPassive
+            {
+                MoveSpeedFraction = StatedUntouchedMoveSpeedFraction,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>[초안] docs/03 G06 states no numbers at all, only the two things it raises.</summary>
         public const float DraftThrottleAttackSpeedFraction = 0.15f;
 

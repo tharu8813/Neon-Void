@@ -113,6 +113,19 @@ namespace NeonVoid.Plugins
         /// different place: the stat snapshot, not the proc queue.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Whether this card's contribution is behind a gate, and so must not be counted by the
+        /// ungated aggregations.
+        /// <para>
+        /// Counting it in both places is not a doubling that shows up as a wrong number only
+        /// when the gate is shut: it is a card that is permanently on at full strength plus a
+        /// gate that adds it again. The gate would look like it worked, because the speed does
+        /// change when you are hit.
+        /// </para>
+        /// </summary>
+        private static bool IsGated(in PluginDefinition card) =>
+            card.Effect == PluginEffectKind.ConditionalPassive;
+
         public void CollectPassiveModifiers(List<StatModifier> into)
         {
             if (into == null)
@@ -120,6 +133,9 @@ namespace NeonVoid.Plugins
 
             for (int i = 0; i < _carried.Count; ++i)
             {
+                if (IsGated(_carried[i]))
+                    continue;
+
                 StatModifier[] modifiers = _carried[i].Passive.StatModifiers;
                 if (modifiers == null)
                     continue;
@@ -138,7 +154,10 @@ namespace NeonVoid.Plugins
         {
             float total = 0f;
             for (int i = 0; i < _carried.Count; ++i)
-                total += _carried[i].Passive.MoveSpeedFraction;
+            {
+                if (!IsGated(_carried[i]))
+                    total += _carried[i].Passive.MoveSpeedFraction;
+            }
 
             return total;
         }
@@ -148,7 +167,10 @@ namespace NeonVoid.Plugins
         {
             float total = 0f;
             for (int i = 0; i < _carried.Count; ++i)
-                total += _carried[i].Passive.AttackSpeedFraction;
+            {
+                if (!IsGated(_carried[i]))
+                    total += _carried[i].Passive.AttackSpeedFraction;
+            }
 
             return total;
         }
@@ -158,7 +180,10 @@ namespace NeonVoid.Plugins
         {
             float total = 0f;
             for (int i = 0; i < _carried.Count; ++i)
-                total += _carried[i].Passive.ProjectileSpeedFraction;
+            {
+                if (!IsGated(_carried[i]))
+                    total += _carried[i].Passive.ProjectileSpeedFraction;
+            }
 
             return total;
         }
@@ -168,7 +193,10 @@ namespace NeonVoid.Plugins
         {
             float total = 0f;
             for (int i = 0; i < _carried.Count; ++i)
-                total += _carried[i].Passive.ProjectileSizeFraction;
+            {
+                if (!IsGated(_carried[i]))
+                    total += _carried[i].Passive.ProjectileSizeFraction;
+            }
 
             return total;
         }
@@ -273,6 +301,22 @@ namespace NeonVoid.Plugins
         /// <summary>
         /// Appends every carried plugin whose stat grows on a kill, in carry order.
         /// </summary>
+        /// <summary>
+        /// Every carried card whose contribution is gated. The gate itself is not evaluated
+        /// here: the loadout has no clock and does not know what has happened to the carrier.
+        /// </summary>
+        public void CollectConditionalPassives(List<PluginDefinition> into)
+        {
+            if (into == null)
+                return;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Effect == PluginEffectKind.ConditionalPassive)
+                    into.Add(_carried[i]);
+            }
+        }
+
         public void CollectKillGrowthPlugins(List<PluginDefinition> into)
         {
             if (into == null)

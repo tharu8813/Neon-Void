@@ -59,6 +59,22 @@ namespace NeonVoid.Plugins
         private readonly List<PluginDefinition> _burstBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _growthBuffer = new List<PluginDefinition>();
+        private readonly List<PluginDefinition> _conditionBuffer = new List<PluginDefinition>();
+
+        /// <summary>
+        /// Ticks since the owner last took damage, for G11 무피격 가속.
+        /// <para>
+        /// Starts at <see cref="int.MaxValue"/> and not at zero: a carrier who has never been
+        /// hurt has gone an unbounded time unhurt, so 무피격 가속 is live from the start rather
+        /// than needing a first hit before it begins counting. Saturated rather than wrapped,
+        /// because a counter that overflowed would switch the card off after about a year of
+        /// play for no reason anyone could find.
+        /// </para>
+        /// </summary>
+        private int _ticksSinceDamage = int.MaxValue;
+
+        /// <summary>Whether the gates were open on the last publish, so a flip can republish.</summary>
+        private bool _conditionsWereMet = true;
 
         /// <summary>
         /// Counters behind the growing passives, keyed on the card's proposal id.
@@ -198,6 +214,7 @@ namespace NeonVoid.Plugins
                 return;
             }
             owner.HitLanded += OnOwnerHitLanded;
+            owner.DamageTaken += OnOwnerDamaged;
 
             // 점멸/순간이동 후 for G08. The caster raises this only for a skill that actually
             // went off, which is the half of the card a dash cannot cover.
@@ -217,7 +234,10 @@ namespace NeonVoid.Plugins
         private void OnDisable()
         {
             if (owner != null)
+            {
                 owner.HitLanded -= OnOwnerHitLanded;
+                owner.DamageTaken -= OnOwnerDamaged;
+            }
 
             if (_caster != null)
                 _caster.SkillCast -= OnOwnerSkillCast;
@@ -251,7 +271,8 @@ namespace NeonVoid.Plugins
             _passiveBuffer.Clear();
             _router.Loadout.CollectPassiveModifiers(_passiveBuffer);
             AppendGrowthModifiers(_passiveBuffer);
-            owner.SetPassiveModifiers(_passiveBuffer, _router.Loadout.PassiveMoveSpeedFraction());
+            float moveSpeed = _router.Loadout.PassiveMoveSpeedFraction() + AppendMetConditionals(_passiveBuffer);
+            owner.SetPassiveModifiers(_passiveBuffer, moveSpeed);
 
             PushFiringToAttacker();
         }
@@ -265,6 +286,90 @@ namespace NeonVoid.Plugins
         /// should not.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Counts the ticks since the owner was last hurt and republishes the stat snapshot on
+        /// the tick a gate opens or closes - not every tick.
+        /// <para>
+        /// Republishing every tick would be correct and would also recompute every carried
+        /// card's contribution sixty times a second for a value that changes twice a fight.
+        /// Publishing only on a change means the snapshot can be wrong for no tick at all,
+        /// because the change is what triggers the publish.
+        /// </para>
+        /// </summary>
+        private void TickConditions()
+        {
+            if (_ticksSinceDamage < int.MaxValue)
+                ++_ticksSinceDamage;
+
+            bool met = EveryConditionIsMet();
+            if (met == _conditionsWereMet)
+                return;
+
+            _conditionsWereMet = met;
+            PushPassivesToOwner();
+        }
+
+        private bool EveryConditionIsMet()
+        {
+            if (_router == null)
+                return true;
+
+            _conditionBuffer.Clear();
+            _router.Loadout.CollectConditionalPassives(_conditionBuffer);
+
+            for (int i = 0; i < _conditionBuffer.Count; ++i)
+            {
+                if (!_conditionBuffer[i].Condition.IsMet(_ticksSinceDamage))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void OnOwnerDamaged(CombatActor actor, DamageOutcome outcome)
+        {
+            // Any damage at all, including a hit that was fully absorbed: docs/03 says
+            // 피해를 받으면 비활성화, and a card that stayed on through a blocked hit would be a
+            // different card. The resolver only raises this when a hit actually resolved.
+            _ticksSinceDamage = 0;
+
+            if (!_conditionsWereMet)
+                return;
+
+            _conditionsWereMet = false;
+            PushPassivesToOwner();
+        }
+
+        /// <summary>
+        /// Adds the stat contributions of every gated card whose gate is open, and returns the
+        /// movement they add. Cards whose gate is shut contribute nothing at all - not a
+        /// reduced amount, which would be a card that is always partly on.
+        /// </summary>
+        private float AppendMetConditionals(List<StatModifier> into)
+        {
+            _conditionBuffer.Clear();
+            _router.Loadout.CollectConditionalPassives(_conditionBuffer);
+
+            float moveSpeed = 0f;
+            for (int i = 0; i < _conditionBuffer.Count; ++i)
+            {
+                PluginDefinition card = _conditionBuffer[i];
+                if (!card.Condition.IsMet(_ticksSinceDamage))
+                    continue;
+
+                moveSpeed += card.Passive.MoveSpeedFraction;
+
+                StatModifier[] modifiers = card.Passive.StatModifiers;
+                if (modifiers == null)
+                    continue;
+
+                for (int m = 0; m < modifiers.Length; ++m)
+                    into.Add(modifiers[m]);
+            }
+
+            return moveSpeed;
+        }
+
         private void AppendGrowthModifiers(List<StatModifier> into)
         {
             _growthBuffer.Clear();
@@ -443,6 +548,8 @@ namespace NeonVoid.Plugins
             // Before the drain, so a contact found this tick resolves this tick. This runs at
             // Effects + 1, after the player has already moved at Player order, so the position
             // swept is where the dash actually is.
+            TickConditions();
+
             SweepDashPath(tickIndex);
 
             if (_router.PendingCount == 0)
