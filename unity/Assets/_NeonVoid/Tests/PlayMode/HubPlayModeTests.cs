@@ -319,18 +319,104 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
-        public IEnumerator AnUnconnectedTerminalRefusesAndSaysWhy()
+        public IEnumerator EveryTerminalAnswersNow()
         {
-            // 보관 DB, the last one still waiting: 플러그인 획득 이후. 스킬 장착 used to be
-            // here and was connected by [확정] D-009 (2026-11-22).
+            // 보관 DB was the last one waiting (플러그인 획득 이후) and was connected on
+            // 2026-11-23. There is no terminal left that a player can walk up to and get
+            // nothing from, which is what the hub was missing rather than a fourth pillar.
             yield return Hub();
-            Assert.IsFalse(
-                HubTerminals.IsConnected(HubTerminalKind.Database),
-                "보관 DB was connected; this test needs a terminal that is not");
 
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("보관 DB"));
-            Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Database));
-            Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase, "an unfinished terminal started something");
+            for (int i = 0; i < HubTerminals.All.Length; ++i)
+            {
+                HubTerminalKind kind = HubTerminals.All[i];
+                Assert.IsTrue(HubTerminals.IsConnected(kind), HubTerminals.NameOf(kind));
+            }
+
+            // The database answers by raising its event; using it must not start a mission or
+            // move the flow anywhere.
+            bool opened = false;
+            _hub.DatabaseTerminalUsed += () => opened = true;
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Database));
+            Assert.IsTrue(opened, "the 보관 DB terminal did nothing");
+            Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase, "the database terminal started something");
+        }
+
+        [UnityTest]
+        public IEnumerator ThePluginDatabaseMovesAnInstanceAndItLeavesWhereItWas()
+        {
+            // [확정] docs/04 section 3.4: 보관 DB에서 출전 목록으로 꺼내면 DB에서 사라진다 -
+            // 복사가 아니라 동일 소유 인스턴스의 이동. The forbidden result docs/04 section 7
+            // names is DB+소지 중복 잔존, so what this test watches is the disappearance as much
+            // as the arrival.
+            yield return Hub();
+
+            string instance = NeonVoid.Plugins.PluginInstanceId
+                .Mint(NeonVoid.Plugins.PluginDocumentKeys.KeyFor("R02"), "hub-test").Value;
+            _store.Snapshot.vaccine.archivePluginInstanceIds.Add(instance);
+
+            var dbObject = new GameObject("Plugin Database Director");
+            dbObject.SetActive(false);
+            var database = dbObject.AddComponent<NeonVoid.Progression.PluginDatabaseDirector>();
+            database.Configure(_saveObject.GetComponent<VaccineSaveDirector>());
+            dbObject.SetActive(true);
+
+            try
+            {
+                NeonVoid.UI.PluginDatabaseSheet sheet = database.Sheet;
+                Assert.AreEqual(1, sheet.Rows.Count, "the owned instance was not listed");
+                Assert.AreEqual(PluginHolding.Archive, sheet.Rows[0].Holding);
+                Assert.AreEqual("R02", sheet.Rows[0].ProposalId, "the row cannot say what it is");
+                Assert.IsTrue(sheet.CanMove, sheet.Unavailable);
+
+                // 보관 DB → 출전.
+                Assert.IsTrue(database.TryMove(sheet.Rows[0]), database.LastRefusal);
+
+                var reopened = new SaveStore(new DiskSaveFileSystem(), SaveSlotLayout.Under(_root));
+                reopened.Open();
+                Assert.IsFalse(
+                    reopened.Snapshot.vaccine.archivePluginInstanceIds.Contains(instance),
+                    "it stayed in the 보관 DB as well: that is the forbidden 중복 잔존");
+                Assert.IsTrue(reopened.Snapshot.vaccine.carriedPluginInstanceIds.Contains(instance));
+
+                // And back, which is a different move and must not be answered by the first
+                // one's receipt.
+                NeonVoid.UI.PluginDatabaseRow carried = database.Sheet.Rows[0];
+                Assert.AreEqual(PluginHolding.Loadout, carried.Holding);
+                Assert.IsTrue(database.TryMove(carried), database.LastRefusal);
+
+                Assert.AreEqual(1, database.Sheet.ArchiveCount);
+                Assert.AreEqual(0, database.Sheet.LoadoutCount);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(dbObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WithNoSaveTheDatabaseSaysSoRatherThanMovingNothing()
+        {
+            // A button that silently did nothing would read as broken. The screen greys out and
+            // the reason is the save, which is the honest answer.
+            yield return Hub(connectSave: false);
+
+            var dbObject = new GameObject("Plugin Database Director");
+            var database = dbObject.AddComponent<NeonVoid.Progression.PluginDatabaseDirector>();
+
+            try
+            {
+                Assert.IsFalse(database.CanMove);
+                Assert.IsFalse(database.Sheet.Shown, "a database with no save listed something");
+
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("이동 거부"));
+                Assert.IsFalse(database.TryMove("anything", PluginHolding.Archive, PluginHolding.Loadout));
+                Assert.IsNotEmpty(database.LastRefusal);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(dbObject);
+            }
         }
 
         [UnityTest]
@@ -760,14 +846,14 @@ namespace NeonVoid.Tests.PlayModeTests
                 Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Skills), skills.Subject);
                 Assert.IsTrue(skills.Available, "스킬 장착 is connected and the prompt said otherwise");
 
-                // 보관 DB is the one still waiting, and it says what for.
+                // 보관 DB works since 2026-11-23, so the prompt offers it like the others.
                 StandOn(_hub.Terminal(HubTerminalKind.Database).position);
                 yield return _arena.Tick(1);
 
                 NeonVoid.UI.HudPrompt database = hud.GatherPrompt();
                 Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Database), database.Subject);
-                Assert.IsFalse(database.Available, "an unfinished terminal offered itself as usable");
-                Assert.AreEqual(HubTerminals.PendingLabel(HubTerminalKind.Database), database.Detail);
+                Assert.IsTrue(database.Available, "보관 DB is connected and the prompt said otherwise");
+                Assert.IsEmpty(HubTerminals.PendingLabel(HubTerminalKind.Database));
             }
             finally
             {

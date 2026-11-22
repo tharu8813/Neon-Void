@@ -217,6 +217,12 @@ namespace NeonVoid.Missions
         /// </summary>
         public event System.Action SkillTerminalUsed;
 
+        /// <summary>
+        /// Raised when 상호작용 happens at the 플러그인 데이터베이스. The hub does not own the
+        /// screen - it owns the place in the world - so what opens is whatever is listening.
+        /// </summary>
+        public event System.Action DatabaseTerminalUsed;
+
         public bool TryUseTerminal(HubTerminalKind kind)
         {
             if (!HubTerminals.IsConnected(kind))
@@ -247,6 +253,10 @@ namespace NeonVoid.Missions
 
                 case HubTerminalKind.Growth:
                     return ReadTheGrowthSheet();
+
+                case HubTerminalKind.Database:
+                    DatabaseTerminalUsed?.Invoke();
+                    return true;
 
                 case HubTerminalKind.Skills:
                     SkillTerminalUsed?.Invoke();

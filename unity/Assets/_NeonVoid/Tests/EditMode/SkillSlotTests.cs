@@ -156,16 +156,18 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TheDatabaseTerminalIsStillHonestlyUnconnected()
+        public void TheDatabaseTerminalIsConnectedToo()
         {
-            // The one that is still waiting says so, and says why.
-            Assert.IsFalse(HubTerminals.IsConnected(HubTerminalKind.Database));
-            Assert.IsNotEmpty(HubTerminals.PendingLabel(HubTerminalKind.Database));
-            Assert.IsNotEmpty(HubTerminals.WhyNotConnected(HubTerminalKind.Database));
+            // It was the last one waiting. 2026-11-23: the 보관 DB ↔ 출전 screen exists, so the
+            // hub has nothing left that a player can walk up to and get no answer from.
+            // PluginDatabaseSheetTests holds what it shows.
+            Assert.IsTrue(HubTerminals.IsConnected(HubTerminalKind.Database));
+            Assert.IsEmpty(HubTerminals.PendingLabel(HubTerminalKind.Database));
+            Assert.IsEmpty(HubTerminals.WhyNotConnected(HubTerminalKind.Database));
         }
 
         [Test]
-        public void ThreeOfTheFourTerminalsWork()
+        public void AllFourTerminalsWork()
         {
             int connected = 0;
             for (int i = 0; i < HubTerminals.All.Length; ++i)
@@ -175,7 +177,7 @@ namespace NeonVoid.Tests
             }
 
             Assert.AreEqual(4, HubTerminals.All.Length, "[확정] docs/00 fixes the set at four");
-            Assert.AreEqual(3, connected);
+            Assert.AreEqual(4, connected);
         }
     }
 }

@@ -117,6 +117,21 @@
       </ui:VisualElement>
     </ui:VisualElement>
 
+    <ui:VisualElement name="databaseScreen" class="reward hidden">
+      <ui:VisualElement name="databaseCard" class="reward__card">
+        <ui:Label name="databaseTitle" class="reward__title" text="플러그인 데이터베이스" picking-mode="Ignore" />
+        <ui:Label name="databaseSubtitle" class="reward__subtitle" text="" picking-mode="Ignore" />
+        <ui:ScrollView name="databaseScroll" class="reward__slots learn__slots">
+          <ui:VisualElement name="databaseSlots" class="learn__slots" />
+        </ui:ScrollView>
+        <ui:Label name="databaseNote" class="reward__refusal hidden" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="databaseFooter" class="reward__footer">
+          <ui:Label name="databaseCounts" class="reward__rerolls" text="" picking-mode="Ignore" />
+          <ui:Button name="databaseClose" class="reward__dismiss" text="닫기" />
+        </ui:VisualElement>
+      </ui:VisualElement>
+    </ui:VisualElement>
+
     <ui:VisualElement name="settingsScreen" class="settings hidden">
       <ui:VisualElement name="settingsCard" class="settings__card">
         <ui:Label name="settingsTitle" class="settings__title" text="설정 · 키" picking-mode="Ignore" />

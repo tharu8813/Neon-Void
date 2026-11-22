@@ -146,6 +146,11 @@ namespace NeonVoid.EditorTools
             AssignSerialized(growth, "playerActor", vaccine.Actor);
             AssignSerialized(growth, "saveDirector", saveDirector);
 
+            // 플러그인 데이터베이스: 보관 DB ↔ 출전 이동. Same object, same reason - it reads and
+            // writes the save, and a move is a commit like any other.
+            var database = saveObject.AddComponent<NeonVoid.Progression.PluginDatabaseDirector>();
+            AssignSerialized(database, "saveDirector", saveDirector);
+
             // 메인보드: five portals and the builder that puts an area up behind one of them.
             var boardObject = new GameObject("Motherboard");
             boardObject.transform.position = MotherboardAt;

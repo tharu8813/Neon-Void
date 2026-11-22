@@ -136,6 +136,17 @@ namespace NeonVoid.UI
         /// </summary>
         private bool _extractDismissed;
 
+        [SerializeField] private NeonVoid.Progression.PluginDatabaseDirector database;
+
+        private VisualElement _databaseScreen;
+        private Label _databaseSubtitle;
+        private VisualElement _databaseSlots;
+        private Label _databaseNote;
+        private Label _databaseCounts;
+        private Button _databaseClose;
+        private string _databaseSignature = string.Empty;
+        private bool _databaseOpen;
+
         private VisualElement _settingsVolumes;
         private readonly SliderInt[] _volumeSliders = new SliderInt[4];
         private readonly Label[] _volumeValues = new Label[4];
@@ -306,6 +317,9 @@ namespace NeonVoid.UI
             if (rewards == null)
                 rewards = FindFirstObjectByType<RewardDirector>();
 
+            if (database == null)
+                database = FindFirstObjectByType<NeonVoid.Progression.PluginDatabaseDirector>();
+
             if (skillLibrary == null)
                 skillLibrary = FindFirstObjectByType<SkillLibrary>();
 
@@ -316,7 +330,10 @@ namespace NeonVoid.UI
         private void OnEnable()
         {
             if (hub != null)
+            {
                 hub.SkillTerminalUsed += OpenSkillScreen;
+                hub.DatabaseTerminalUsed += OpenDatabaseScreen;
+            }
 
             Bind();
 
@@ -333,7 +350,10 @@ namespace NeonVoid.UI
         private void OnDisable()
         {
             if (hub != null)
+            {
                 hub.SkillTerminalUsed -= OpenSkillScreen;
+                hub.DatabaseTerminalUsed -= OpenDatabaseScreen;
+            }
 
             if (_runner != null)
                 _runner.Unregister(this);
@@ -364,6 +384,7 @@ namespace NeonVoid.UI
             DrawSettings();
             DrawReward();
             DrawExtract();
+            DrawDatabase();
             DrawSkillScreen();
 
             HudPrompt prompt = GatherPrompt();
@@ -1062,6 +1083,118 @@ namespace NeonVoid.UI
         /// would take that choice away.
         /// </para>
         /// </summary>
+        /// <summary>Whether the 플러그인 데이터베이스 is on screen.</summary>
+        public bool DatabaseOpen => _databaseOpen;
+
+        /// <summary>
+        /// Opens the database. Called by whatever the hub's 데이터베이스 터미널 tells, which is
+        /// the same shape the 스킬 터미널 uses: the hub owns the place, not the screen.
+        /// </summary>
+        public void OpenDatabaseScreen()
+        {
+            _databaseOpen = true;
+            _databaseSignature = string.Empty;
+        }
+
+        public void CloseDatabaseScreen()
+        {
+            _databaseOpen = false;
+            _databaseSignature = string.Empty;
+            Show(_databaseScreen, false);
+        }
+
+        /// <summary>
+        /// 보관 DB ↔ 출전. One list where every row says which side it is on, because [확정]
+        /// docs/04 section 3.4 makes this a move and not a copy - two columns with an arrow
+        /// between them draw a copy.
+        /// </summary>
+        private void DrawDatabase()
+        {
+            Show(_databaseScreen, _databaseOpen);
+            if (_databaseScreen == null || !_databaseOpen || database == null)
+                return;
+
+            PluginDatabaseSheet sheet = database.Sheet;
+            SetText(_databaseCounts, $"보관 {sheet.ArchiveCount} · 출전 {sheet.LoadoutCount}");
+
+            string note = database.LastRefusal.Length > 0 ? database.LastRefusal : sheet.Unavailable;
+            Show(_databaseNote, note.Length > 0);
+            SetText(_databaseNote, note);
+
+            string signature = $"{sheet.ArchiveCount}|{sheet.LoadoutCount}|{note}|{sheet.CanMove}";
+            if (signature == _databaseSignature)
+                return;
+
+            _databaseSignature = signature;
+            SetText(
+                _databaseSubtitle,
+                sheet.IsEmpty
+                    ? "아직 가진 플러그인이 없습니다. 성공 철수에서 학습하면 여기에 들어옵니다"
+                    : "꺼내면 보관 DB에서 사라집니다 · 복사가 아니라 이동입니다");
+            RebuildDatabaseSlots(sheet);
+        }
+
+        private void RebuildDatabaseSlots(in PluginDatabaseSheet sheet)
+        {
+            if (_databaseSlots == null)
+                return;
+
+            _databaseSlots.Clear();
+
+            IReadOnlyList<PluginDatabaseRow> rows = sheet.Rows;
+            if (rows.Count == 0)
+                return;
+
+            for (int i = 0; i < rows.Count; ++i)
+            {
+                PluginDatabaseRow row = rows[i];
+
+                var panel = new VisualElement();
+                panel.AddToClassList("learn-slot");
+                if (row.Holding == PluginHolding.Loadout)
+                    panel.AddToClassList("learn-slot--chosen");
+                if (row.Rarity == PluginRarity.Rare)
+                    panel.AddToClassList("learn-slot--rare");
+
+                var head = new VisualElement();
+                head.AddToClassList("learn-slot__row");
+
+                var titles = new VisualElement();
+                titles.Add(Line(
+                    "learn-slot__grade",
+                    row.IsKnownHere
+                        ? $"{PluginCardTexts.LabelOf(row.Rarity)} · {PluginDatabaseSheet.LabelOf(row.Holding)}"
+                        : PluginDatabaseSheet.LabelOf(row.Holding)));
+                titles.Add(Line("learn-slot__name", row.Name));
+                head.Add(titles);
+
+                var move = new Button(() => MovePlugin(row))
+                {
+                    text = row.Holding == PluginHolding.Archive ? "출전에 넣기" : "보관함으로",
+                };
+                move.AddToClassList("learn-slot__pick");
+                move.AddToClassList("reward-slot__take");
+                move.SetEnabled(sheet.CanMove);
+                head.Add(move);
+
+                panel.Add(head);
+                panel.Add(Line("learn-slot__effect", row.Effect));
+                _databaseSlots.Add(panel);
+            }
+        }
+
+        private void MovePlugin(PluginDatabaseRow row)
+        {
+            if (database == null)
+                return;
+
+            database.TryMove(row);
+
+            // Redrawn either way: a refusal is as much a change to what the screen says as a
+            // move is, and the signature would otherwise hold the old list.
+            _databaseSignature = string.Empty;
+        }
+
         private void DrawExtract()
         {
             HardwareAreaRuntime standing = CurrentArea();
@@ -1839,6 +1972,16 @@ namespace NeonVoid.UI
 
             if (_skillClose != null)
                 _skillClose.clicked += CloseSkillScreen;
+
+            _databaseScreen = root.Q<VisualElement>("databaseScreen");
+            _databaseSubtitle = root.Q<Label>("databaseSubtitle");
+            _databaseSlots = root.Q<VisualElement>("databaseSlots");
+            _databaseNote = root.Q<Label>("databaseNote");
+            _databaseCounts = root.Q<Label>("databaseCounts");
+            _databaseClose = root.Q<Button>("databaseClose");
+
+            if (_databaseClose != null)
+                _databaseClose.clicked += CloseDatabaseScreen;
 
             _extractScreen = root.Q<VisualElement>("extractScreen");
             _extractSubtitle = root.Q<Label>("extractSubtitle");

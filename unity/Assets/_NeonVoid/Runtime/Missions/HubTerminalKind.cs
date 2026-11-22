@@ -67,10 +67,15 @@ namespace NeonVoid.Missions
         /// player interacts with one is to say so - see <see cref="WhyNotConnected"/>.
         /// </para>
         /// </summary>
-        public static bool IsConnected(HubTerminalKind kind) =>
-            kind == HubTerminalKind.Mission
-            || kind == HubTerminalKind.Growth
-            || kind == HubTerminalKind.Skills;
+        public static bool IsConnected(HubTerminalKind kind)
+        {
+            // All four, since 2026-11-23: the 플러그인 데이터베이스 was the last one with nothing
+            // behind it. This stays a method rather than becoming `true` at every call site,
+            // because a terminal whose function is deferred again must be able to say so - and
+            // the alternative is a screen that silently does nothing.
+            Require(kind);
+            return true;
+        }
 
         /// <summary>
         /// Why a terminal does nothing yet, short enough to sit on the HUD, or empty when it
@@ -84,34 +89,29 @@ namespace NeonVoid.Missions
         /// </summary>
         public static string PendingLabel(HubTerminalKind kind)
         {
-            switch (kind)
-            {
-                case HubTerminalKind.Mission:
-                case HubTerminalKind.Growth:
-                case HubTerminalKind.Skills:
-                    return string.Empty;
-
-                case HubTerminalKind.Database:
-                    return "미연결 · 플러그인 획득 이후";
-
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a hub terminal.");
-            }
+            // All four are connected since 2026-11-23. The two methods stay: a terminal
+            // whose function is removed or deferred again must be able to say so, and the
+            // alternative is a screen that silently does nothing.
+            Require(kind);
+            return string.Empty;
         }
 
         /// <summary>Why a terminal does nothing yet, in one line, or empty when it works.</summary>
         public static string WhyNotConnected(HubTerminalKind kind)
         {
+            Require(kind);
+            return string.Empty;
+        }
+
+        private static void Require(HubTerminalKind kind)
+        {
             switch (kind)
             {
                 case HubTerminalKind.Mission:
                 case HubTerminalKind.Growth:
-                case HubTerminalKind.Skills:
-                    return string.Empty;
-
                 case HubTerminalKind.Database:
-                    return "보관 DB↔출전 이동은 MovePluginCommand로 커밋되지만, 무엇이 이동 대상인지 " +
-                           "고르는 터미널이 아직 없다";
+                case HubTerminalKind.Skills:
+                    return;
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a hub terminal.");
