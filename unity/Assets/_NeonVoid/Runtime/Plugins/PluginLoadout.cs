@@ -326,11 +326,10 @@ namespace NeonVoid.Plugins
         /// Appends the forms the basic attack is fired in, or nothing when no carried card
         /// converts it - and nothing means the ordinary 탄환.
         /// <para>
-        /// <b>[미확정] D-005.</b> Which conversions survive carrying both 전설 shot cards, and
-        /// what a 레이저 does to R06's extra 탄환 and to 관통, is read from
-        /// <see cref="ShotConversionPolicy"/>. This method decides nothing itself; it applies
-        /// the reading in force, so approving a different one changes one constant and not this
-        /// code.
+        /// <b>[확정] D-005 (2026-11-23).</b> Which conversions survive carrying both 전설 shot
+        /// cards, and what a 레이저 does to R06's extra 탄환 and to 관통, is read from
+        /// <see cref="ShotConversionPolicy"/>. This method decides nothing itself; it applies the
+        /// approved rules, so a later balance change to them is one constant and not this code.
         /// </para>
         /// </summary>
         public void CollectMainShots(List<MainShotSpec> into)
@@ -360,8 +359,8 @@ namespace NeonVoid.Plugins
                         into.Add(MainShotSpec.Laser(
                             firing.MainShotOnHitScale,
                             firing.MainShotRangeUnits,
-                            ShotConversionPolicy.DraftLaserConvertsExtraShots,
-                            ShotConversionPolicy.DraftLaserPiercesEverything));
+                            ShotConversionPolicy.ApprovedLaserConvertsExtraShots,
+                            ShotConversionPolicy.ApprovedLaserPiercesEverything));
                         break;
 
                     case PluginShotConversion.Boomerang when boomerangApplies:

@@ -11,9 +11,9 @@ namespace NeonVoid.Tests.PlayModeTests
     /// <summary>
     /// L01 레이저 코어 and L02 부메랑 프로토콜 fired in a real scene.
     /// <para>
-    /// What each card does alone is stated by docs/03 and is asserted. Their combination is
-    /// <b>[미확정] D-005</b>, so the two tests that touch it read
-    /// <see cref="ShotConversionPolicy"/> instead of asserting a reading.
+    /// What each card does alone is stated by docs/03. Their combination is
+    /// <b>[확정] D-005 (2026-11-23)</b>: 둘 다 발사, 추가탄도 변환, 관통 상한 준수 - asserted
+    /// here as behaviour in a real scene rather than as constants, which EditMode already holds.
     /// </para>
     /// </summary>
     public sealed class ShotConversionPlayModeTests
@@ -117,10 +117,10 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
-        public IEnumerator TheBeamFollowsWhicheverPierceReadingIsInForce()
+        public IEnumerator TheBeamRespectsThePierceBudget()
         {
-            // [미확정] D-005 names L01·관통 as undecided. Asserted against the policy, so
-            // approving the other reading does not leave a test claiming the opposite.
+            // [확정] D-005: the beam respects 관통 exactly as a 탄환 does, so with no 관통 it
+            // damages the first enemy on the line and stops.
             _arena = PrototypeArena.Build(
                 new Vector3(0f, 0.7f, 4f), new Vector3(0f, 0.7f, 7f));
             yield return WithOnly(PluginCatalog.LaserCore());
@@ -138,19 +138,9 @@ namespace NeonVoid.Tests.PlayModeTests
             yield return _arena.Tick(1);
 
             Assert.Less(near.Health.Current, nearBefore, "the nearest enemy was not hit");
-
-            if (ShotConversionPolicy.DraftLaserPiercesEverything)
-            {
-                Assert.Less(
-                    far.Health.Current, farBefore,
-                    "the reading in force is unlimited 관통 and the second enemy was spared");
-            }
-            else
-            {
-                Assert.AreEqual(
-                    farBefore, far.Health.Current, 0.001f,
-                    "the beam ignored the 관통 budget the reading in force keeps");
-            }
+            Assert.AreEqual(
+                farBefore, far.Health.Current, 0.001f,
+                "the beam went through the 관통 budget D-005 approved");
         }
 
         [UnityTest]
@@ -356,35 +346,56 @@ namespace NeonVoid.Tests.PlayModeTests
         // --- the two together: [미확정] D-005 -------------------------------------------------
 
         [UnityTest]
-        public IEnumerator CarryingBothFiresWhateverTheReadingInForceSays()
+        public IEnumerator CarryingBothFiresBothForms()
         {
-            _arena = PrototypeArena.Build();
+            // [확정] D-005: 둘 다 발사.
+            _arena = PrototypeArena.Build(new Vector3(0f, 0.7f, 6f));
             yield return WithOnly(PluginCatalog.LaserCore());
 
             Assert.AreEqual(
                 PluginGrantVerdict.Granted,
                 _arena.Procs.Grant(PluginCatalog.BoomerangProtocol(), out string reason), reason);
-
-            int expectedForms =
-                ShotConversionPolicy.Draft == ShotConversionPolicy.BothCarried.BothForms ? 2 : 1;
             Assert.AreEqual(
-                expectedForms, _arena.Attacker.MainShots.Count, ShotConversionPolicy.UndecidedSummary);
+                2, _arena.Attacker.MainShots.Count, ShotConversionPolicy.ApprovedSummary);
+
+            CombatActor enemy = _arena.Enemies[0];
+            MakeTough(enemy);
+            float before = enemy.Health.Current;
 
             _arena.Attacker.enabled = true;
             yield return _arena.Tick(1);
 
-            bool boomerangApplies = ShotConversionPolicy.BoomerangApplies(true, true);
-            Assert.AreEqual(
-                boomerangApplies ? 1 : 0, LiveBoomerangs(), ShotConversionPolicy.UndecidedSummary);
+            // The beam is hitscan, so its damage has already landed on the throw tick while the
+            // 부메랑 is still on its way out. Both forms left the weapon in the same volley.
+            Assert.Less(enemy.Health.Current, before, "the 레이저 half of the pair did nothing");
+            Assert.AreEqual(1, LiveBoomerangs(), "the 부메랑 half of the pair did nothing");
             Assert.AreEqual(
                 0, LiveProjectiles(), "two conversions are carried and it still fired a 탄환");
         }
 
         [UnityTest]
-        public IEnumerator TheExtraShotFollowsWhicheverConversionReadingIsInForce()
+        public IEnumerator TheBoomerangStillHoldsTheAttackWhenBothAreCarried()
         {
-            // [미확정] D-005 names L01·R06 동시 장착. With the conversion applied to the extra
-            // shot there is no 탄환 left in the scene at all; without it, exactly one - R06's.
+            // 둘 다 발사 means the 부메랑's cost applies to the pair: the beam does not get a
+            // free volley while the disc is out, or the hold would be worth nothing on the one
+            // build that can afford both cards.
+            _arena = PrototypeArena.Build();
+            yield return WithOnly(PluginCatalog.LaserCore());
+            _arena.Procs.Grant(PluginCatalog.BoomerangProtocol(), out _);
+
+            _arena.Attacker.enabled = true;
+            yield return _arena.Tick(1);
+            yield return _arena.Tick(39);
+
+            Assert.IsTrue(_arena.Attacker.WaitingForBoomerang);
+            Assert.AreEqual(1, LiveBoomerangs(), "a second 부메랑 was thrown while one was out");
+        }
+
+        [UnityTest]
+        public IEnumerator TheExtraShotIsConvertedToo()
+        {
+            // [확정] D-005: L01 converts R06's extra 탄환 as well, so a volley leaves no 탄환
+            // in the scene at all.
             _arena = PrototypeArena.Build(new Vector3(0f, 0.7f, 6f));
             yield return WithOnly(PluginCatalog.LaserCore());
 
@@ -397,9 +408,65 @@ namespace NeonVoid.Tests.PlayModeTests
             yield return _arena.Tick(1);
 
             Assert.AreEqual(
-                ShotConversionPolicy.DraftLaserConvertsExtraShots ? 0 : 1,
-                LiveProjectiles(),
-                ShotConversionPolicy.UndecidedSummary);
+                0, LiveProjectiles(),
+                "R06's extra 탄환 stayed a 탄환: " + ShotConversionPolicy.ApprovedSummary);
+        }
+
+        // --- the combination docs/03 names as a verification point -----------------------------
+
+        [UnityTest]
+        public IEnumerator EverythingThatChangesTheShotAtOnceStaysFinite()
+        {
+            // docs/03 section 4: L01 + L02 + R06 + G03/G04/G10 동시 보유에도 CPU 정지·무한
+            // VFX·효과 강제 삭제 없음. Now that D-005 says both 전설 forms fire, this stack is
+            // reachable in play, so it is run rather than reasoned about.
+            _arena = PrototypeArena.Build(
+                new Vector3(0f, 0.7f, 5f), new Vector3(1.4f, 0.7f, 6f),
+                new Vector3(-1.4f, 0.7f, 6f));
+            yield return WithOnly(PluginCatalog.LaserCore());
+
+            foreach (PluginDefinition card in new[]
+                     {
+                         PluginCatalog.BoomerangProtocol(),
+                         PluginCatalog.SupportRound(),
+                         PluginCatalog.ExpandedWarhead(),
+                         PluginCatalog.WeaknessAnalysis(),
+                         PluginCatalog.ArcChain(),
+                     })
+            {
+                Assert.AreEqual(
+                    PluginGrantVerdict.Granted, _arena.Procs.Grant(card, out string why),
+                    card.ProposalId + ": " + why);
+            }
+
+            for (int i = 0; i < _arena.Enemies.Count; ++i)
+                MakeTough(_arena.Enemies[i]);
+
+            long before = _arena.Runner.TickIndex;
+            _arena.Attacker.enabled = true;
+            yield return _arena.Tick(600);
+
+            // The simulation is still advancing: a stall is the failure docs/03 names first.
+            // A floor rather than an exact count, because this test is about the simulation
+            // still running, not about how many ticks a frame is worth.
+            Assert.GreaterOrEqual(
+                _arena.Runner.TickIndex, before + 500,
+                "the simulation stalled under the full shot stack");
+
+            // And it has not filled the scene: the 부메랑 hold bounds the volleys, and every
+            // beam is gone within a few ticks of being fired.
+            Assert.LessOrEqual(
+                LiveBoomerangs(), 1, "부메랑s accumulated despite 귀환 전 추가 기본공격 불가");
+            Assert.LessOrEqual(
+                Object.FindObjectsByType<LaserBeam>(FindObjectsSortMode.None).Length, 4,
+                "beam visuals are piling up instead of expiring");
+
+            // Something was actually happening for those ten seconds, so this is not a test
+            // that passes because nothing fired.
+            bool anyHurt = false;
+            for (int i = 0; i < _arena.Enemies.Count; ++i)
+                anyHurt |= _arena.Enemies[i].Health.Current < _arena.Enemies[i].Health.Max;
+            Assert.IsTrue(anyHurt, "the full stack ran for 600 ticks and damaged nobody");
         }
     }
 }

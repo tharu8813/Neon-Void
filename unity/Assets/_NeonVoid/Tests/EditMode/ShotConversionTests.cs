@@ -10,11 +10,11 @@ namespace NeonVoid.Tests
     /// <summary>
     /// L01 레이저 코어 and L02 부메랑 프로토콜: the two 전설 cards that replace the basic attack.
     /// <para>
-    /// Each card alone is fully stated by docs/03 and is held here. Their <b>combination</b> is
-    /// <b>[미확정] D-005</b> - docs/03's exception columns say 동시 장착 정책 미확정 for L01 and
-    /// L01과 동시 적용 시 여러 발사체 정의 for L02 - so these tests never assert one reading. They
-    /// read <see cref="ShotConversionPolicy"/> and hold that the code does what the reading in
-    /// force says, which is what keeps approving a different reading a one-constant change.
+    /// Each card alone is fully stated by docs/03 and is held here. Their <b>combination</b> was
+    /// <b>[미확정] D-005</b> until 2026-11-23 and is now approved: 둘 다 발사, 추가탄도 변환,
+    /// 관통 상한 준수. Those three are asserted outright below, so a change to any of them is a
+    /// change a test refuses rather than one that slips through. The readings that were not
+    /// chosen stay implemented, and one test holds that none of them is what ships.
     /// </para>
     /// </summary>
     public sealed class ShotConversionTests
@@ -145,19 +145,38 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TheLaserCarriesTheUndecidedCombinationFlags()
+        public void TheApprovedCombinationRulesAreWhatShips()
         {
-            // [미확정] D-005: whether R06's extra 탄환 is converted too, and whether the beam
-            // ignores 관통. Both are read from the policy, never decided in the card.
-            MainShotSpec laser = Only(FormsOf(PluginCatalog.LaserCore()), MainShotMode.Laser);
-
-            Assert.AreEqual(ShotConversionPolicy.DraftLaserConvertsExtraShots, laser.ConvertsExtraShots);
-            Assert.AreEqual(ShotConversionPolicy.DraftLaserPiercesEverything, laser.PiercesEverything);
+            // [확정] D-005 (2026-11-23). Asserted as values, not as "whatever the policy says":
+            // this is the test that would fail if someone changed an approved rule.
+            Assert.AreEqual(
+                ShotConversionPolicy.BothCarried.BothForms, ShotConversionPolicy.Approved,
+                "D-005 approved 둘 다 발사");
+            Assert.IsTrue(
+                ShotConversionPolicy.ApprovedLaserConvertsExtraShots,
+                "D-005 approved 추가탄도 레이저로 변환");
+            Assert.IsFalse(
+                ShotConversionPolicy.ApprovedLaserPiercesEverything,
+                "D-005 approved 빔은 관통 상한을 지킨다");
         }
 
         [Test]
-        public void CarryingBothFollowsTheReadingInForce()
+        public void TheLaserCarriesTheApprovedCombinationFlags()
         {
+            // The card states neither rule itself; both arrive from the policy, so there is one
+            // place a balance change has to touch.
+            MainShotSpec laser = Only(FormsOf(PluginCatalog.LaserCore()), MainShotMode.Laser);
+
+            Assert.IsTrue(laser.ConvertsExtraShots, "R06's extra 탄환 was left as a 탄환");
+            Assert.IsFalse(laser.PiercesEverything, "the beam was given unlimited 관통");
+            Assert.AreEqual(ShotConversionPolicy.ApprovedLaserConvertsExtraShots, laser.ConvertsExtraShots);
+            Assert.AreEqual(ShotConversionPolicy.ApprovedLaserPiercesEverything, laser.PiercesEverything);
+        }
+
+        [Test]
+        public void CarryingBothFiresBothForms()
+        {
+            // [확정] D-005: 둘 다 발사. Neither 전설 is cancelled by the other.
             List<MainShotSpec> forms =
                 FormsOf(PluginCatalog.LaserCore(), PluginCatalog.BoomerangProtocol());
 
@@ -169,29 +188,48 @@ namespace NeonVoid.Tests
                 hasBoomerang |= forms[i].Mode == MainShotMode.Boomerang;
             }
 
-            switch (ShotConversionPolicy.Draft)
+            Assert.AreEqual(2, forms.Count, "both cards are carried and only one form fires");
+            Assert.IsTrue(hasLaser, "the 레이저 was cancelled");
+            Assert.IsTrue(hasBoomerang, "the 부메랑 was cancelled");
+        }
+
+        [Test]
+        public void TheOrderOfPickingThemUpDoesNotChangeWhatFires()
+        {
+            // A rule that depended on which 전설 was taken first would make the same two cards
+            // two different builds, and a receipt could not say which one the player has.
+            List<MainShotSpec> laserFirst =
+                FormsOf(PluginCatalog.LaserCore(), PluginCatalog.BoomerangProtocol());
+            List<MainShotSpec> boomerangFirst =
+                FormsOf(PluginCatalog.BoomerangProtocol(), PluginCatalog.LaserCore());
+
+            Assert.AreEqual(laserFirst.Count, boomerangFirst.Count);
+
+            int lasers = 0;
+            int discs = 0;
+            for (int i = 0; i < boomerangFirst.Count; ++i)
             {
-                case ShotConversionPolicy.BothCarried.BothForms:
-                    Assert.AreEqual(2, forms.Count, "both cards are carried and only one form fires");
-                    Assert.IsTrue(hasLaser && hasBoomerang);
-                    break;
-
-                case ShotConversionPolicy.BothCarried.LaserReplacesIt:
-                    Assert.AreEqual(1, forms.Count);
-                    Assert.IsTrue(hasLaser);
-                    Assert.IsFalse(hasBoomerang);
-                    break;
-
-                case ShotConversionPolicy.BothCarried.BoomerangReplacesIt:
-                    Assert.AreEqual(1, forms.Count);
-                    Assert.IsFalse(hasLaser);
-                    Assert.IsTrue(hasBoomerang);
-                    break;
-
-                default:
-                    Assert.Fail("an unimplemented reading of D-005 is selected");
-                    break;
+                lasers += boomerangFirst[i].Mode == MainShotMode.Laser ? 1 : 0;
+                discs += boomerangFirst[i].Mode == MainShotMode.Boomerang ? 1 : 0;
             }
+
+            Assert.AreEqual(1, lasers);
+            Assert.AreEqual(1, discs);
+        }
+
+        [Test]
+        public void TheReadingsThatWereNotApprovedAreStillImplementedAndNotUsed()
+        {
+            // They stay so a later balance change is one constant rather than new code - the
+            // shape ShieldPolicy keeps after D-004 - but the game must not be doing one of them.
+            Assert.AreNotEqual(
+                ShotConversionPolicy.BothCarried.LaserReplacesIt, ShotConversionPolicy.Approved);
+            Assert.AreNotEqual(
+                ShotConversionPolicy.BothCarried.BoomerangReplacesIt, ShotConversionPolicy.Approved);
+
+            // Each unchosen reading still answers for its own case, so selecting it would work.
+            Assert.IsTrue(ShotConversionPolicy.LaserApplies(true, true));
+            Assert.IsTrue(ShotConversionPolicy.BoomerangApplies(true, true));
         }
 
         [Test]
@@ -208,12 +246,15 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TheUndecidedQuestionIsStatedWhereItCanBeRead()
+        public void TheApprovedRulesAreStatedWhereTheyCanBeRead()
         {
-            // A [미확정] rule nobody can see in a log is a rule that gets approved by accident.
-            string summary = ShotConversionPolicy.UndecidedSummary;
+            // The sentence is built from the constants, so a log can never describe a rule the
+            // code is not following.
+            string summary = ShotConversionPolicy.ApprovedSummary;
             Assert.IsNotEmpty(summary);
             StringAssert.Contains("D-005", summary);
+            StringAssert.Contains("BothForms", summary);
+            StringAssert.Contains("관통 상한 준수", summary);
         }
 
         [Test]

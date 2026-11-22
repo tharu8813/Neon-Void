@@ -69,10 +69,9 @@ namespace NeonVoid.Combat.Projectiles
         /// <summary>
         /// What form the main shot takes, pushed in the same way the extra shots are.
         /// <para>
-        /// A list, and empty means an ordinary 탄환. [미확정] D-005 asks what carrying L01
-        /// 레이저 코어 and L02 부메랑 프로토콜 together means, and one reading is that the volley
-        /// fires both forms; a single mode could not express that at all. The reading in force
-        /// is chosen in Plugins and arrives here already resolved.
+        /// A list, and empty means an ordinary 탄환. [확정] D-005 (2026-11-23): carrying L01
+        /// 레이저 코어 and L02 부메랑 프로토콜 together fires both forms, which a single mode
+        /// could not express at all. The rule is applied in Plugins and arrives here resolved.
         /// </para>
         /// </summary>
         private readonly List<MainShotSpec> _mainShots = new List<MainShotSpec>();
@@ -341,9 +340,10 @@ namespace NeonVoid.Combat.Projectiles
 
                     if (extraForm.Mode == MainShotMode.Laser)
                     {
-                        // [미확정] D-005's L01·R06 reading, decided in Plugins and arriving here
-                        // as a flag. The two fractions compound: an extra shot at 80% fired as
-                        // a laser at 70% carries 56%, because each card cut what it added.
+                        // [확정] D-005: L01 converts R06's extra 탄환 too. Decided in Plugins
+                        // and arriving here as a flag. The two fractions compound: an extra shot
+                        // at 80% fired as a laser at 70% carries 56%, because each card cut only
+                        // what it added.
                         FireLaser(aim, extraForm, extraForm.OnHitEffectScale * spec.OnHitEffectScale);
                         continue;
                     }
@@ -389,8 +389,8 @@ namespace NeonVoid.Combat.Projectiles
         /// <summary>
         /// L01 레이저 코어's shot. Resolved on this tick, inside the attacker's own step.
         /// <para>
-        /// 관통 arrives from the spec: [미확정] D-005 names L01·관통 as undecided, so whether the
-        /// beam respects the attacker's budget or reaches everything is decided in Plugins.
+        /// 관통 arrives from the spec: [확정] D-005 says the beam respects the attacker's 관통
+        /// budget, and that rule is applied in Plugins rather than restated here.
         /// </para>
         /// </summary>
         private void FireLaser(Vector3 direction, in MainShotSpec spec, float onHitEffectScale)

@@ -891,8 +891,8 @@ namespace NeonVoid.Plugins
             _attacker.SetExtraShots(_extraShotBuffer);
 
             // L01 레이저 코어 and L02 부메랑 프로토콜 change what the basic attack IS. Pushed the
-            // same way, and already resolved against [미확정] D-005's reading by the loadout, so
-            // the attacker never learns which card converted its shot.
+            // same way, and already resolved against [확정] D-005's rules by the loadout, so the
+            // attacker never learns which card converted its shot.
             _mainShotBuffer.Clear();
             _router.Loadout.CollectMainShots(_mainShotBuffer);
             _attacker.SetMainShots(_mainShotBuffer);

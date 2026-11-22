@@ -974,11 +974,11 @@ namespace NeonVoid.Plugins
         /// <summary>
         /// L01 레이저 코어 - 탄환을 레이저로 변환, 적중 효과 효율 70%.
         /// <para>
-        /// The card is one conversion and one stated fraction, and both are implemented. What
-        /// is <b>[미확정] D-005</b> is its combination with L02, with R06 보조 탄환's extra 탄환
-        /// and with 관통 - docs/03's exception column for this row says exactly that. Those
-        /// three readings live in <see cref="ShotConversionPolicy"/>, are all implemented, and
-        /// are selected by a constant; none of them is decided here.
+        /// The card is one conversion and one stated fraction. Its combination with L02, with
+        /// R06 보조 탄환's extra 탄환 and with 관통 - docs/03's exception column for this row -
+        /// is <b>[확정] D-005 (2026-11-23)</b> and lives in
+        /// <see cref="ShotConversionPolicy"/>: 둘 다 발사, 추가탄도 변환, 관통 상한 준수. None of
+        /// it is decided here.
         /// </para>
         /// <para>
         /// No damage figure, because docs/03 gives the card none: a converted basic attack deals
@@ -1018,7 +1018,7 @@ namespace NeonVoid.Plugins
         /// cannot be reached.
         /// </para>
         /// <para>
-        /// Its combination with L01 is <b>[미확정] D-005</b>, in
+        /// Its combination with L01 is <b>[확정] D-005 (2026-11-23)</b> - 둘 다 발사 - in
         /// <see cref="ShotConversionPolicy"/> with L01's.
         /// </para>
         /// </summary>

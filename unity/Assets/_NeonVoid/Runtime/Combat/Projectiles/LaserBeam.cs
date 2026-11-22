@@ -19,10 +19,10 @@ namespace NeonVoid.Combat.Projectiles
     /// counts its own ticks down; it never damages anything.
     /// </para>
     /// <para>
-    /// <b>관통 is the attacker's, not the beam's.</b> [미확정] D-005 names L01·관통 동시 장착 as
-    /// undecided, so how many enemies one beam may damage arrives from the caller
-    /// (<see cref="MainShotSpec.PiercesEverything"/>) and is decided in Plugins. A beam that
-    /// made its own rule would be a second definition of 관통 to drift from the first.
+    /// <b>관통 is the attacker's, not the beam's.</b> [확정] D-005 (2026-11-23): the beam
+    /// respects the attacker's 관통 budget. How many enemies one beam may damage therefore
+    /// arrives from the caller (<see cref="MainShotSpec.PiercesEverything"/>). A beam that made
+    /// its own rule would be a second definition of 관통 to drift from the first.
     /// </para>
     /// </summary>
     public sealed class LaserBeam : MonoBehaviour, ISimulationTickReceiver

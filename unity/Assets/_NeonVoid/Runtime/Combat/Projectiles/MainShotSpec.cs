@@ -28,10 +28,9 @@ namespace NeonVoid.Combat.Projectiles
     /// live in Plugins; what arrives here is a form and its numbers.
     /// </para>
     /// <para>
-    /// <b>A list of these, not one.</b> [미확정] D-005 asks what carrying L01 and L02 together
-    /// means, and one of the readings is that the volley fires both. An attacker that held a
-    /// single mode could not express that reading at all, so it holds however many forms the
-    /// loadout resolved to and fires each of them.
+    /// <b>A list of these, not one.</b> [확정] D-005 (2026-11-23): carrying L01 and L02
+    /// together fires both forms. An attacker that held a single mode could not express that at
+    /// all, so it holds however many forms the loadout resolved to and fires each of them.
     /// </para>
     /// </summary>
     public readonly struct MainShotSpec
@@ -83,14 +82,13 @@ namespace NeonVoid.Combat.Projectiles
 
         /// <summary>
         /// Whether the shots other cards add - R06 보조 탄환's extra 탄환 - are fired in this
-        /// form too. [미확정] D-005 names L01·R06 동시 장착 as undecided; the reading in force is
-        /// chosen in Plugins, not here.
+        /// form too. [확정] D-005: they are. The rule lives in Plugins, not here.
         /// </summary>
         public bool ConvertsExtraShots { get; }
 
         /// <summary>
         /// Whether this form ignores the attacker's 관통 budget and hits everything it reaches.
-        /// [미확정] D-005 names L01·관통 as undecided; also decided in Plugins.
+        /// [확정] D-005: it does not. Also decided in Plugins.
         /// </summary>
         public bool PiercesEverything { get; }
 
