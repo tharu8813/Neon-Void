@@ -41,11 +41,38 @@ namespace NeonVoid.Plugins
         [Tooltip("[원안 수치] fraction of effect damage the burst's shots deal. G13: 0.70.")]
         public float BurstOnHitScale;
 
+        [Header("Main shot")]
+        [Tooltip(
+            "What this card turns the basic attack into. docs/03 L01 레이저 코어 converts the " +
+            "탄환 to a 레이저; L02 부메랑 프로토콜 replaces it with a 부메랑. None for every " +
+            "other card.")]
+        public PluginShotConversion ShotConversion;
+
+        [Tooltip("[원안 수치] fraction of effect damage the converted shot deals. L01: 0.70.")]
+        public float MainShotOnHitScale;
+
+        [Tooltip(
+            "How many of the converted form one volley fires. L02's 부메랑 수 - docs/03 says it " +
+            "grows with the card's level, so the number lives here as data rather than in code.")]
+        public int MainShotCount;
+
+        [Tooltip("[초안] L02's 범위 피해 reach in units. docs/03 gives no number.")]
+        public float MainShotAreaRadiusUnits;
+
+        [Tooltip("[초안] ticks a 부메랑 flies out before 귀환 begins.")]
+        public int MainShotOutboundTicks;
+
+        [Tooltip("[초안] how far L01's beam reaches in units. docs/03 gives no range.")]
+        public float MainShotRangeUnits;
+
         public bool AddsExtraShots => ExtraShotsPerVolley > 0;
 
         public bool FiresBursts => HitEffectsPerBurst > 0 && BurstShots > 0;
 
-        public bool IsEmpty => !AddsExtraShots && !FiresBursts;
+        /// <summary>Whether this card changes what the basic attack IS, not what it adds.</summary>
+        public bool ConvertsMainShot => ShotConversion != PluginShotConversion.None;
+
+        public bool IsEmpty => !AddsExtraShots && !FiresBursts && !ConvertsMainShot;
 
         public static PluginFiring None => default;
 
@@ -91,6 +118,82 @@ namespace NeonVoid.Plugins
 
             if (FiresBursts)
                 RequireFraction(BurstOnHitScale, $"{proposalId}: {nameof(BurstOnHitScale)}");
+
+            ValidateMainShot(proposalId);
+        }
+
+        /// <summary>
+        /// A conversion must carry the numbers its form needs, and only those.
+        /// <para>
+        /// Each half of a half-declared conversion is the silent no-op shape this project keeps
+        /// finding: a 부메랑 with no reach damages nobody, a beam with no range reaches nothing,
+        /// and either would read in play as a 전설 card that does not work.
+        /// </para>
+        /// </summary>
+        private void ValidateMainShot(string proposalId)
+        {
+            if (!Enum.IsDefined(typeof(PluginShotConversion), ShotConversion))
+                throw new InvalidOperationException($"{proposalId}: unknown shot conversion.");
+
+            if (!ConvertsMainShot)
+            {
+                if (MainShotCount != 0 || MainShotAreaRadiusUnits != 0f
+                    || MainShotOutboundTicks != 0 || MainShotRangeUnits != 0f
+                    || MainShotOnHitScale != 0f)
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: carries main-shot numbers but converts nothing, so nothing " +
+                        "would ever read them.");
+                }
+
+                return;
+            }
+
+            RequireFraction(MainShotOnHitScale, $"{proposalId}: {nameof(MainShotOnHitScale)}");
+
+            if (MainShotCount < 1)
+            {
+                throw new InvalidOperationException(
+                    $"{proposalId}: a converted shot fired zero times is a basic attack that does nothing.");
+            }
+
+            if (ShotConversion == PluginShotConversion.Laser)
+            {
+                if (MainShotRangeUnits <= 0f || float.IsNaN(MainShotRangeUnits)
+                    || float.IsInfinity(MainShotRangeUnits))
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: a 레이저 needs a range above zero, or the beam reaches nothing.");
+                }
+
+                if (MainShotAreaRadiusUnits != 0f || MainShotOutboundTicks != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: a 레이저 declares 부메랑 numbers that nothing reads.");
+                }
+            }
+
+            if (ShotConversion == PluginShotConversion.Boomerang)
+            {
+                if (MainShotAreaRadiusUnits <= 0f || float.IsNaN(MainShotAreaRadiusUnits)
+                    || float.IsInfinity(MainShotAreaRadiusUnits))
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: 부메랑 범위 피해 needs a reach above zero, or it damages nobody.");
+                }
+
+                if (MainShotOutboundTicks < 1)
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: a 부메랑 that turns back before it leaves never travels.");
+                }
+
+                if (MainShotRangeUnits != 0f)
+                {
+                    throw new InvalidOperationException(
+                        $"{proposalId}: a 부메랑 declares a beam range that nothing reads.");
+                }
+            }
         }
 
         /// <summary>

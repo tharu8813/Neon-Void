@@ -950,6 +950,96 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>[원안 수치] docs/03 L01 레이저 코어: 적중 효과 효율 70%.</summary>
+        public const float StatedLaserOnHitScale = 0.70f;
+
+        /// <summary>[초안] how far the beam reaches. docs/03 L01 states no range.</summary>
+        public const float DraftLaserRangeUnits = Combat.Projectiles.LaserBeam.DraftRangeUnits;
+
+        /// <summary>
+        /// L02's 부메랑 수 at the level the card is picked up. docs/03 says 레벨 상승 시 부메랑
+        /// 수 증가 and docs/03 section 3 item 6 makes levels a data-defined feature that is not
+        /// built yet, so one is what the card is worth today and the number is data.
+        /// </summary>
+        public const int StatedBoomerangCountAtFirstLevel = 1;
+
+        /// <summary>[초안] L02's 범위 피해 reach. docs/03 states no number.</summary>
+        public const float DraftBoomerangAreaRadiusUnits =
+            Combat.Projectiles.BoomerangProjectile.DraftAreaRadiusUnits;
+
+        /// <summary>[초안] ticks the 부메랑 flies out before 귀환.</summary>
+        public const int DraftBoomerangOutboundTicks =
+            Combat.Projectiles.BoomerangProjectile.DraftOutboundTicks;
+
+        /// <summary>
+        /// L01 레이저 코어 - 탄환을 레이저로 변환, 적중 효과 효율 70%.
+        /// <para>
+        /// The card is one conversion and one stated fraction, and both are implemented. What
+        /// is <b>[미확정] D-005</b> is its combination with L02, with R06 보조 탄환's extra 탄환
+        /// and with 관통 - docs/03's exception column for this row says exactly that. Those
+        /// three readings live in <see cref="ShotConversionPolicy"/>, are all implemented, and
+        /// are selected by a constant; none of them is decided here.
+        /// </para>
+        /// <para>
+        /// No damage figure, because docs/03 gives the card none: a converted basic attack deals
+        /// the basic attack's damage. Only the effect fraction changes, which is the one number
+        /// the document does state.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition LaserCore() => new PluginDefinition
+        {
+            ProposalId = "L01",
+            Rarity = PluginRarity.Legendary,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.FiringModifier,
+            Damage = default,
+            Firing = new PluginFiring
+            {
+                ShotConversion = PluginShotConversion.Laser,
+                MainShotOnHitScale = StatedLaserOnHitScale,
+                MainShotCount = 1,
+                MainShotRangeUnits = DraftLaserRangeUnits,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
+        /// L02 부메랑 프로토콜 - 부메랑 범위 피해 + 귀환, 귀환 전 추가 기본공격 불가.
+        /// <para>
+        /// 귀환 전 추가 기본공격 불가 is the card's cost and is enforced by the attacker, which
+        /// holds the volley while a 부메랑 is out. It is held after the attack interval has run
+        /// down rather than instead of it, so the wait does not also reset the weapon.
+        /// </para>
+        /// <para>
+        /// 레벨 상승 시 부메랑 수 증가 is data (<see cref="PluginFiring.MainShotCount"/>) and
+        /// waits on plugin levels, which docs/03 section 3 item 6 describes and which this
+        /// project has not built - the loadout still refuses a duplicate rather than levelling
+        /// it. One 부메랑 is what the card is worth today; nothing is invented for a level that
+        /// cannot be reached.
+        /// </para>
+        /// <para>
+        /// Its combination with L01 is <b>[미확정] D-005</b>, in
+        /// <see cref="ShotConversionPolicy"/> with L01's.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition BoomerangProtocol() => new PluginDefinition
+        {
+            ProposalId = "L02",
+            Rarity = PluginRarity.Legendary,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.FiringModifier,
+            Damage = default,
+            Firing = new PluginFiring
+            {
+                ShotConversion = PluginShotConversion.Boomerang,
+                MainShotOnHitScale = 1f,
+                MainShotCount = StatedBoomerangCountAtFirstLevel,
+                MainShotAreaRadiusUnits = DraftBoomerangAreaRadiusUnits,
+                MainShotOutboundTicks = DraftBoomerangOutboundTicks,
+            },
+            StatusDurationTicksOverride = -1,
+        };
+
         /// <summary>
         /// Every authored card, in a fixed order, so a replay rolls them identically.
         /// <para>
@@ -966,6 +1056,8 @@ namespace NeonVoid.Plugins
             CorrosionMark(),
             RandomPatch(),
             Lightweight(),
+            LaserCore(),
+            BoomerangProtocol(),
             EmergencyRecovery(),
             RareAcquisition(),
             UntouchedAcceleration(),

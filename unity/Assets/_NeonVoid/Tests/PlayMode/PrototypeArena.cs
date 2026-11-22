@@ -181,6 +181,10 @@ namespace NeonVoid.Tests.PlayModeTests
                 Object.Destroy(shot.gameObject);
             foreach (PersistentDamageField field in Object.FindObjectsByType<PersistentDamageField>(FindObjectsSortMode.None))
                 Object.Destroy(field.gameObject);
+            foreach (BoomerangProjectile disc in Object.FindObjectsByType<BoomerangProjectile>(FindObjectsSortMode.None))
+                Object.Destroy(disc.gameObject);
+            foreach (LaserBeam beam in Object.FindObjectsByType<LaserBeam>(FindObjectsSortMode.None))
+                Object.Destroy(beam.gameObject);
 
             _spawned.Clear();
             Enemies.Clear();

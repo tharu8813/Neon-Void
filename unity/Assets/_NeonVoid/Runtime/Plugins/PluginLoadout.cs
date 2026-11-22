@@ -322,6 +322,71 @@ namespace NeonVoid.Plugins
             }
         }
 
+        /// <summary>
+        /// Appends the forms the basic attack is fired in, or nothing when no carried card
+        /// converts it - and nothing means the ordinary 탄환.
+        /// <para>
+        /// <b>[미확정] D-005.</b> Which conversions survive carrying both 전설 shot cards, and
+        /// what a 레이저 does to R06's extra 탄환 and to 관통, is read from
+        /// <see cref="ShotConversionPolicy"/>. This method decides nothing itself; it applies
+        /// the reading in force, so approving a different one changes one constant and not this
+        /// code.
+        /// </para>
+        /// </summary>
+        public void CollectMainShots(List<MainShotSpec> into)
+        {
+            if (into == null)
+                return;
+
+            bool carriesLaser = false;
+            bool carriesBoomerang = false;
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                PluginShotConversion conversion = _carried[i].Firing.ShotConversion;
+                carriesLaser |= conversion == PluginShotConversion.Laser;
+                carriesBoomerang |= conversion == PluginShotConversion.Boomerang;
+            }
+
+            bool laserApplies = ShotConversionPolicy.LaserApplies(carriesLaser, carriesBoomerang);
+            bool boomerangApplies =
+                ShotConversionPolicy.BoomerangApplies(carriesLaser, carriesBoomerang);
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                PluginFiring firing = _carried[i].Firing;
+                switch (firing.ShotConversion)
+                {
+                    case PluginShotConversion.Laser when laserApplies:
+                        into.Add(MainShotSpec.Laser(
+                            firing.MainShotOnHitScale,
+                            firing.MainShotRangeUnits,
+                            ShotConversionPolicy.DraftLaserConvertsExtraShots,
+                            ShotConversionPolicy.DraftLaserPiercesEverything));
+                        break;
+
+                    case PluginShotConversion.Boomerang when boomerangApplies:
+                        into.Add(MainShotSpec.Boomerang(
+                            firing.MainShotCount,
+                            firing.MainShotAreaRadiusUnits,
+                            firing.MainShotOutboundTicks,
+                            firing.MainShotOnHitScale));
+                        break;
+                }
+            }
+        }
+
+        /// <summary>Whether any carried card changes what the basic attack is.</summary>
+        public bool ConvertsTheMainShot()
+        {
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (_carried[i].Firing.ConvertsMainShot)
+                    return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Appends every carried plugin that earns a burst from resolved hit effects.</summary>
         public void CollectBurstPlugins(List<PluginDefinition> into)
         {

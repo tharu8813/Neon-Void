@@ -67,6 +67,24 @@ namespace NeonVoid.Combat.Projectiles
         private readonly List<ExtraShotSpec> _extraShots = new List<ExtraShotSpec>();
 
         /// <summary>
+        /// What form the main shot takes, pushed in the same way the extra shots are.
+        /// <para>
+        /// A list, and empty means an ordinary 탄환. [미확정] D-005 asks what carrying L01
+        /// 레이저 코어 and L02 부메랑 프로토콜 together means, and one reading is that the volley
+        /// fires both forms; a single mode could not express that at all. The reading in force
+        /// is chosen in Plugins and arrives here already resolved.
+        /// </para>
+        /// </summary>
+        private readonly List<MainShotSpec> _mainShots = new List<MainShotSpec>();
+
+        /// <summary>
+        /// 부메랑s still out. docs/03 L02: 귀환 전 추가 기본공격 불가, so the volley is held while
+        /// this is above zero. Counted rather than flagged because L02's 부메랑 수 grows with the
+        /// card's level and several can be out at once.
+        /// </summary>
+        private int _boomerangsInFlight;
+
+        /// <summary>
         /// One entry per queued burst shot, holding that shot's own effect fraction.
         /// <para>
         /// A queue rather than a count and a scale, because two bursts can overlap - G13 fires
@@ -194,6 +212,36 @@ namespace NeonVoid.Combat.Projectiles
                 _pendingBurstShots.Enqueue(onHitEffectScale);
         }
 
+        /// <summary>
+        /// Replaces the forms the main shot is fired in. Empty or null restores the ordinary
+        /// 탄환, for the same reason <see cref="SetExtraShots"/> replaces rather than adds: a
+        /// list that accumulated would keep firing a card that had been removed.
+        /// </summary>
+        public void SetMainShots(IReadOnlyList<MainShotSpec> shots)
+        {
+            _mainShots.Clear();
+            if (shots == null)
+                return;
+
+            for (int i = 0; i < shots.Count; ++i)
+            {
+                if (shots[i].ReplacesTheProjectile)
+                    _mainShots.Add(shots[i]);
+            }
+        }
+
+        /// <summary>The forms this attacker's main shot currently takes. Empty is 탄환.</summary>
+        public IReadOnlyList<MainShotSpec> MainShots => _mainShots;
+
+        /// <summary>
+        /// 부메랑s still in flight. docs/03 L02: while this is above zero the basic attack is
+        /// held, which is 귀환 전 추가 기본공격 불가 stated as a number a test can read.
+        /// </summary>
+        public int BoomerangsInFlight => _boomerangsInFlight;
+
+        /// <summary>Whether the basic attack is being held for a 귀환.</summary>
+        public bool WaitingForBoomerang => _boomerangsInFlight > 0;
+
         private void Awake() => _actor = GetComponent<CombatActor>();
 
         private void OnEnable()
@@ -232,6 +280,15 @@ namespace NeonVoid.Combat.Projectiles
                 return;
             }
 
+            // docs/03 L02 부메랑 프로토콜: 귀환 전 추가 기본공격 불가. Held after the interval
+            // has already run down, not before, so the wait does not also cost the player their
+            // cooldown - the card says they may not fire another, not that the weapon is reset.
+            // A queued burst is left alone: G13's 추가 연사 was earned before the 부메랑 left,
+            // and gating it here would extend L02's restriction to a card that never asked for
+            // it, the same reasoning 정지 uses above for holding rather than discarding.
+            if (_boomerangsInFlight > 0)
+                return;
+
             Vector3 direction = transform.forward;
             direction.y = 0f;
             if (direction.sqrMagnitude < 1e-4f)
@@ -256,10 +313,21 @@ namespace NeonVoid.Combat.Projectiles
         /// </summary>
         private void FireVolley(Vector3 direction)
         {
-            Fire(direction, 1f, homingTurnDegreesPerTick: 0f);
+            // The main shot, in whatever form the carried cards resolved to. No form means the
+            // ordinary 탄환, which is every attacker in the game until L01 or L02 is picked up.
+            if (_mainShots.Count == 0)
+            {
+                Fire(direction, 1f, homingTurnDegreesPerTick: 0f);
+            }
+            else
+            {
+                for (int i = 0; i < _mainShots.Count; ++i)
+                    FireMainShot(_mainShots[i], direction);
+            }
 
             // Spread symmetrically around the aim so an odd number of extras does not pull the
             // volley to one side. The angle is [초안]; docs/03 only says there is an extra shot.
+            MainShotSpec extraForm = FormForExtraShots();
             int fired = 0;
             for (int i = 0; i < _extraShots.Count; ++i)
             {
@@ -269,12 +337,128 @@ namespace NeonVoid.Combat.Projectiles
                     fired++;
                     float side = (fired % 2 == 1) ? 1f : -1f;
                     float degrees = extraShotSpreadDegrees * Mathf.Ceil(fired / 2f) * side;
-                    Fire(
-                        Quaternion.Euler(0f, degrees, 0f) * direction,
-                        spec.OnHitEffectScale,
-                        spec.HomingTurnDegreesPerTick);
+                    Vector3 aim = Quaternion.Euler(0f, degrees, 0f) * direction;
+
+                    if (extraForm.Mode == MainShotMode.Laser)
+                    {
+                        // [미확정] D-005's L01·R06 reading, decided in Plugins and arriving here
+                        // as a flag. The two fractions compound: an extra shot at 80% fired as
+                        // a laser at 70% carries 56%, because each card cut what it added.
+                        FireLaser(aim, extraForm, extraForm.OnHitEffectScale * spec.OnHitEffectScale);
+                        continue;
+                    }
+
+                    Fire(aim, spec.OnHitEffectScale, spec.HomingTurnDegreesPerTick);
                 }
             }
+        }
+
+        /// <summary>
+        /// The form the shots other cards add are fired in. The first main form that says it
+        /// converts them wins; with none, an extra shot stays an ordinary 탄환.
+        /// </summary>
+        private MainShotSpec FormForExtraShots()
+        {
+            for (int i = 0; i < _mainShots.Count; ++i)
+            {
+                if (_mainShots[i].ConvertsExtraShots)
+                    return _mainShots[i];
+            }
+
+            return MainShotSpec.Ordinary;
+        }
+
+        private void FireMainShot(in MainShotSpec spec, Vector3 direction)
+        {
+            switch (spec.Mode)
+            {
+                case MainShotMode.Laser:
+                    FireLaser(direction, spec, spec.OnHitEffectScale);
+                    break;
+
+                case MainShotMode.Boomerang:
+                    ThrowBoomerangs(spec, direction);
+                    break;
+
+                default:
+                    Fire(direction, spec.OnHitEffectScale, homingTurnDegreesPerTick: 0f);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// L01 레이저 코어's shot. Resolved on this tick, inside the attacker's own step.
+        /// <para>
+        /// 관통 arrives from the spec: [미확정] D-005 names L01·관통 as undecided, so whether the
+        /// beam respects the attacker's budget or reaches everything is decided in Plugins.
+        /// </para>
+        /// </summary>
+        private void FireLaser(Vector3 direction, in MainShotSpec spec, float onHitEffectScale)
+        {
+            LaserBeam.Fire(
+                _actor,
+                BasicAttackRequest(),
+                transform.position,
+                direction,
+                spec.RangeUnits,
+                EffectiveProjectileRadius,
+                spec.PiercesEverything ? ProjectileHitLedger.UnlimitedTargets : EffectiveMaxTargets,
+                onHitEffectScale,
+                projectileMaterial,
+                _runner);
+        }
+
+        /// <summary>
+        /// L02 부메랑 프로토콜's shot, and the hold it puts on the basic attack.
+        /// <para>
+        /// The count is spread like the extra shots are, for the same reason: several boomerangs
+        /// thrown down one line would be one boomerang as far as the player can see.
+        /// </para>
+        /// </summary>
+        private void ThrowBoomerangs(in MainShotSpec spec, Vector3 direction)
+        {
+            for (int i = 0; i < spec.Count; ++i)
+            {
+                float side = (i % 2 == 0) ? 1f : -1f;
+                float degrees = extraShotSpreadDegrees * 2f * Mathf.Floor(i / 2f + 0.5f) * side;
+                Vector3 aim = Quaternion.Euler(0f, i == 0 ? 0f : degrees, 0f) * direction;
+
+                var disc = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                disc.name = "NV Boomerang";
+                disc.transform.position = transform.position + aim * 1.0f;
+                disc.transform.localScale = new Vector3(0.5f, 0.12f, 0.5f);
+                Object.Destroy(disc.GetComponent<Collider>());
+
+                if (projectileMaterial != null)
+                {
+                    var renderer = disc.GetComponent<Renderer>();
+                    if (renderer != null)
+                        renderer.sharedMaterial = projectileMaterial;
+                }
+
+                _boomerangsInFlight++;
+                disc.AddComponent<BoomerangProjectile>().Throw(
+                    _actor,
+                    BasicAttackRequest(),
+                    aim,
+                    EffectiveProjectileSpeed * BoomerangSpeedFraction,
+                    spec.OutboundTicks,
+                    spec.AreaRadiusUnits,
+                    spec.OnHitEffectScale,
+                    ReleaseBoomerang);
+            }
+        }
+
+        /// <summary>
+        /// [초안] a 부메랑 travels slower than a 탄환 - it is a thrown disc that has to be
+        /// catchable, and at full projectile speed the round trip is over before it reads as one.
+        /// </summary>
+        private const float BoomerangSpeedFraction = 0.7f;
+
+        private void ReleaseBoomerang()
+        {
+            if (_boomerangsInFlight > 0)
+                _boomerangsInFlight--;
         }
 
         /// <summary>
@@ -307,6 +491,18 @@ namespace NeonVoid.Combat.Projectiles
             _ticksUntilNextBurstShot = burstShotGapTicks;
         }
 
+        /// <summary>
+        /// The damage one basic attack asks for. Shared by every form of the shot, so L01's
+        /// beam and L02's 부메랑 deal the basic attack's damage rather than a number of their
+        /// own - docs/03 gives neither card a damage figure, only a shape.
+        /// </summary>
+        private DamageRequest BasicAttackRequest() => new DamageRequest
+        {
+            AdRatio = adRatio,
+            Type = DamageType.Physical,
+            CanCrit = true,
+        };
+
         private void Fire(Vector3 direction, float onHitEffectScale, float homingTurnDegreesPerTick)
         {
             var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -325,15 +521,8 @@ namespace NeonVoid.Combat.Projectiles
                     renderer.sharedMaterial = projectileMaterial;
             }
 
-            var request = new DamageRequest
-            {
-                AdRatio = adRatio,
-                Type = DamageType.Physical,
-                CanCrit = true,
-            };
-
             orb.AddComponent<CombatProjectile>().Launch(
-                _actor, request, direction,
+                _actor, BasicAttackRequest(), direction,
                 EffectiveProjectileSpeed, projectileLifetimeTicks, EffectiveMaxTargets,
                 onHitEffectScale, EffectiveProjectileRadius, homingTurnDegreesPerTick);
         }

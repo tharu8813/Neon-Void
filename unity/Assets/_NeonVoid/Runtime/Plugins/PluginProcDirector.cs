@@ -58,6 +58,9 @@ namespace NeonVoid.Plugins
         private readonly Dictionary<int, int> _resolvedByEffectId = new Dictionary<int, int>();
         private readonly List<StatModifier> _passiveBuffer = new List<StatModifier>();
         private readonly List<ExtraShotSpec> _extraShotBuffer = new List<ExtraShotSpec>();
+
+        /// <summary>Reused, so pushing the loadout to the attacker allocates nothing per tick.</summary>
+        private readonly List<MainShotSpec> _mainShotBuffer = new List<MainShotSpec>();
         private readonly List<PluginDefinition> _burstBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _dashBuffer = new List<PluginDefinition>();
         private readonly List<PluginDefinition> _growthBuffer = new List<PluginDefinition>();
@@ -886,6 +889,13 @@ namespace NeonVoid.Plugins
             _extraShotBuffer.Clear();
             _router.Loadout.CollectExtraShots(_extraShotBuffer);
             _attacker.SetExtraShots(_extraShotBuffer);
+
+            // L01 레이저 코어 and L02 부메랑 프로토콜 change what the basic attack IS. Pushed the
+            // same way, and already resolved against [미확정] D-005's reading by the loadout, so
+            // the attacker never learns which card converted its shot.
+            _mainShotBuffer.Clear();
+            _router.Loadout.CollectMainShots(_mainShotBuffer);
+            _attacker.SetMainShots(_mainShotBuffer);
 
             // G06 스로틀 증폭 and G03 확장 탄두 change the shape of the basic attack rather than
             // a stat, so they go the same way the extra shots do: pushed to the attacker, never
