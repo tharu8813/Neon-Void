@@ -3,6 +3,7 @@ using NeonVoid.Combat;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Missions;
+using NeonVoid.Player;
 using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using UnityEngine;
@@ -55,11 +56,18 @@ namespace NeonVoid.UI
         [Tooltip("The death ledger the 사망 화면 reads. Found when left empty.")]
         [SerializeField] private RunDeathDirector deaths;
 
-        [Header("[초안] labels")]
-        [Tooltip("[초안] D-009 has not settled the keys; these are the prototype's Q/E/R.")]
+        [Tooltip(
+            "The key bindings, so the HUD prints the key the player actually has. " +
+            "Found when left empty.")]
+        [SerializeField] private InputBindingDirector bindings;
+
+        [Header("Fallback labels")]
+        [Tooltip(
+            "Used only when no InputBindingDirector is present. The asset's own keys are the " +
+            "real source; these exist so a scene without one still prints something.")]
         [SerializeField] private string[] skillKeys = { "Q", "E", "R" };
 
-        [Tooltip("[초안] docs/02 section 7 drafts F for 상호작용. D-009 has not settled it.")]
+        [Tooltip("Fallback for 상호작용 when no InputBindingDirector is present.")]
         [SerializeField] private string interactKey = "F";
 
         private UIDocument _document;
@@ -173,7 +181,8 @@ namespace NeonVoid.UI
             HardwareAreaRuntime areaRuntime = null,
             HubRuntime hubRuntime = null,
             VaccineSaveDirector saveDirector = null,
-            RunDeathDirector deathDirector = null)
+            RunDeathDirector deathDirector = null,
+            InputBindingDirector bindingDirector = null)
         {
             player = vaccine;
             motherboard = board;
@@ -181,6 +190,7 @@ namespace NeonVoid.UI
             hub = hubRuntime;
             save = saveDirector;
             deaths = deathDirector;
+            bindings = bindingDirector;
         }
 
         private void Awake()
@@ -204,6 +214,9 @@ namespace NeonVoid.UI
 
             if (deaths == null)
                 deaths = FindFirstObjectByType<RunDeathDirector>();
+
+            if (bindings == null)
+                bindings = FindFirstObjectByType<InputBindingDirector>();
         }
 
         private void OnEnable()
@@ -246,6 +259,8 @@ namespace NeonVoid.UI
 
             Growth = GatherGrowth();
             DrawGrowth(Growth);
+
+            DrawSkillKeys();
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -497,7 +512,7 @@ namespace NeonVoid.UI
                 if (!HubTerminals.IsConnected(kind))
                     return HudPrompt.Unavailable(name, HubTerminals.PendingLabel(kind));
 
-                return new HudPrompt(name, $"{interactKey} 키로 사용", true);
+                return new HudPrompt(name, $"{KeyFor("Interact", interactKey)} 키로 사용", true);
             }
 
             return HudPrompt.None;
@@ -582,6 +597,21 @@ namespace NeonVoid.UI
         /// a UIDocument's root is null before the panel is attached, and an Awake that assumed
         /// otherwise would silently never draw.
         /// </summary>
+        /// <summary>
+        /// The key cap to print for an action. The bindings are the source; the serialized
+        /// string is only what a scene with no <see cref="InputBindingDirector"/> falls back
+        /// to, because a HUD that printed Q while the player had moved 스킬 1 to Z would be
+        /// teaching them the wrong key.
+        /// </summary>
+        public string KeyFor(string actionName, string fallback)
+        {
+            if (bindings == null)
+                return fallback;
+
+            string bound = bindings.DisplayKeyFor(actionName);
+            return string.IsNullOrEmpty(bound) ? fallback : bound;
+        }
+
         /// <summary>
         /// Whether this session is being written down. Read every tick rather than once,
         /// because a store that halts mid-session changes the answer and that is exactly the
@@ -749,6 +779,25 @@ namespace NeonVoid.UI
             return values;
         }
 
+        /// <summary>
+        /// Keeps the key caps on the skill slots current. Written only when the text changes:
+        /// a rebind happens in a menu, a handful of times in a session at most.
+        /// </summary>
+        private void DrawSkillKeys()
+        {
+            for (int i = 0; i < HudSnapshot.SkillSlots; ++i)
+            {
+                if (_skillKeyLabels[i] == null)
+                    continue;
+
+                string fallback = skillKeys != null && i < skillKeys.Length ? skillKeys[i] : string.Empty;
+                string text = KeyFor($"Skill{i + 1}", fallback);
+
+                if (_skillKeyLabels[i].text != text)
+                    _skillKeyLabels[i].text = text;
+            }
+        }
+
         private void Buy(InvestableStat stat)
         {
             if (hub != null && hub.Growth != null)
@@ -864,8 +913,11 @@ namespace NeonVoid.UI
                 _skillBars[i] = root.Q<ProgressBar>($"skillBar{i}");
                 _skillKeyLabels[i] = root.Q<Label>($"skillKey{i}");
 
-                if (_skillKeyLabels[i] != null && skillKeys != null && i < skillKeys.Length)
-                    _skillKeyLabels[i].text = skillKeys[i];
+                if (_skillKeyLabels[i] == null)
+                    continue;
+
+                string fallback = skillKeys != null && i < skillKeys.Length ? skillKeys[i] : string.Empty;
+                _skillKeyLabels[i].text = KeyFor($"Skill{i + 1}", fallback);
             }
 
             _saveNotice = root.Q<Label>("saveNotice");

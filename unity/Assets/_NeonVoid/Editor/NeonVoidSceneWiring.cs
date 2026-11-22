@@ -138,7 +138,7 @@ namespace NeonVoid.EditorTools
         /// loudly: the scene would still open and still look correct, but nothing would respond
         /// to the keyboard, which is the exact failure this build step exists to prevent.
         /// </summary>
-        internal static void AssignInputAsset(PlayerInputRouter router)
+        internal static void AssignInputAsset(Component reader)
         {
             var asset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
             if (asset == null)
@@ -148,7 +148,7 @@ namespace NeonVoid.EditorTools
                 return;
             }
 
-            AssignSerialized(router, "actions", asset);
+            AssignSerialized(reader, "actions", asset);
         }
 
         /// <summary>

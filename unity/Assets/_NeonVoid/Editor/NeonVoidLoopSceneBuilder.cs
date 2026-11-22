@@ -94,6 +94,12 @@ namespace NeonVoid.EditorTools
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+            // 키 바인딩 first: it reads 전역 설정 and pushes the player's keys onto the action
+            // asset, and the input router reads that asset when it wakes.
+            var bindingObject = new GameObject("Input Binding Director");
+            var bindings = bindingObject.AddComponent<NeonVoid.Player.InputBindingDirector>();
+            NeonVoidSceneWiring.AssignInputAsset(bindings);
+
             // One clock. Two accumulators would drift.
             var simulation = new GameObject("Simulation Runner");
             SimulationRunner runner = simulation.AddComponent<SimulationRunner>();
@@ -174,7 +180,7 @@ namespace NeonVoid.EditorTools
 
             // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
             // to be chosen 실제 검증 후 - which needs a HUD to verify.
-            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths);
+            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings);
 
             CreateDirectionalLight();
 
@@ -242,7 +248,8 @@ namespace NeonVoid.EditorTools
             MotherboardDirector board,
             HubRuntime hub,
             VaccineSaveDirector save,
-            RunDeathDirector deaths)
+            RunDeathDirector deaths,
+            NeonVoid.Player.InputBindingDirector bindings)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -267,7 +274,7 @@ namespace NeonVoid.EditorTools
             HudController controller = host.AddComponent<HudController>();
             // Wired rather than found, so the notice that says whether this session is being
             // written down cannot be the thing that silently went missing.
-            controller.Configure(player, board, null, hub, save, deaths);
+            controller.Configure(player, board, null, hub, save, deaths, bindings);
 
             host.SetActive(true);
         }
