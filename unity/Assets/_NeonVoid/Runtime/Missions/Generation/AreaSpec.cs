@@ -44,12 +44,31 @@ namespace NeonVoid.Missions.Generation
         /// <summary>A hard ceiling, so a caller's bad number fails here and not as a vast map.</summary>
         public const int MaxObjectives = 6;
 
+        /// <summary>[초안] the thinnest an area may be populated.</summary>
+        public const int MinEnemyPercent = 50;
+
+        /// <summary>
+        /// [초안] the densest. Above this the generator runs out of floor to stand enemies on
+        /// in a small area, and a budget it cannot place is a budget that silently shrinks.
+        /// </summary>
+        public const int MaxEnemyPercent = 200;
+
         public readonly HardwareId Hardware;
         public readonly int GeneratorVersion;
         public readonly uint Seed;
 
         /// <summary>Percent of the nominal map size. 100 is nominal.</summary>
         public readonly int SizeModifierPercent;
+
+        /// <summary>
+        /// Percent of the enemy budget the map's size already implies. 100 is nominal.
+        /// <para>
+        /// Separate from the size because [확정] docs/00 section 7's 스택오버플로우 is 적 증가 and
+        /// nothing else: more enemies in the same rooms plays differently from a bigger map that
+        /// happens to hold more, and one knob could not tell the two apart.
+        /// </para>
+        /// </summary>
+        public readonly int EnemyPercent;
 
         /// <summary>
         /// 소목표 to place, each in its own room. The number the area will then require of the
@@ -63,7 +82,8 @@ namespace NeonVoid.Missions.Generation
             uint seed,
             int objectiveCount,
             int sizeModifierPercent = NominalSizeModifierPercent,
-            int generatorVersion = CurrentGeneratorVersion)
+            int generatorVersion = CurrentGeneratorVersion,
+            int enemyPercent = NominalSizeModifierPercent)
         {
             if (!HardwareIds.IsArea(hardware))
             {
@@ -87,6 +107,13 @@ namespace NeonVoid.Missions.Generation
                     $"{DraftMaxSizeModifierPercent}% of nominal size.");
             }
 
+            if (enemyPercent < MinEnemyPercent || enemyPercent > MaxEnemyPercent)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(enemyPercent), enemyPercent,
+                    $"[초안] an area is populated between {MinEnemyPercent}% and {MaxEnemyPercent}%.");
+            }
+
             if (generatorVersion < 1)
                 throw new ArgumentOutOfRangeException(nameof(generatorVersion), generatorVersion, "Versions start at 1.");
 
@@ -94,6 +121,7 @@ namespace NeonVoid.Missions.Generation
             Seed = seed;
             ObjectiveCount = objectiveCount;
             SizeModifierPercent = sizeModifierPercent;
+            EnemyPercent = enemyPercent;
             GeneratorVersion = generatorVersion;
         }
 
@@ -102,18 +130,26 @@ namespace NeonVoid.Missions.Generation
         /// is kept, so the pair differs by exactly the thing under test.
         /// </summary>
         public AreaSpec AtSize(int sizeModifierPercent) =>
-            new AreaSpec(Hardware, Seed, ObjectiveCount, sizeModifierPercent, GeneratorVersion);
+            new AreaSpec(
+                Hardware, Seed, ObjectiveCount, sizeModifierPercent, GeneratorVersion, EnemyPercent);
+
+        /// <summary>The same area more or less thickly populated, for 스택오버플로우.</summary>
+        public AreaSpec WithEnemies(int enemyPercent) =>
+            new AreaSpec(
+                Hardware, Seed, ObjectiveCount, SizeModifierPercent, GeneratorVersion, enemyPercent);
 
         /// <summary>The same area from another seed.</summary>
         public AreaSpec WithSeed(uint seed) =>
-            new AreaSpec(Hardware, seed, ObjectiveCount, SizeModifierPercent, GeneratorVersion);
+            new AreaSpec(
+                Hardware, seed, ObjectiveCount, SizeModifierPercent, GeneratorVersion, EnemyPercent);
 
         /// <summary>
         /// The key docs/01 section 6 check 4 requires a map to be reproducible from. Written as
         /// text so a receipt and a log can carry it unchanged.
         /// </summary>
         public string GenerationKey =>
-            $"{HardwareIds.SaveKeyFor(Hardware)}:{Seed}:v{GeneratorVersion}:size{SizeModifierPercent}:obj{ObjectiveCount}";
+            $"{HardwareIds.SaveKeyFor(Hardware)}:{Seed}:v{GeneratorVersion}:size{SizeModifierPercent}:" +
+            $"obj{ObjectiveCount}:pop{EnemyPercent}";
 
         public override string ToString() => GenerationKey;
     }

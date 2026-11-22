@@ -72,11 +72,24 @@ namespace NeonVoid.Missions.Generation
         /// 예상 횟수 48 at nominal size, scaled with the map so a 60% area is not a crowd.
         /// </summary>
         public static int NormalEnemiesFor(in AreaSpec spec) =>
-            AreaLayoutValidator.Scale(MissionXpBudget.DraftNormalKillsPerArea, spec.SizeModifierPercent);
+            AreaLayoutValidator.Scale(
+                AreaLayoutValidator.Scale(
+                    MissionXpBudget.DraftNormalKillsPerArea, spec.SizeModifierPercent),
+                spec.EnemyPercent);
 
-        /// <summary>정예 this area is budgeted for. GDD v1 section 5.4 counts 3.</summary>
+        /// <summary>
+        /// 정예 this area is budgeted for. GDD v1 section 5.4 counts 3.
+        /// <para>
+        /// 스택오버플로우 raises this with the rest. 적 증가 does not say 일반 적만, and an area
+        /// that doubled its fodder while keeping three elites would be easier per enemy rather
+        /// than harder.
+        /// </para>
+        /// </summary>
         public static int ElitesFor(in AreaSpec spec) =>
-            AreaLayoutValidator.Scale(MissionXpBudget.DraftElitesPerArea, spec.SizeModifierPercent);
+            AreaLayoutValidator.Scale(
+                AreaLayoutValidator.Scale(
+                    MissionXpBudget.DraftElitesPerArea, spec.SizeModifierPercent),
+                spec.EnemyPercent);
 
         /// <summary>
         /// [초안] the archetypes a hardware area draws from, repeated for weight.

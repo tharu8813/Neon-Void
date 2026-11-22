@@ -237,7 +237,16 @@ namespace NeonVoid.Missions
             }
 
             uint missionSeed = flow.Run.SeedFor(RandomStream.Mission);
-            AreaSpec spec = AreaSeeds.DraftSpecFor(missionSeed, hardware);
+
+            // The board rolled this area's 환경 when the mission began, and until 2026-11-23
+            // nothing read it: six labels on the gate that all played identically. [확정]
+            // docs/00 section 7 names what each one does, and EnvironmentEffects applies it.
+            AreaConditions conditions = EnsureBoard()
+                ? Board.For(hardware)
+                : AreaConditions.Clear(hardware, HardwareDifficulty.Normal);
+
+            AreaSpec spec = AreaSeeds.DraftSpecFor(missionSeed, hardware, conditions);
+            Debug.Log($"{hardware} 환경: {conditions.GateLine()} → {spec.GenerationKey}", this);
 
             if (!AreaGenerator.TryGenerate(spec, out AreaLayout layout, out string failure))
             {

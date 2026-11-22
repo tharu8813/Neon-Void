@@ -62,13 +62,30 @@ namespace NeonVoid.Missions
             new AreaSpec(hardware, For(missionSeed, hardware), objectiveCount);
 
         /// <summary>
+        /// The spec with this area's environment applied. [확정] docs/00 section 7 names what
+        /// each one does; <see cref="EnvironmentEffects"/> holds the [초안] magnitudes.
+        /// </summary>
+        public static AreaSpec SpecFor(
+            uint missionSeed, HardwareId hardware, int objectiveCount, in AreaConditions conditions)
+        {
+            uint seed = For(missionSeed, hardware);
+            AreaSpec nominal = new AreaSpec(hardware, seed, objectiveCount);
+            return EnvironmentEffects.For(conditions, seed).ApplyTo(nominal);
+        }
+
+        /// <summary>The spec with the objective count rolled and the environment applied.</summary>
+        public static AreaSpec DraftSpecFor(
+            uint missionSeed, HardwareId hardware, in AreaConditions conditions) =>
+            SpecFor(missionSeed, hardware, DraftObjectiveCountFor(missionSeed, hardware), conditions);
+
+        /// <summary>
         /// [초안] 소목표 for this area, from its own seed, inside docs/01's 2~3.
         /// <para>
-        /// <b>No size modifier.</b> docs/01 section 6 check 5 mentions 맵 크기 축소·확대 환경, but
-        /// none of section 5's six [확정] environment kinds names a size change - so which
-        /// environment shrinks a map is not something the documents say, and picking one here
-        /// would be inventing it. Areas are built at nominal size until an approved environment
-        /// asks otherwise; the generator's whole size band is exercised by its own tests.
+        /// <b>No size modifier in this overload.</b> It builds an area with nothing wrong with
+        /// it. docs/00 section 7 does name which environments change the size - 확산(맵 확대) and
+        /// 초기상태(맵 축소) - and the overload that takes <see cref="AreaConditions"/> applies
+        /// them; this one is the 이상없음 case and the one tests use when the environment is not
+        /// what they are about.
         /// </para>
         /// </summary>
         public static int DraftObjectiveCountFor(uint missionSeed, HardwareId hardware)
