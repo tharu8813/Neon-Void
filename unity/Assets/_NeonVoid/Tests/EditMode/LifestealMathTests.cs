@@ -197,5 +197,14 @@ namespace NeonVoid.Tests
             Assert.IsFalse(float.IsNaN(result.Total));
             Assert.GreaterOrEqual(result.Total, 0f);
         }
+    
+        [Test]
+        public void ShieldAbsorbedDamageGivesNoLifestealByApproval()
+        {
+            // [확정] D-004, approved 2026-11-22: 보호막이 흡수한 피해에는 흡혈이 발생하지
+            // 않는다. The generous reading stays implemented and tested above; this holds that
+            // it is not the one the game ships with.
+            Assert.IsFalse(LifestealPolicy.Draft().CountShieldAbsorbedAsDealt);
+        }
     }
 }

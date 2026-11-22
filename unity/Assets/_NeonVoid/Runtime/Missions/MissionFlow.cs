@@ -98,6 +98,22 @@ namespace NeonVoid.Missions
 
         public MissionFlowPhase Phase { get; private set; } = MissionFlowPhase.Hub;
 
+        /// <summary>
+        /// Raised once when a mission stops running, whichever way it ended.
+        /// <para>
+        /// It exists for state that belongs to one 의뢰 and to nothing else - [확정] D-019's
+        /// R02 kill stacks are the first. Those used to end only by accident, when the card
+        /// stopped being carried, so a session that played a second mission carried the first
+        /// one's stacks into it.
+        /// </para>
+        /// <para>
+        /// Raised on 철수 and on 사망 alike, and not on the walk back to the hub: the mission is
+        /// over at the moment it succeeded or failed, and a player standing on the death screen
+        /// with +10 AD still showing would be reading a bonus they no longer have.
+        /// </para>
+        /// </summary>
+        public event System.Action MissionEnded;
+
         public AreaProgressPhase AreaPhase { get; private set; } = AreaProgressPhase.None;
 
         /// <summary>The live mission. Identity, 의뢰 레벨, purification count.</summary>
@@ -391,6 +407,7 @@ namespace NeonVoid.Missions
 
             ClearArea();
             Phase = MissionFlowPhase.Extracted;
+            MissionEnded?.Invoke();
             return Accept();
         }
 
@@ -408,6 +425,7 @@ namespace NeonVoid.Missions
             _run.TryFail();
             ClearArea();
             Phase = MissionFlowPhase.Failed;
+            MissionEnded?.Invoke();
             return Accept();
         }
 

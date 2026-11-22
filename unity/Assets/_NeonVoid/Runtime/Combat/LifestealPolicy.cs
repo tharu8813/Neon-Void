@@ -42,6 +42,9 @@ namespace NeonVoid.Combat
         /// <summary>The conservative provisional reading. Not an approved decision.</summary>
         public static LifestealPolicy Draft() => new LifestealPolicy
         {
+            // [확정] D-004, approved 2026-11-22: 보호막이 흡수한 피해에는 흡혈이 발생하지
+            // 않는다. The other reading stays implemented and tested; it is not what the game
+            // does.
             CountShieldAbsorbedAsDealt = false,
             CountOverkill = false,
             AllowOnHitAndOmnivampOnSameEvent = true,

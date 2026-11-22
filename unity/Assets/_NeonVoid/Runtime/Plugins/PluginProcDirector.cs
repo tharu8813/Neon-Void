@@ -43,6 +43,8 @@ namespace NeonVoid.Plugins
         [Tooltip("Where the reward seed comes from. Found automatically when left empty.")]
         [SerializeField] private MissionRunDirector missionDirector;
 
+        private MissionFlow _flow;
+
         [Tooltip("Fallback reward seed, used only when no MissionRunDirector is in the scene.")]
         [SerializeField] private uint fallbackRewardSeed = 20261120u;
 
@@ -157,6 +159,13 @@ namespace NeonVoid.Plugins
         /// driving the Input System.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Names the mission whose end clears this director's per-mission state. Pushed in
+        /// rather than searched for, because the search runs in Awake and a caller that wants
+        /// a different mission is already too late by then.
+        /// </summary>
+        public void UseMissionDirector(MissionRunDirector director) => missionDirector = director;
+
         public void SetDashState(IDashState dashState)
         {
             _dash = dashState;
@@ -237,6 +246,13 @@ namespace NeonVoid.Plugins
             if (_caster != null)
                 _caster.SkillCast += OnOwnerSkillCast;
 
+            // [확정] D-019: the kill stacks belong to one 의뢰. Subscribed here rather than
+            // polled, because the mission ends on a tick and the flow is the only thing that
+            // knows which one.
+            _flow = missionDirector != null ? missionDirector.Flow : null;
+            if (_flow != null)
+                _flow.MissionEnded += EndMission;
+
             _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
             if (_runner == null)
             {
@@ -256,6 +272,8 @@ namespace NeonVoid.Plugins
 
             if (_caster != null)
                 _caster.SkillCast -= OnOwnerSkillCast;
+            if (_flow != null)
+                _flow.MissionEnded -= EndMission;
             if (_runner != null)
                 _runner.Unregister(this);
         }
@@ -674,6 +692,27 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>Stacks a growing passive has accumulated. For tests and the HUD.</summary>
+        /// <summary>
+        /// Drops everything that belonged to the mission that just ended.
+        /// <para>
+        /// [확정] D-019, approved 2026-11-22: R02 킬 스택은 의뢰 종료 시 전부 소멸한다. Before
+        /// this the stacks only went away when the card stopped being carried, so a session
+        /// that played a second mission started it with the first one's kills already counted.
+        /// </para>
+        /// <para>
+        /// The stats are republished afterwards, because a stack cleared and not pushed is the
+        /// "applied but has no effect" failure this project keeps finding.
+        /// </para>
+        /// </summary>
+        public void EndMission()
+        {
+            if (_growthStacks.Count == 0)
+                return;
+
+            _growthStacks.Clear();
+            PushPassivesToOwner();
+        }
+
         public int GrowthStacks(string proposalId) =>
             proposalId != null && _growthStacks.TryGetValue(proposalId, out int stacks) ? stacks : 0;
 

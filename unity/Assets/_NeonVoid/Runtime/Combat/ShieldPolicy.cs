@@ -74,6 +74,27 @@ namespace NeonVoid.Combat
         public const ShieldAbsorptionOrder ApprovedOrder = ShieldAbsorptionOrder.NewestFirst;
 
         /// <summary>
+        /// [확정] D-004, approved 2026-11-22: 보호막은 개별적으로 중첩·만료 처리.
+        /// <para>
+        /// Two grants of the same card stand as two layers with their own timers rather than
+        /// one being replaced or the amounts added into a single longer-lived pool. The other
+        /// two rules stay implemented and tested so a later change is a constant, not a
+        /// rewrite - but they are not what the game does.
+        /// </para>
+        /// </summary>
+        public const ShieldRefreshRule ApprovedRefresh = ShieldRefreshRule.Separate;
+
+        /// <summary>
+        /// [확정] D-004, approved 2026-11-22: 만료되는 틱까지 피해를 흡수한다.
+        /// <para>
+        /// A shield granted at tick 0 for 60 ticks still absorbs on tick 60 and is gone on
+        /// tick 61. The player was told it lasts a second; losing it a frame early is the
+        /// reading they would experience as the shield not working.
+        /// </para>
+        /// </summary>
+        public const bool ApprovedAbsorbsOnTheExpiryTick = true;
+
+        /// <summary>
         /// The policy in force: the approved order, and the provisional reading of everything
         /// D-004 still leaves open.
         /// <para>
@@ -85,8 +106,8 @@ namespace NeonVoid.Combat
         public static ShieldPolicy Draft() => new ShieldPolicy
         {
             Order = ApprovedOrder,
-            Refresh = ShieldRefreshRule.Separate,     // [미확정]
-            AbsorbsOnTheExpiryTick = false,           // [미확정]
+            Refresh = ApprovedRefresh,
+            AbsorbsOnTheExpiryTick = ApprovedAbsorbsOnTheExpiryTick,
         };
     }
 }

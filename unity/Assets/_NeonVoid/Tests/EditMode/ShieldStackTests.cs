@@ -173,23 +173,27 @@ namespace NeonVoid.Tests
         // --- 만료 -----------------------------------------------------------------------------
 
         [Test]
-        public void AShieldIsGoneOnTheTickItsTimerSays()
+        public void AShieldOutlivesTheTickItsTimerSaysAndIsGoneTheNext()
         {
+            // [확정] D-004, approved 2026-11-22: 만료되는 틱까지 피해를 흡수한다. A shield
+            // granted at 0 for 60 ticks is still there on tick 60 - the player was told it
+            // lasts a second, and losing it a tick early is the reading they would experience
+            // as it not working.
             ShieldStack shields = With(ShieldAbsorptionOrder.NewestFirst);
             shields.Grant(OnSkill, 20f, nowTick: 0L, lifetimeTicks: 60);
 
             Assert.AreEqual(0, shields.Expire(59L), "it expired a tick early");
-            Assert.AreEqual(1, shields.Expire(60L), "it did not expire on its own tick");
+            Assert.AreEqual(0, shields.Expire(60L), "it expired on the tick it should still absorb on");
+            Assert.AreEqual(1, shields.Expire(61L), "it outlived its own expiry tick");
             Assert.IsFalse(shields.HasAny);
         }
 
         [Test]
-        public void TheExpiryTickItselfIsAnOpenQuestionAndBothReadingsWork()
+        public void TheExpiryTickItselfAbsorbs()
         {
-            ShieldPolicy inclusive = ShieldPolicy.Draft();
-            inclusive.AbsorbsOnTheExpiryTick = true;
-
-            var lenient = new ShieldStack(inclusive);
+            // [확정] D-004, approved 2026-11-22: 만료되는 틱까지 피해를 흡수한다. A shield
+            // granted at 0 for 60 ticks still absorbs on tick 60.
+            var lenient = new ShieldStack(ShieldPolicy.Draft());
             lenient.Grant(OnSkill, 20f, 0L, 60);
 
             Assert.AreEqual(0, lenient.Expire(60L), "the lenient reading dropped it on its last tick");
@@ -309,18 +313,24 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void WhatWasNotApprovedIsStillOpen()
+        public void TheWholeOfDFourIsApprovedAndTheDefaultsSayWhichReading()
         {
-            // The approval covered the absorption order and nothing else. Recording that here
-            // as well as in docs/08 means a later reader of the code is told the same thing.
+            // [확정] D-004, approved 2026-11-22. Recording it here as well as in docs/08 means
+            // a later reader of the code is told the same thing - and that changing one of
+            // these breaks a test rather than quietly changing the game.
             ShieldPolicy policy = ShieldPolicy.Draft();
 
             Assert.AreEqual(
-                ShieldRefreshRule.Separate, policy.Refresh,
-                "갱신·합산 is still [미확정] and Separate is the provisional reading");
-            Assert.IsFalse(
-                policy.AbsorbsOnTheExpiryTick,
-                "the expiry-tick reading is still [미확정]");
+                ShieldAbsorptionOrder.NewestFirst, policy.Order, "흡수 순서: 신규부터");
+            Assert.AreEqual(
+                ShieldRefreshRule.Separate, policy.Refresh, "중첩: 개별적으로");
+            Assert.IsTrue(
+                policy.AbsorbsOnTheExpiryTick, "만료: 만료되는 틱까지 흡수");
+
+            // The two readings that were not chosen are still implemented, so a later change
+            // is a constant rather than a rewrite.
+            Assert.AreEqual(3, System.Enum.GetValues(typeof(ShieldRefreshRule)).Length);
+            Assert.AreEqual(3, System.Enum.GetValues(typeof(ShieldAbsorptionOrder)).Length);
         }
 
         // --- the example D-004 asks to approve -------------------------------------------------

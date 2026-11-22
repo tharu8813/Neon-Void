@@ -1,5 +1,6 @@
 using System.Collections;
 using NeonVoid.Combat;
+using NeonVoid.Missions;
 using NeonVoid.Plugins;
 using NUnit.Framework;
 using UnityEngine;
@@ -18,10 +19,17 @@ namespace NeonVoid.Tests.PlayModeTests
     public sealed class KillStackPlayModeTests
     {
         private PrototypeArena _arena;
+        private GameObject _missionObject;
+        private MissionRunDirector _mission;
 
         [TearDown]
         public void TearDown()
         {
+            if (_missionObject != null)
+                UnityEngine.Object.Destroy(_missionObject);
+            _missionObject = null;
+            _mission = null;
+
             _arena?.Dispose();
             _arena = null;
         }
@@ -202,6 +210,107 @@ namespace NeonVoid.Tests.PlayModeTests
 
             Assert.Greater(weak, 0f, "the unbuffed attack did nothing");
             Assert.Greater(strong, weak, "Five kills' worth of AD did not reach the damage.");
+        }
+    
+        // --- [확정] D-019: 의뢰 종료 시 전부 소멸 ----------------------------------------------
+
+        /// <summary>
+        /// A mission this test drives, pointed at the proc director. Pushed in rather than
+        /// found, because the director resolves it in its own Awake and that has already run.
+        /// </summary>
+        private MissionFlow DriveAMission()
+        {
+            _missionObject = new GameObject("Mission Run Director");
+            _missionObject.SetActive(false);
+            _mission = _missionObject.AddComponent<MissionRunDirector>();
+            _mission.ConfigureStart(beginOnAwake: false);
+            _missionObject.SetActive(true);
+
+            _arena.Procs.enabled = false;
+            _arena.Procs.UseMissionDirector(_mission);
+            _arena.Procs.enabled = true;
+
+            return _mission.Flow;
+        }
+
+        [UnityTest]
+        public IEnumerator AMissionThatEndsTakesTheKillStacksWithIt()
+        {
+            // [확정] D-019, approved 2026-11-22: 의뢰 종료 시 전부 소멸. Until this, the stacks
+            // only went away when the card stopped being carried.
+            yield return ArenaWithOnlyKillStack(new Vector3(3f, 0f, 0f));
+            MissionFlow flow = DriveAMission();
+
+            Assert.IsTrue(flow.TryBeginMission(new RunIdentity(1L, 11u), 0L), flow.LastRefusal);
+
+            CombatActor dummy = _arena.Enemies[0];
+            for (int i = 0; i < 3; ++i)
+            {
+                PutBackOnItsFeet(dummy);
+                yield return PlayerKills(dummy);
+            }
+
+            Assert.AreEqual(3, _arena.Procs.GrowthStacks("R02"), "the kills were not counted");
+
+            Assert.IsTrue(flow.TryFail(), flow.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(
+                0, _arena.Procs.GrowthStacks("R02"),
+                "the stacks survived the mission that earned them");
+        }
+
+        [UnityTest]
+        public IEnumerator TheNextMissionStartsWithoutTheLastOnesAttackDamage()
+        {
+            // The failure this rule exists to stop: a second mission beginning with the first
+            // one's attack damage already on the player, for no reason they could name.
+            yield return ArenaWithOnlyKillStack(new Vector3(3f, 0f, 0f));
+            MissionFlow flow = DriveAMission();
+
+            float clean = _arena.Player.Stats.AttackDamage;
+
+            Assert.IsTrue(flow.TryBeginMission(new RunIdentity(1L, 11u), 0L), flow.LastRefusal);
+
+            CombatActor dummy = _arena.Enemies[0];
+            for (int i = 0; i < 2; ++i)
+            {
+                PutBackOnItsFeet(dummy);
+                yield return PlayerKills(dummy);
+            }
+
+            Assert.Greater(_arena.Player.Stats.AttackDamage, clean, "the kills never reached the player");
+
+            Assert.IsTrue(flow.TryFail(), flow.LastRefusal);
+            Assert.IsTrue(flow.TryReturnToHub(), flow.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(
+                clean, _arena.Player.Stats.AttackDamage, 0.001f,
+                "the player walked back into the hub with the mission's attack damage");
+
+            Assert.IsTrue(flow.TryBeginMission(new RunIdentity(2L, 12u), 100L), flow.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(0, _arena.Procs.GrowthStacks("R02"));
+            Assert.AreEqual(clean, _arena.Player.Stats.AttackDamage, 0.001f);
+        }
+
+        [UnityTest]
+        public IEnumerator AMissionEndingWithNoStacksChangesNothing()
+        {
+            // The no-op path, because EndMission republishes the stats and a republish that
+            // happened for nothing would be a cost paid on every mission.
+            yield return ArenaWithOnlyKillStack(new Vector3(3f, 0f, 0f));
+            MissionFlow flow = DriveAMission();
+
+            float before = _arena.Player.Stats.AttackDamage;
+            Assert.IsTrue(flow.TryBeginMission(new RunIdentity(1L, 11u), 0L), flow.LastRefusal);
+            Assert.IsTrue(flow.TryFail(), flow.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(0, _arena.Procs.GrowthStacks("R02"));
+            Assert.AreEqual(before, _arena.Player.Stats.AttackDamage, 0.001f);
         }
     }
 }
