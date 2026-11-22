@@ -45,6 +45,9 @@ namespace NeonVoid.Presentation
             "clone that cannot be recovered, and a halted save writes nothing - neither is " +
             "visible in the world. Found automatically when left empty.")]
         [SerializeField] private VaccineSaveDirector saveDirector;
+        
+        [Tooltip("Sound, so a muted bus is visible. Found when left empty.")]
+        [SerializeField] private GameAudio gameAudio;
 
         [Tooltip(
             "The 디펜더 허브, in a scene that has one. Shown because which phase the mission " +
@@ -96,6 +99,8 @@ namespace NeonVoid.Presentation
                 worldCamera = Camera.main;
             if (saveDirector == null)
                 saveDirector = FindFirstObjectByType<VaccineSaveDirector>();
+            if (gameAudio == null)
+                gameAudio = FindFirstObjectByType<GameAudio>();
             if (mission == null)
                 mission = FindFirstObjectByType<NeonVoid.Missions.MissionRunDirector>();
             if (hub == null)
@@ -159,6 +164,11 @@ namespace NeonVoid.Presentation
             // Where the player is in the loop. In a scene with a hub this is the difference
             // between 'nothing is happening' and 'you are standing in the hub and have not
             // started a mission', which the geometry cannot show.
+            // Sound is the one thing on this panel you cannot see by looking at the screen,
+            // so whether a bus is muted belongs here rather than only in 설정.
+            if (gameAudio != null)
+                GUILayout.Label(gameAudio.StatusLine(), _panelLabel);
+
             if (mission != null)
                 GUILayout.Label(mission.StatusLine(), _panelLabel);
             if (hub != null)

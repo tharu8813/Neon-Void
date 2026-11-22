@@ -180,7 +180,13 @@ namespace NeonVoid.EditorTools
 
             // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
             // to be chosen 실제 검증 후 - which needs a HUD to verify.
-            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings);
+            // Sound. [초안] docs/05 section 6; the clips are synthesized placeholders until a
+            // licensed set is recorded in third_party.
+            var audioObject = new GameObject("Game Audio");
+            var audio = audioObject.AddComponent<NeonVoid.Presentation.GameAudio>();
+            audio.Configure(bindings, vaccine.Actor);
+
+            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings, audio);
 
             CreateDirectionalLight();
 
@@ -249,7 +255,8 @@ namespace NeonVoid.EditorTools
             HubRuntime hub,
             VaccineSaveDirector save,
             RunDeathDirector deaths,
-            NeonVoid.Player.InputBindingDirector bindings)
+            NeonVoid.Player.InputBindingDirector bindings,
+            NeonVoid.Presentation.GameAudio audio)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -274,7 +281,7 @@ namespace NeonVoid.EditorTools
             HudController controller = host.AddComponent<HudController>();
             // Wired rather than found, so the notice that says whether this session is being
             // written down cannot be the thing that silently went missing.
-            controller.Configure(player, board, null, hub, save, deaths, bindings);
+            controller.Configure(player, board, null, hub, save, deaths, bindings, audio);
 
             // 설정 is opened with a key and fed one, which is the only part that needs a real
             // keyboard. docs/05 section 2: 설정/오류 복구.

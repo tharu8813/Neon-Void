@@ -4,6 +4,7 @@ using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Missions;
 using NeonVoid.Player;
+using NeonVoid.Presentation;
 using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using UnityEngine;
@@ -56,6 +57,9 @@ namespace NeonVoid.UI
         [Tooltip("The death ledger the 사망 화면 reads. Found when left empty.")]
         [SerializeField] private RunDeathDirector deaths;
 
+        [Tooltip("음량, for the 설정 screen's sliders. Found when left empty.")]
+        [SerializeField] private GameAudio gameAudio;
+
         [Tooltip(
             "The key bindings, so the HUD prints the key the player actually has. " +
             "Found when left empty.")]
@@ -88,6 +92,12 @@ namespace NeonVoid.UI
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
         private Label _saveNotice;
+
+        private VisualElement _settingsVolumes;
+        private readonly SliderInt[] _volumeSliders = new SliderInt[4];
+        private readonly Label[] _volumeValues = new Label[4];
+        private readonly Toggle[] _volumeMutes = new Toggle[4];
+        private readonly VisualElement[] _volumeRows = new VisualElement[4];
 
         private VisualElement _settingsScreen;
         private Label _settingsMessage;
@@ -144,6 +154,7 @@ namespace NeonVoid.UI
         private const string DeathFailed = "death--failed";
         private const string DeathDestroyed = "death--destroyed";
         private const string SettingsMessageFailure = "settings__message--failure";
+        private const string VolumeSilent = "volume-row--silent";
         private const string KeyCapChanged = "key-row__cap--changed";
         private const string KeyCapListening = "key-row__cap--listening";
         private const string SkillReady = "skill--ready";
@@ -200,7 +211,8 @@ namespace NeonVoid.UI
             HubRuntime hubRuntime = null,
             VaccineSaveDirector saveDirector = null,
             RunDeathDirector deathDirector = null,
-            InputBindingDirector bindingDirector = null)
+            InputBindingDirector bindingDirector = null,
+            GameAudio gameAudio = null)
         {
             player = vaccine;
             motherboard = board;
@@ -209,6 +221,7 @@ namespace NeonVoid.UI
             save = saveDirector;
             deaths = deathDirector;
             bindings = bindingDirector;
+            this.gameAudio = gameAudio;
         }
 
         private void Awake()
@@ -235,6 +248,9 @@ namespace NeonVoid.UI
 
             if (bindings == null)
                 bindings = FindFirstObjectByType<InputBindingDirector>();
+
+            if (gameAudio == null)
+                gameAudio = FindFirstObjectByType<GameAudio>();
         }
 
         private void OnEnable()
@@ -639,6 +655,11 @@ namespace NeonVoid.UI
 
         public void CloseSettings()
         {
+            // Written here rather than on every slider step: one drag is a hundred steps, and
+            // a hundred file transactions for one decision.
+            if (gameAudio != null && !gameAudio.PersistMix(out string detail) && detail.Length > 0)
+                Debug.LogWarning($"{name}: 음량을 기록하지 못했습니다 - {detail}", this);
+
             SettingsOpen = false;
             Capture = KeyCapture.Idle;
             _settingsSignature = string.Empty;
@@ -720,11 +741,107 @@ namespace NeonVoid.UI
                 _router.CombatInputSuspended = suspended;
         }
 
+        /// <summary>
+        /// The 음량 rows, built once. [초안] docs/05 section 6: BGM·효과음·UI·마스터 볼륨
+        /// 분리 and 음소거 저장/복구 - a mute is its own control rather than a volume of zero,
+        /// so unmuting gives the player back the level they had.
+        /// </summary>
+        private void BuildVolumeRows()
+        {
+            if (_settingsVolumes == null)
+                return;
+
+            _settingsVolumes.Clear();
+
+            var heading = new Label("음량");
+            heading.AddToClassList("key-group");
+            heading.pickingMode = PickingMode.Ignore;
+            _settingsVolumes.Add(heading);
+
+            for (int i = 0; i < AudioMix.All.Length; ++i)
+            {
+                AudioBus bus = AudioMix.All[i];
+                int index = i;
+
+                var row = new VisualElement();
+                row.AddToClassList("volume-row");
+
+                var name = new Label(AudioMix.LabelOf(bus));
+                name.AddToClassList("volume-row__name");
+                name.pickingMode = PickingMode.Ignore;
+                row.Add(name);
+
+                var slider = new SliderInt(0, AudioMix.FullPercent);
+                slider.AddToClassList("volume-row__slider");
+                slider.RegisterValueChangedCallback(change => OnVolumeChanged(bus, change.newValue));
+                row.Add(slider);
+
+                var value = new Label();
+                value.AddToClassList("volume-row__value");
+                value.pickingMode = PickingMode.Ignore;
+                row.Add(value);
+
+                var mute = new Toggle("음소거");
+                mute.AddToClassList("volume-row__mute");
+                mute.RegisterValueChangedCallback(change => OnMuteChanged(bus, change.newValue));
+                row.Add(mute);
+
+                _volumeRows[index] = row;
+                _volumeSliders[index] = slider;
+                _volumeValues[index] = value;
+                _volumeMutes[index] = mute;
+                _settingsVolumes.Add(row);
+            }
+        }
+
+        private void OnVolumeChanged(AudioBus bus, int percent)
+        {
+            if (gameAudio == null)
+                return;
+
+            gameAudio.ApplyMix(gameAudio.Mix.WithPercent(bus, percent));
+            DrawVolumes();
+        }
+
+        private void OnMuteChanged(AudioBus bus, bool muted)
+        {
+            if (gameAudio == null)
+                return;
+
+            // A toggle is one decision, so it is written straight away.
+            gameAudio.SetMix(gameAudio.Mix.WithMuted(bus, muted), out _);
+            DrawVolumes();
+        }
+
+        private void DrawVolumes()
+        {
+            AudioMix mix = gameAudio != null ? gameAudio.Mix : AudioMix.Default;
+
+            for (int i = 0; i < AudioMix.All.Length; ++i)
+            {
+                AudioBus bus = AudioMix.All[i];
+                int percent = mix.PercentOf(bus);
+
+                if (_volumeSliders[i] != null && _volumeSliders[i].value != percent)
+                    _volumeSliders[i].SetValueWithoutNotify(percent);
+
+                if (_volumeMutes[i] != null && _volumeMutes[i].value != mix.MutedOf(bus))
+                    _volumeMutes[i].SetValueWithoutNotify(mix.MutedOf(bus));
+
+                if (_volumeValues[i] != null)
+                    _volumeValues[i].text = mix.MutedOf(bus) ? "음소거" : $"{percent}%";
+
+                Toggle(_volumeRows[i], VolumeSilent, mix.IsSilent(bus));
+            }
+        }
+
         private void DrawSettings()
         {
             Show(_settingsScreen, SettingsOpen);
             if (_settingsScreen == null || !SettingsOpen)
                 return;
+
+            DrawVolumes();
 
             Show(_settingsMessage, Capture.HasMessage);
             SetText(_settingsMessage, Capture.Message);
@@ -1142,6 +1259,9 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _settingsVolumes = root.Q<VisualElement>("settingsVolumes");
+            BuildVolumeRows();
 
             _settingsScreen = root.Q<VisualElement>("settingsScreen");
             _settingsMessage = root.Q<Label>("settingsMessage");

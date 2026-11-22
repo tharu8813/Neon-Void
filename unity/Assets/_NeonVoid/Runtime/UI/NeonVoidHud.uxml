@@ -81,6 +81,8 @@
         <ui:Label name="settingsTitle" class="settings__title" text="설정 · 키" picking-mode="Ignore" />
         <ui:Label name="settingsMessage" class="settings__message hidden" text="" picking-mode="Ignore" />
         <ui:Label name="settingsConflicts" class="settings__conflicts hidden" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="settingsVolumes" class="settings__volumes" />
+        <ui:Label name="settingsKeysTitle" class="key-group" text="키" picking-mode="Ignore" />
         <ui:ScrollView name="settingsRows" class="settings__rows" />
         <ui:VisualElement name="settingsFooter" class="settings__footer">
           <ui:Button name="settingsReset" class="settings__button" text="전체 재설정" />

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NeonVoid.Presentation;
 using UnityEngine;
 
 namespace NeonVoid.Progression.Save
@@ -19,6 +20,70 @@ namespace NeonVoid.Progression.Save
     }
 
     /// <summary>
+    /// 음량과 음소거, one record so a bus's two settings travel together.
+    /// <para>
+    /// Whole percents rather than fractions: the checksum is verified by re-serializing what
+    /// was read back, and a float whose text form round-trips differently on another runtime
+    /// would make a healthy file look corrupt there and nowhere else.
+    /// </para>
+    /// </summary>
+    [Serializable]
+    public sealed class AudioSettingsRecord
+    {
+        public int masterPercent = AudioMix.FullPercent;
+        public int musicPercent = AudioMix.FullPercent;
+        public int effectsPercent = AudioMix.FullPercent;
+        public int uiPercent = AudioMix.FullPercent;
+
+        public bool masterMuted;
+        public bool musicMuted;
+        public bool effectsMuted;
+        public bool uiMuted;
+
+        public AudioSettingsRecord Clone() => new AudioSettingsRecord
+        {
+            masterPercent = masterPercent,
+            musicPercent = musicPercent,
+            effectsPercent = effectsPercent,
+            uiPercent = uiPercent,
+            masterMuted = masterMuted,
+            musicMuted = musicMuted,
+            effectsMuted = effectsMuted,
+            uiMuted = uiMuted,
+        };
+
+        public AudioMix ToMix() => AudioMix.From(
+            masterPercent, musicPercent, effectsPercent, uiPercent,
+            masterMuted, musicMuted, effectsMuted, uiMuted);
+
+        public static AudioSettingsRecord From(in AudioMix mix) => new AudioSettingsRecord
+        {
+            masterPercent = mix.PercentOf(AudioBus.Master),
+            musicPercent = mix.PercentOf(AudioBus.Music),
+            effectsPercent = mix.PercentOf(AudioBus.Effects),
+            uiPercent = mix.PercentOf(AudioBus.Ui),
+            masterMuted = mix.MasterMuted,
+            musicMuted = mix.MusicMuted,
+            effectsMuted = mix.EffectsMuted,
+            uiMuted = mix.UiMuted,
+        };
+
+        public void Validate()
+        {
+            Check(masterPercent, nameof(masterPercent));
+            Check(musicPercent, nameof(musicPercent));
+            Check(effectsPercent, nameof(effectsPercent));
+            Check(uiPercent, nameof(uiPercent));
+        }
+
+        private static void Check(int percent, string name)
+        {
+            if (percent < 0 || percent > AudioMix.FullPercent)
+                throw new InvalidOperationException($"{name} is {percent}, not 0~{AudioMix.FullPercent}");
+        }
+    }
+
+    /// <summary>
     /// 전역 설정. [확정] docs/04 section 1: 백신과 독립, and 백신 최종 파기에서도 보존.
     /// <para>
     /// That is a statement about where the bytes live, not an intention. This document is
@@ -35,8 +100,15 @@ namespace NeonVoid.Progression.Save
     [Serializable]
     public sealed class GlobalSettingsDocument
     {
-        /// <summary>Bumped whenever a field changes, because the checksum covers the text.</summary>
-        public const int CurrentSchemaVersion = 1;
+        /// <summary>
+        /// Bumped whenever a field changes, because the checksum covers the text.
+        /// <para>
+        /// 2 added 음량·음소거. Nothing has shipped, so no file in the world is at 1; a file
+        /// that is would be refused and the session would run on defaults rather than be
+        /// migrated, which docs/04 section 4 forbids doing automatically.
+        /// </para>
+        /// </summary>
+        public const int CurrentSchemaVersion = 2;
 
         /// <summary>The same product tag the slots carry, so a foreign file is refused.</summary>
         public const string ProductTag = SaveDocument.ProductTag;
@@ -46,6 +118,9 @@ namespace NeonVoid.Progression.Save
 
         /// <summary>Only the bindings the player changed. A default binding is absent.</summary>
         public List<KeyBindingOverrideRecord> keyBindings = new List<KeyBindingOverrideRecord>();
+
+        /// <summary>[초안] docs/05 section 6: BGM·효과음·UI·마스터 볼륨 분리.</summary>
+        public AudioSettingsRecord audio = new AudioSettingsRecord();
 
         /// <summary>Rises by one per written change, for the same reason a slot's does.</summary>
         public int revision;
@@ -64,6 +139,7 @@ namespace NeonVoid.Progression.Save
                 revision = revision,
                 checksum = checksum,
                 keyBindings = new List<KeyBindingOverrideRecord>(),
+                audio = audio != null ? audio.Clone() : new AudioSettingsRecord(),
             };
 
             if (keyBindings == null)
@@ -121,6 +197,12 @@ namespace NeonVoid.Progression.Save
             }
         }
 
+        /// <summary>음량과 음소거 as the mixer wants them.</summary>
+        public AudioMix Mix() => audio != null ? audio.ToMix() : AudioMix.Default;
+
+        /// <summary>Replaces 음량과 음소거 wholesale.</summary>
+        public void SetMix(in AudioMix mix) => audio = AudioSettingsRecord.From(mix);
+
         public void Validate()
         {
             if (schemaVersion != CurrentSchemaVersion)
@@ -131,6 +213,8 @@ namespace NeonVoid.Progression.Save
 
             if (revision < 0)
                 throw new InvalidOperationException("revision went backwards");
+
+            audio?.Validate();
 
             if (keyBindings == null)
                 return;

@@ -248,6 +248,48 @@
     margin-bottom: 8px;
 }
 
+.settings__volumes {
+    margin-bottom: 4px;
+}
+
+.volume-row {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.volume-row__name {
+    width: 72px;
+    font-size: 12px;
+    color: rgb(214, 226, 242);
+}
+
+.volume-row__slider {
+    flex-grow: 1;
+    margin-left: 4px;
+    margin-right: 8px;
+}
+
+.volume-row__value {
+    width: 44px;
+    font-size: 12px;
+    color: rgb(120, 230, 255);
+    -unity-text-align: middle-right;
+}
+
+/* 음소거된 줄은 숫자가 남아 있어도 들리지 않는다는 걸 보여야 한다. */
+.volume-row--silent .volume-row__value {
+    color: rgba(150, 168, 190, 0.55);
+}
+
+.volume-row__mute {
+    width: 64px;
+    margin-left: 10px;
+    font-size: 11px;
+    color: rgb(214, 226, 242);
+}
+
 .settings__rows {
     flex-grow: 1;
     min-height: 240px;
