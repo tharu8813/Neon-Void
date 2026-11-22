@@ -300,11 +300,12 @@ namespace NeonVoid.Missions.Generation
                 taken.Add(objectives[i]);
 
             List<AreaEnemySpawn> enemies = PlaceEnemies(spec, rng, grid, rooms, field, bossRoom, taken);
+            List<AreaCell> hazards = PlaceHazards(spec, rng, grid, rooms, bossRoom, taken, enemies);
 
             refusal = string.Empty;
             return new AreaLayout(
                 spec, seed, attempt, DraftCellSizeUnits, grid, rooms, start, objectives,
-                boss.Centre, purification, extraction, enemies);
+                boss.Centre, purification, extraction, enemies, hazards);
         }
 
         /// <summary>
@@ -327,6 +328,108 @@ namespace NeonVoid.Missions.Generation
         /// anything saying so.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Where this area's 환경 상호작용 stand.
+        /// <para>
+        /// [확정] docs/01 section 6 check 2: 플레이어/적 스폰과 함정 및 각 오브젝트 충돌 반경의
+        /// 안전 분리, 초반 화면 밖 즉시 피해 금지. So a hazard is kept a stated distance from the
+        /// entrance, every objective, the boss, the console, the pad <b>and every enemy spawn</b>
+        /// - a patch on top of a sleeping enemy would kill it for the player, which is the
+        /// area clearing itself.
+        /// </para>
+        /// <para>
+        /// The entrance room is skipped outright. A hazard in the room the player wakes up in
+        /// is the 초반 즉시 피해 that line forbids, whatever its distance.
+        /// </para>
+        /// </summary>
+        private static List<AreaCell> PlaceHazards(
+            in AreaSpec spec,
+            DeterministicRng rng,
+            AreaGrid grid,
+            List<AreaRoom> rooms,
+            int bossRoom,
+            HashSet<AreaCell> taken,
+            List<AreaEnemySpawn> enemies)
+        {
+            var placed = new List<AreaCell>();
+            AreaHazardShape shape = AreaHazards.For(spec.Hardware);
+            if (shape.IsNone)
+                return placed;
+
+            // Two distances, because the document asks for two different things. [확정] docs/01
+            // section 6 check 2 is about 각 오브젝트 충돌 반경의 안전 분리 and 초반 즉시 피해 -
+            // the entrance, the objectives, the boss, the console and the pad are fixed things
+            // the player must be able to stand at. An enemy spawn is not fixed: the enemy walks
+            // off it the moment the room opens, so it needs room rather than a moat. The first
+            // version used one distance for both and CPU - whose rooms are the most crowded -
+            // ended up with nowhere to put a hazard at all.
+            var fixtures = new HashSet<AreaCell>(taken);
+            var spawns = new HashSet<AreaCell>();
+            for (int i = 0; i < enemies.Count; ++i)
+                spawns.Add(enemies[i].Cell);
+
+            // Both distances are derived from the hazard's own reach: a separation counted
+            // in cells that ignores how far the patch actually reaches is not a separation.
+            int fromFixtures = AreaHazards.CellsFromFixturesFor(shape, DraftCellSizeUnits);
+            int apart = AreaHazards.CellsApartFor(shape, DraftCellSizeUnits);
+
+            var candidates = new List<AreaCell>();
+            for (int room = 0; room < rooms.Count; ++room)
+            {
+                if (room == 0 || room == bossRoom)
+                    continue;
+
+                AreaRoom area = rooms[room];
+                for (int y = area.MinY; y <= area.MaxY; ++y)
+                {
+                    for (int x = area.MinX; x <= area.MaxX; ++x)
+                    {
+                        var cell = new AreaCell(x, y);
+                        if (!grid.IsWalkable(cell))
+                            continue;
+                        if (IsWithin(cell, fixtures, fromFixtures))
+                            continue;
+                        if (IsWithin(cell, spawns, AreaHazards.DraftSafeCellsFromSpawns))
+                            continue;
+
+                        candidates.Add(cell);
+                    }
+                }
+            }
+
+            Shuffle(candidates, rng);
+
+            // Checked against what has already been placed, not only against what was there
+            // before: two patches a cell apart read as one bigger patch, and the first version
+            // only filtered the candidate list once, before any hazard existed.
+            for (int i = 0; i < candidates.Count && placed.Count < AreaHazards.DraftHazardsPerArea; ++i)
+            {
+                if (IsWithin(candidates[i], placed, apart))
+                    continue;
+
+                placed.Add(candidates[i]);
+            }
+
+            return placed;
+        }
+
+        /// <summary>Whether any of <paramref name="of"/> is within <paramref name="cells"/> of it.</summary>
+        private static bool IsWithin(AreaCell cell, ICollection<AreaCell> of, int cells)
+        {
+            foreach (AreaCell other in of)
+            {
+                int dx = cell.X - other.X;
+                int dy = cell.Y - other.Y;
+                if (dx < 0) dx = -dx;
+                if (dy < 0) dy = -dy;
+
+                if ((dx > dy ? dx : dy) <= cells)
+                    return true;
+            }
+
+            return false;
+        }
+
         private static List<AreaEnemySpawn> PlaceEnemies(
             in AreaSpec spec,
             DeterministicRng rng,
@@ -384,12 +487,12 @@ namespace NeonVoid.Missions.Generation
         }
 
         /// <summary>Fisher-Yates on the run's own generator, so the scatter is reproducible.</summary>
-        private static void Shuffle(List<AreaEnemySpawn> items, DeterministicRng rng)
+        private static void Shuffle<T>(List<T> items, DeterministicRng rng)
         {
             for (int i = items.Count - 1; i > 0; --i)
             {
                 int j = rng.NextInt(0, i + 1);
-                AreaEnemySpawn swap = items[i];
+                T swap = items[i];
                 items[i] = items[j];
                 items[j] = swap;
             }

@@ -23,6 +23,7 @@ namespace NeonVoid.Missions.Generation
         private readonly List<AreaCell> _objectives;
         private readonly List<AreaRoom> _rooms;
         private readonly List<AreaEnemySpawn> _enemies;
+        private readonly List<AreaCell> _hazards;
 
         public AreaLayout(
             in AreaSpec spec,
@@ -36,7 +37,8 @@ namespace NeonVoid.Missions.Generation
             AreaCell boss,
             AreaCell purification,
             AreaCell extraction,
-            List<AreaEnemySpawn> enemies = null)
+            List<AreaEnemySpawn> enemies = null,
+            List<AreaCell> hazards = null)
         {
             if (grid == null)
                 throw new ArgumentNullException(nameof(grid));
@@ -61,6 +63,7 @@ namespace NeonVoid.Missions.Generation
             Purification = purification;
             Extraction = extraction;
             _enemies = enemies ?? new List<AreaEnemySpawn>();
+            _hazards = hazards ?? new List<AreaCell>();
         }
 
         public AreaSpec Spec { get; }
@@ -106,6 +109,12 @@ namespace NeonVoid.Missions.Generation
 
         /// <summary>The enemies, each tagged with the room whose gate holds it.</summary>
         public IReadOnlyList<AreaEnemySpawn> Enemies => _enemies;
+
+        /// <summary>
+        /// Where this area's 환경 상호작용 stand. [확정] docs/01 section 6 check 2 keeps them
+        /// clear of the entrance and of every objective, so these cells are already safe.
+        /// </summary>
+        public IReadOnlyList<AreaCell> Hazards => _hazards;
 
         /// <summary>정예 among them. GDD v1 section 5.4 budgets three per area.</summary>
         public int EliteCount

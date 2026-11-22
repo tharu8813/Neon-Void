@@ -301,6 +301,7 @@ namespace NeonVoid.Missions
             Transform pad = Marker("철수 패드", layout, layout.Extraction, root.transform);
 
             AreaRoomGate[] roomGates = BuildEnemies(layout, root.transform);
+            AreaHazard[] hazards = BuildHazards(layout, root.transform);
             int mutated = _mutatedThisBuild;
             _mutationLevel = AreaMutation.NoMutation;
 
@@ -334,6 +335,56 @@ namespace NeonVoid.Missions
             return new AreaBuildResult(
                 root, layout, runtime, devices, bossGate, console, pad, roomGates, floorSlabs, wallSlabs,
                 mutated);
+        }
+
+        /// <summary>
+        /// The area's 환경 상호작용, one per cell the layout set aside.
+        /// <para>
+        /// [확정] docs/01 section 2 gives every hardware a different one, and CLAUDE.md names
+        /// 환경 상호작용 among the things that must differ: 5개 하드웨어를 한 개의 복붙 맵으로
+        /// 취급하지 말 것. The shape comes from <see cref="AreaHazards"/>; the cells came from
+        /// the generator, which kept them clear of the entrance, the objectives and the spawns.
+        /// </para>
+        /// <para>
+        /// A hazard that moves is handed every hazard cell as its stations, so RAM's 재배열 has
+        /// somewhere to go. The others ignore all but their own.
+        /// </para>
+        /// </summary>
+        private AreaHazard[] BuildHazards(AreaLayout layout, Transform parent)
+        {
+            AreaHazardShape shape = AreaHazards.For(layout.Spec.Hardware);
+            IReadOnlyList<AreaCell> cells = layout.Hazards;
+            if (shape.IsNone || cells.Count == 0)
+                return new AreaHazard[0];
+
+            var stations = new Vector3[cells.Count];
+            for (int i = 0; i < cells.Count; ++i)
+                stations[i] = PositionOf(layout, cells[i]);
+
+            var built = new AreaHazard[cells.Count];
+            for (int i = 0; i < cells.Count; ++i)
+            {
+                var marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                marker.name = $"Hazard {AreaHazards.NameOf(shape.Kind)} {i}";
+                marker.transform.SetParent(parent, worldPositionStays: true);
+                marker.transform.position = stations[i];
+
+                // The telegraph has to be readable 이펙트 품질 최저에서도, so the hazard is a
+                // flat disc on the floor at its own reach - the shape IS the warning, rather
+                // than a particle system drawn over one.
+                marker.transform.localScale =
+                    new Vector3(shape.RadiusUnits * 2f, 0.02f, shape.RadiusUnits * 2f);
+                UnityEngine.Object.Destroy(marker.GetComponent<Collider>());
+
+                var hazard = marker.AddComponent<AreaHazard>();
+
+                // Seeded per hazard from the area's own seed, so the same map plays the same
+                // way twice - including which of them is warning when the player walks in.
+                hazard.Configure(shape, stations, i, layout.EffectiveSeed + (uint)(i * 2654435761u));
+                built[i] = hazard;
+            }
+
+            return built;
         }
 
         /// <summary>

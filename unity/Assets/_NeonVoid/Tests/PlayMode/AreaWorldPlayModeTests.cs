@@ -482,6 +482,118 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator AHazardWarnsBeforeItBurnsAndThenItBurns()
+        {
+            // [확정] docs/01 2절: 바닥에 예고선이 먼저 나타나고 실제 레이저 판정은 늦게 발생,
+            // and 6절 2항's 초반 즉시 피해 금지. Standing in one must cost nothing until the
+            // warning has run - and must cost something after.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(1);
+            _arena.MakePlayerUnkillable();
+
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            AreaHazard[] hazards =
+                UnityEngine.Object.FindObjectsByType<AreaHazard>(FindObjectsSortMode.None);
+            Assert.IsNotEmpty(hazards, "the area placed no 환경 상호작용");
+
+            AreaHazard hazard = hazards[0];
+            AreaHazardShape shape = hazard.Shape;
+            Assert.IsFalse(shape.IsNone);
+
+            // Stand in it and walk its cycle from the top.
+            Vector3 at = hazard.transform.position;
+            _arena.Driver.TeleportTo(new Vector2(at.x, at.z));
+            yield return _arena.Tick(1);
+
+            // Wait out whatever phase it happened to be in, up to a whole cycle.
+            for (int i = 0; i < shape.CycleTicks + 2 && hazard.Phase != AreaHazardPhase.Telegraphing; ++i)
+                yield return _arena.Tick(1);
+
+            Assert.AreEqual(
+                AreaHazardPhase.Telegraphing, hazard.Phase, "it never warned");
+
+            // Asserted on the hazard's own ledger rather than on the player's health: the
+            // room has enemies in it, and a test that watched the health bar would be reading
+            // their damage as the hazard's.
+            int hitsBefore = hazard.HitsDealt;
+            yield return _arena.Tick(shape.TelegraphTicks - 1);
+
+            Assert.AreEqual(
+                hitsBefore, hazard.HitsDealt,
+                "it hurt the player while it was still only a warning");
+
+            // And now it goes off.
+            yield return _arena.Tick(3);
+
+            Assert.AreEqual(AreaHazardPhase.Active, hazard.Phase);
+            Assert.Greater(
+                hazard.HitsDealt, hitsBefore,
+                "the warning ran out and standing in it cost nothing");
+        }
+
+        [UnityTest]
+        public IEnumerator TheAreasHazardsStandInDifferentPlaces()
+        {
+            // They were all built at the first station: every hazard in the area is handed the
+            // same station list so RAM's 재배열 has somewhere to go, and Configure put them all
+            // at stations[0]. Three patches stacked into one point, and the two tests that
+            // existed only ever looked at hazards[0], so neither saw it. Live play did.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(1);
+
+            BuildArea();
+            yield return _arena.Tick(1);
+
+            AreaHazard[] hazards =
+                UnityEngine.Object.FindObjectsByType<AreaHazard>(FindObjectsSortMode.None);
+            Assert.Greater(hazards.Length, 1, "this test needs more than one hazard");
+
+            float apart = hazards[0].Shape.RadiusUnits * 2f;
+            for (int i = 0; i < hazards.Length; ++i)
+            {
+                for (int j = i + 1; j < hazards.Length; ++j)
+                {
+                    float distance = Vector3.Distance(
+                        hazards[i].transform.position, hazards[j].transform.position);
+
+                    Assert.Greater(
+                        distance, apart,
+                        $"hazards {i} and {j} are {distance:0.0}u apart and each reaches " +
+                        $"{hazards[0].Shape.RadiusUnits:0.0}u, so they are one patch");
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AHazardLeavesTheEnemiesAlone()
+        {
+            // An area that cleared itself while the player watched would be a different game.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(1);
+
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            AreaHazard[] hazards =
+                UnityEngine.Object.FindObjectsByType<AreaHazard>(FindObjectsSortMode.None);
+            Assert.IsNotEmpty(hazards);
+
+            // Put an enemy right in one and run a whole cycle.
+            CombatActor enemy = _arena.SpawnEnemyNear(_arena.Player, "In the hazard", 0f);
+            enemy.transform.position = hazards[0].transform.position;
+            float full = enemy.Health.Current;
+
+            int before = hazards[0].HitsDealt;
+            yield return _arena.Tick(hazards[0].Shape.CycleTicks + 5);
+
+            Assert.AreEqual(
+                full, enemy.Health.Current, 0.001f, "the area killed its own enemy");
+            Assert.AreEqual(before, hazards[0].HitsDealt, "the hazard counted a hit on an enemy");
+        }
+
+        [UnityTest]
         public IEnumerator AnAreaWithNoInfectionLeavesTheLoadoutAlone()
         {
             _arena = PrototypeArena.Build();
