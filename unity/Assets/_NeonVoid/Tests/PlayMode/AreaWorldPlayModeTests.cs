@@ -1,10 +1,12 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using NeonVoid.Combat;
 using NeonVoid.Missions;
 using NeonVoid.Missions.Generation;
+using NeonVoid.Plugins;
 using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using NUnit.Framework;
@@ -376,6 +378,61 @@ namespace NeonVoid.Tests.PlayModeTests
             reopened.Open();
             Assert.AreEqual(165L, reopened.Snapshot.vaccine.permanentXp);
             Assert.Greater(Flow.Run.MissionXp, 0L, "no 의뢰 XP was awarded for the area");
+        }
+
+        [UnityTest]
+        public IEnumerator AChosenCardIsLearnedIntoTheArchiveUnderAKeyThatSaysWhatItIs()
+        {
+            // [확정] R-015: 일반·레어 0~2개를 학습한다. The whole chain: the pad arms, the
+            // candidates are read off what the vaccine is carrying, a tick is a choice, and the
+            // extraction writes an instance id that names the card.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            // One 일반 and one 전설, so the filter has something to leave out.
+            _arena.Procs.Loadout.Clear();
+            _arena.Procs.PushPassivesToOwner();
+            _arena.Procs.Grant(PluginCatalog.Lightweight(), out string why);
+            _arena.Procs.Grant(PluginCatalog.LaserCore(), out why);
+
+            _arena.MakePlayerUnkillable();
+            yield return _arena.ClearObjectives(area);
+            PrototypeArena.Kill(area.BossGate.Boss);
+            yield return _arena.Tick(1);
+
+            StandOn(area.Layout.Purification);
+            yield return _arena.Tick(DwellTicks + 1);
+            Assert.AreEqual(AreaProgressPhase.Purified, Flow.AreaPhase, Flow.LastRefusal);
+
+            StandOn(area.Layout.Extraction);
+            yield return _arena.Tick(DwellTicks + 2);
+            Assert.IsTrue(area.Runtime.IsExtractionArmed, "the pad never armed");
+
+            ExtractionLearning learning = area.Runtime.Learning;
+            Assert.AreEqual(1, learning.Candidates.Count, "the 전설 was offered, or the 일반 was not");
+            Assert.AreEqual("G02", learning.Candidates[0].ProposalId);
+            Assert.AreEqual(1, learning.UnlearnableCarried, "the 전설 was not counted as left out");
+
+            Assert.IsTrue(learning.Toggle(learning.Candidates[0].DocumentKey), learning.LastRefusal);
+
+            area.Runtime.RequestExtraction();
+            yield return _arena.Tick(2);
+            Assert.AreEqual(MissionFlowPhase.Extracted, Flow.Phase, Flow.LastRefusal);
+
+            // Read back by a second store, because that is what makes it permanent.
+            var reopened = new SaveStore(new DiskSaveFileSystem(), SaveSlotLayout.Under(_root));
+            reopened.Open();
+            List<string> archive = reopened.Snapshot.vaccine.archivePluginInstanceIds;
+
+            Assert.AreEqual(1, archive.Count, "the chosen card did not reach the archive");
+            Assert.AreEqual(
+                "G02", PluginInstanceId.Parse(archive[0]).ProposalId,
+                "the archive holds an instance that cannot say what it is");
+            Assert.AreEqual(
+                0, reopened.Snapshot.vaccine.carriedPluginInstanceIds.Count,
+                "[확정] docs/04 3.5: 학습은 보관 DB로 가고 출전 목록은 건드리지 않는다");
         }
 
         [UnityTest]

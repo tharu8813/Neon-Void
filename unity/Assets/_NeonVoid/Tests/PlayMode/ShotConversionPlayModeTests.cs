@@ -105,6 +105,7 @@ namespace NeonVoid.Tests.PlayModeTests
             yield return WithOnly(PluginCatalog.LaserCore());
 
             _arena.Wall(new Vector3(0f, 1f, 3f), new Vector3(6f, 3f, 0.5f));
+            yield return _arena.Tick(1);
 
             CombatActor enemy = _arena.Enemies[0];
             MakeTough(enemy);

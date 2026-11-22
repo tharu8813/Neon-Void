@@ -85,6 +85,13 @@ namespace NeonVoid.Missions
         private AreaObjectiveChain _chain;
         private bool _entered;
         private bool _extractionRequested;
+        private bool _learningOffered;
+
+        /// <summary>
+        /// What this 철수 may keep, and what the player has ticked. Built when the pad arms, so
+        /// the list is what the vaccine is carrying at the moment the choice is offered.
+        /// </summary>
+        private readonly ExtractionLearning _learning = new ExtractionLearning();
         private bool _extractionArmed;
 
         /// <summary>Which hardware this area is.</summary>
@@ -125,6 +132,12 @@ namespace NeonVoid.Missions
 
         /// <summary>Whether a 철수 has been asked for and is waiting for the next tick.</summary>
         public bool IsExtractionRequested => _extractionRequested;
+
+        /// <summary>
+        /// The 학습 choice this 철수 offers. Empty of candidates until the pad arms: [확정]
+        /// R-015's 0~2개 is a choice made on a successful 철수, not before one is possible.
+        /// </summary>
+        public ExtractionLearning Learning => _learning;
 
         /// <summary>
         /// The chain this area's <see cref="AreaObjectiveKind.Sequence"/> nodes make, or null
@@ -371,13 +384,82 @@ namespace NeonVoid.Missions
             {
                 // A press held from before the pad armed must not extract the moment it does.
                 _extractionRequested = false;
+                _learningOffered = false;
                 return;
             }
+
+            OfferTheLearningOnce();
 
             if (!TakeInteract())
                 return;
 
-            TryConfirmExtraction(NothingLearned);
+            // Minted here rather than when a card was ticked: a card ticked, unticked and
+            // ticked again is one instance, not three ids nobody owns.
+            TryConfirmExtraction(_learning.MintChosenInstanceIds());
+        }
+
+        /// <summary>
+        /// Builds the 학습 candidates the moment the pad arms, from what the vaccine is carrying.
+        /// <para>
+        /// Once per arming, not per tick: rebuilding every tick would clear the player's ticks
+        /// sixty times a second, and the list cannot change while they stand on the pad - the
+        /// 의뢰 is over as far as picking up cards goes.
+        /// </para>
+        /// </summary>
+        private void OfferTheLearningOnce()
+        {
+            if (_learningOffered)
+                return;
+
+            _learningOffered = true;
+            _learning.Offer(CarriedPlugins(), KeysAlreadyLearned());
+        }
+
+        private Plugins.PluginLoadout CarriedPlugins()
+        {
+            if (procs == null)
+                procs = FindFirstObjectByType<Plugins.PluginProcDirector>();
+
+            return procs != null ? procs.Loadout : null;
+        }
+
+        /// <summary>
+        /// The document keys this vaccine has already learned, so a card it owns is not offered
+        /// again.
+        /// <para>
+        /// <b>This is where [미확정] D-002 is kept from being answered by accident.</b> Whether a
+        /// vaccine may hold two instances of one definition, and what may be done with a 학습
+        /// 플러그인 carried into the 의뢰, is undecided - docs/04 section 3 calls it 특히 중요 and
+        /// requires approval before any permanent change. Offering a card the archive already
+        /// holds would answer the first half silently, in the direction that writes more to the
+        /// player's file. So it is left out, and <see cref="ExtractionLearning.CarriedInFromBefore"/>
+        /// counts what was left out rather than hiding it.
+        /// </para>
+        /// </summary>
+        private List<string> KeysAlreadyLearned()
+        {
+            var keys = new List<string>();
+            var save = FindFirstObjectByType<Progression.Save.VaccineSaveDirector>();
+            if (save == null || save.Store == null)
+                return keys;
+
+            Progression.Save.VaccineSaveState vaccine = save.Store.Snapshot.vaccine;
+            Collect(vaccine.archivePluginInstanceIds, keys);
+            Collect(vaccine.carriedPluginInstanceIds, keys);
+            return keys;
+        }
+
+        private static void Collect(List<string> instanceIds, List<string> into)
+        {
+            if (instanceIds == null)
+                return;
+
+            for (int i = 0; i < instanceIds.Count; ++i)
+            {
+                string key = Plugins.PluginInstanceId.DocumentKeyOf(instanceIds[i]);
+                if (key.Length > 0 && !into.Contains(key))
+                    into.Add(key);
+            }
         }
 
         /// <summary>
@@ -402,11 +484,10 @@ namespace NeonVoid.Missions
         /// </summary>
         public void RequestExtraction() => _extractionRequested = true;
 
-        /// <summary>
-        /// [확정] R-015 allows zero. Named rather than written as an empty array at the call
-        /// site, so it reads as a decision and not as an omission.
-        /// </summary>
-        private static readonly string[] NothingLearned = new string[0];
+        [Tooltip(
+            "Where the carried plugins come from, for the 학습 choice. Found automatically " +
+            "when left empty.")]
+        [SerializeField] private Plugins.PluginProcDirector procs;
 
         /// <summary>
         /// Wakes the room the player has walked into, and no other.

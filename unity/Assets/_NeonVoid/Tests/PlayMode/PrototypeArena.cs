@@ -104,6 +104,11 @@ namespace NeonVoid.Tests.PlayModeTests
             wall.name = "Wall";
             wall.transform.position = center;
             wall.transform.localScale = size;
+
+            // A collider created and moved in the same frame is not in the physics broadphase
+            // until the next sync, so a sweep fired on the very next tick can pass straight
+            // through it. That made a wall test fail intermittently rather than never.
+            Physics.SyncTransforms();
             return wall;
         }
 

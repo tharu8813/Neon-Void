@@ -120,6 +120,22 @@ namespace NeonVoid.UI
         private Button _rewardDismiss;
         private string _rewardSignature = string.Empty;
 
+        private VisualElement _extractScreen;
+        private Label _extractSubtitle;
+        private VisualElement _extractSlots;
+        private Label _extractNote;
+        private Label _extractCount;
+        private Button _extractConfirm;
+        private Button _extractCancel;
+        private string _extractSignature = string.Empty;
+
+        /// <summary>
+        /// Set when the player answers 계속 탐색, cleared when they step off the pad. Without it
+        /// the screen would come straight back on the next tick, because the pad is still armed
+        /// and being armed is what opens it.
+        /// </summary>
+        private bool _extractDismissed;
+
         private VisualElement _settingsVolumes;
         private readonly SliderInt[] _volumeSliders = new SliderInt[4];
         private readonly Label[] _volumeValues = new Label[4];
@@ -347,6 +363,7 @@ namespace NeonVoid.UI
             DrawSkillKeys();
             DrawSettings();
             DrawReward();
+            DrawExtract();
             DrawSkillScreen();
 
             HudPrompt prompt = GatherPrompt();
@@ -1022,6 +1039,174 @@ namespace NeonVoid.UI
             _rewardSignature = string.Empty;
         }
 
+        /// <summary>
+        /// Whether the 철수 정산 screen is up: the pad is armed and the player has not said
+        /// 계속 탐색.
+        /// </summary>
+        public bool ExtractOpen
+        {
+            get
+            {
+                HardwareAreaRuntime standing = CurrentArea();
+                return standing != null && standing.IsExtractionArmed && !_extractDismissed;
+            }
+        }
+
+        /// <summary>
+        /// 철수 정산. The one screen in the game whose buttons write permanently, so it states
+        /// what will be banked and what will be kept before anything happens.
+        /// <para>
+        /// <b>It opens rather than extracting.</b> 정화 fires on its dwell; 철수 ends the 의뢰
+        /// and gives up every area not yet cleared, and on top of that [확정] R-015 gives the
+        /// player a 0~2개 choice that only exists at this moment. A pad that extracted on contact
+        /// would take that choice away.
+        /// </para>
+        /// </summary>
+        private void DrawExtract()
+        {
+            HardwareAreaRuntime standing = CurrentArea();
+            if (standing == null || !standing.IsExtractionArmed)
+            {
+                // Stepped off the pad: the refusal to extract is spent, and the screen may open
+                // again the next time they stand on it.
+                _extractDismissed = false;
+                _extractSignature = string.Empty;
+                Show(_extractScreen, false);
+                return;
+            }
+
+            bool open = !_extractDismissed;
+            Show(_extractScreen, open);
+            if (_extractScreen == null || !open)
+                return;
+
+            ExtractionLearning learning = standing.Learning;
+            SetText(
+                _extractCount,
+                $"학습 {learning.ChosenCount} / {ExtractionLearning.MaxLearned}");
+
+            string note = NoteFor(learning);
+            Show(_extractNote, note.Length > 0);
+            SetText(_extractNote, note);
+
+            string signature =
+                $"{learning.Candidates.Count}|{learning.ChosenCount}|{note}|{standing.name}";
+            if (signature == _extractSignature)
+                return;
+
+            _extractSignature = signature;
+            SetText(
+                _extractSubtitle,
+                learning.Candidates.Count > 0
+                    ? $"이 의뢰에서 얻은 일반·레어 중 최대 {ExtractionLearning.MaxLearned}개를 학습합니다"
+                    : "학습할 수 있는 카드가 없습니다. 철수는 그대로 할 수 있습니다");
+            RebuildExtractSlots(standing, learning);
+        }
+
+        /// <summary>
+        /// What the screen says beyond the list: a refusal the player just hit, or the cards
+        /// that exist but cannot be offered. Both are said rather than left as a shorter list.
+        /// </summary>
+        private static string NoteFor(ExtractionLearning learning)
+        {
+            if (learning.LastRefusal.Length > 0)
+                return learning.LastRefusal;
+
+            var parts = new System.Collections.Generic.List<string>();
+            if (learning.UnlearnableCarried > 0)
+                parts.Add($"전설 {learning.UnlearnableCarried}개는 학습할 수 없습니다");
+
+            // [미확정] D-002: what may be done with a 학습 플러그인 carried into the 의뢰 is
+            // undecided, so those are not offered - and saying so is the difference between a
+            // rule waiting for approval and a list that looks wrong.
+            if (learning.CarriedInFromBefore > 0)
+                parts.Add($"이미 학습한 {learning.CarriedInFromBefore}개는 회수 규칙 미확정 (D-002)");
+
+            return string.Join(" · ", parts);
+        }
+
+        private void RebuildExtractSlots(HardwareAreaRuntime standing, ExtractionLearning learning)
+        {
+            if (_extractSlots == null)
+                return;
+
+            _extractSlots.Clear();
+
+            if (learning.Candidates.Count == 0)
+            {
+                var empty = new Label("0개 학습도 완전한 철수입니다.");
+                empty.AddToClassList("extract__empty");
+                _extractSlots.Add(empty);
+                return;
+            }
+
+            for (int i = 0; i < learning.Candidates.Count; ++i)
+            {
+                LearnCandidate candidate = learning.Candidates[i];
+                string key = candidate.DocumentKey;
+                bool chosen = learning.IsChosen(key);
+
+                var panel = new VisualElement();
+                panel.AddToClassList("learn-slot");
+                if (chosen)
+                    panel.AddToClassList("learn-slot--chosen");
+                if (candidate.Rarity == PluginRarity.Rare)
+                    panel.AddToClassList("learn-slot--rare");
+
+                var row = new VisualElement();
+                row.AddToClassList("learn-slot__row");
+
+                PluginCardText text = PluginCardTexts.For(candidate.ProposalId);
+                var titles = new VisualElement();
+                titles.Add(Line("learn-slot__grade", PluginCardTexts.LabelOf(candidate.Rarity)));
+                titles.Add(Line("learn-slot__name", text.Name));
+                row.Add(titles);
+
+                var pick = new Button(() => ToggleLearn(standing, key))
+                {
+                    text = chosen ? "해제" : "학습",
+                };
+                pick.AddToClassList("learn-slot__pick");
+                pick.AddToClassList("reward-slot__take");
+
+                // A full selection still lets a chosen card be unticked, or the player could
+                // never change their mind without leaving the pad.
+                pick.SetEnabled(chosen || learning.HasRoom);
+                row.Add(pick);
+
+                panel.Add(row);
+                panel.Add(Line("learn-slot__effect", text.Effect));
+                _extractSlots.Add(panel);
+            }
+        }
+
+        private void ToggleLearn(HardwareAreaRuntime standing, string documentKey)
+        {
+            if (standing == null)
+                return;
+
+            standing.Learning.Toggle(documentKey);
+            _extractSignature = string.Empty;
+        }
+
+        private void ConfirmExtraction()
+        {
+            HardwareAreaRuntime standing = CurrentArea();
+            if (standing == null)
+                return;
+
+            // Through the area runtime, so the button and the key press are the same path and
+            // the pad's own arming check still applies.
+            standing.RequestExtraction();
+        }
+
+        private void KeepExploring()
+        {
+            _extractDismissed = true;
+            _extractSignature = string.Empty;
+            Show(_extractScreen, false);
+        }
+
         private void DrawReward()
         {
             bool open = RewardOpen;
@@ -1654,6 +1839,29 @@ namespace NeonVoid.UI
 
             if (_skillClose != null)
                 _skillClose.clicked += CloseSkillScreen;
+
+            _extractScreen = root.Q<VisualElement>("extractScreen");
+            _extractSubtitle = root.Q<Label>("extractSubtitle");
+            _extractSlots = root.Q<VisualElement>("extractSlots");
+            _extractNote = root.Q<Label>("extractNote");
+            _extractCount = root.Q<Label>("extractCount");
+            _extractConfirm = root.Q<Button>("extractConfirm");
+            _extractCancel = root.Q<Button>("extractCancel");
+
+            // Set here rather than left to the stylesheet: the reward screen deals three cards
+            // side by side and this one lists however many the run produced, so a row clipped
+            // their text at two. A class would have to out-rank .reward__slots, which it shares
+            // its specificity with - the order of two equal rules is not a thing to rely on.
+            if (_extractSlots != null)
+            {
+                _extractSlots.style.flexDirection = FlexDirection.Column;
+                _extractSlots.style.minWidth = 420f;
+            }
+
+            if (_extractConfirm != null)
+                _extractConfirm.clicked += ConfirmExtraction;
+            if (_extractCancel != null)
+                _extractCancel.clicked += KeepExploring;
 
             _rewardScreen = root.Q<VisualElement>("rewardScreen");
             _rewardSubtitle = root.Q<Label>("rewardSubtitle");

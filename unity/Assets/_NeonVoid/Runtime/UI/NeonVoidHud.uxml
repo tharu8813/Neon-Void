@@ -103,6 +103,20 @@
       </ui:VisualElement>
     </ui:VisualElement>
 
+    <ui:VisualElement name="extractScreen" class="reward hidden">
+      <ui:VisualElement name="extractCard" class="reward__card">
+        <ui:Label name="extractTitle" class="reward__title" text="철수 정산" picking-mode="Ignore" />
+        <ui:Label name="extractSubtitle" class="reward__subtitle" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="extractSlots" class="reward__slots learn__slots" />
+        <ui:Label name="extractNote" class="reward__refusal hidden" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="extractFooter" class="reward__footer">
+          <ui:Label name="extractCount" class="reward__rerolls" text="" picking-mode="Ignore" />
+          <ui:Button name="extractConfirm" class="reward-slot__take" text="철수" />
+          <ui:Button name="extractCancel" class="reward__dismiss" text="계속 탐색" />
+        </ui:VisualElement>
+      </ui:VisualElement>
+    </ui:VisualElement>
+
     <ui:VisualElement name="settingsScreen" class="settings hidden">
       <ui:VisualElement name="settingsCard" class="settings__card">
         <ui:Label name="settingsTitle" class="settings__title" text="설정 · 키" picking-mode="Ignore" />
