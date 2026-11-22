@@ -246,6 +246,11 @@ namespace NeonVoid.Plugins
         [Tooltip("Damage the effect requests, resolved through the normal pipeline.")]
         public DamageRequest Damage;
 
+        [Tooltip(
+            "[확정] docs/03 3절 6항: 같은 플러그인 획득 = 레벨 상승. 0 and 1 are both the first " +
+            "level, so a card authored without one is where every card starts.")]
+        public int Level;
+
         [Tooltip("[초안] reach of the effect in units, where it has one.")]
         public float RadiusUnits;
 

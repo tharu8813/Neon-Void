@@ -1402,7 +1402,15 @@ namespace NeonVoid.UI
 
                 PluginCardText text = PluginCardTexts.For(card.Definition.ProposalId);
                 panel.Add(Line("reward-slot__grade", PluginCardTexts.LabelOf(grade)));
-                panel.Add(Line("reward-slot__name", text.Name));
+
+                // [확정] docs/03 3절 6항 leaves a card the player owns in the pool until it is
+                // at its ceiling, so an offered card may be a level-up. Saying which is the
+                // difference between "I already have this" and "this makes mine stronger".
+                PluginLoadout held = session.Loadout;
+                int level = held != null ? held.LevelOf(card.Definition.ProposalId) : 0;
+                panel.Add(Line(
+                    "reward-slot__name",
+                    level > 0 ? $"{text.Name} → Lv.{level + 1}" : text.Name));
 
                 if (card.FellBack)
                 {

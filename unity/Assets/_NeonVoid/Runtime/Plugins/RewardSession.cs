@@ -243,7 +243,11 @@ namespace NeonVoid.Plugins
 
             IReadOnlyList<PluginDefinition> carried = loadout.Carried;
             for (int i = 0; i < carried.Count; ++i)
-                _owned.Add(carried[i].ProposalId);
+                // [확정] docs/03 section 3 item 6: 현재 최대로 강화된 플러그인은 후보에서
+                // 제거 - and only those. A card the player owns but can still raise stays in
+                // the pool, because taking it again is how it goes up.
+                if (loadout.IsAtMaxLevel(carried[i].ProposalId))
+                    _owned.Add(carried[i].ProposalId);
         }
 
         private RewardResult Refuse(RewardVerdict verdict, string detail)

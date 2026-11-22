@@ -1104,7 +1104,12 @@ namespace NeonVoid.Plugins
         public PluginGrantVerdict Grant(in PluginDefinition definition, out string reason)
         {
             PluginGrantVerdict verdict = _router.TryGrant(definition, _rewardRng, out reason);
-            if (verdict == PluginGrantVerdict.Granted)
+
+            // A level-up pushes too. It changes what the carried card is worth, and a stat that
+            // was recomputed and never published is the "applied but has no effect" failure
+            // this project keeps finding - here it would have been a 레벨 상승 the player paid a
+            // reward slot for and could not feel.
+            if (verdict == PluginGrantVerdict.Granted || verdict == PluginGrantVerdict.LevelledUp)
                 PushPassivesToOwner();
 
             return verdict;

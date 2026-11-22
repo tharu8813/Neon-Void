@@ -21,8 +21,18 @@ namespace NeonVoid.Plugins
         /// </summary>
         RejectedMythicNotApproved = 2,
 
-        /// <summary>This plugin is already carried. Levels, not duplicates, are the plan.</summary>
+        /// <summary>
+        /// This plugin is already carried at its ceiling. [확정] docs/03 section 3 item 6:
+        /// 현재 최대로 강화된 플러그인은 후보에서 제거 - so a card that reaches here was offered
+        /// when it should not have been, and refusing is the backstop rather than the rule.
+        /// </summary>
         RejectedAlreadyCarried = 3,
+
+        /// <summary>
+        /// It was already carried and went up a level instead. [확정] docs/03 section 3 item 6:
+        /// 같은 플러그인 획득 = 레벨 상승.
+        /// </summary>
+        LevelledUp = 4,
     }
 
     /// <summary>
@@ -201,18 +211,89 @@ namespace NeonVoid.Plugins
                 return PluginGrantVerdict.RejectedInvalid;
             }
 
+            // [확정] docs/03 section 3 item 6: 같은 플러그인 획득 = 레벨 상승. Checked before
+            // anything is added, and against both lists - a card switched off by 터널감염 is
+            // still carried, and taking it again must raise the one the player owns rather than
+            // slip a second copy past the suppression.
             if (Carries(definition.ProposalId))
-            {
-                reason = $"{definition.ProposalId} is already carried.";
-                return PluginGrantVerdict.RejectedAlreadyCarried;
-            }
+                return LevelUpWhatIsCarried(definition.ProposalId, out reason);
 
             PluginDefinition carried = definition;
             carried.Passive = definition.Passive.Rolled(rewardRng);
+            carried.Level = PluginLevels.Clamp(definition.ProposalId, definition.Level);
             _carried.Add(carried);
 
             GrantTheRareBonus(carried, rewardRng);
             return PluginGrantVerdict.Granted;
+        }
+
+        /// <summary>
+        /// Raises a carried card by one level, wherever it is.
+        /// <para>
+        /// The levelled card replaces the carried one in place, so carry order - which is roll
+        /// order, and therefore reproducibility - does not change when a card goes up.
+        /// </para>
+        /// </summary>
+        private PluginGrantVerdict LevelUpWhatIsCarried(string proposalId, out string reason)
+        {
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (!string.Equals(_carried[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    continue;
+
+                return RaiseAt(_carried, i, out reason);
+            }
+
+            for (int i = 0; i < _suppressed.Count; ++i)
+            {
+                if (!string.Equals(_suppressed[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    continue;
+
+                return RaiseAt(_suppressed, i, out reason);
+            }
+
+            reason = $"{proposalId} is carried and could not be found to level.";
+            return PluginGrantVerdict.RejectedAlreadyCarried;
+        }
+
+        private PluginGrantVerdict RaiseAt(List<PluginDefinition> list, int index, out string reason)
+        {
+            PluginDefinition card = list[index];
+            if (!PluginLevels.CanLevel(card.ProposalId, card.Level))
+            {
+                reason =
+                    $"{card.ProposalId} is already at Lv.{PluginLevels.MaxLevelFor(card.ProposalId)}.";
+                return PluginGrantVerdict.RejectedAlreadyCarried;
+            }
+
+            list[index] = PluginLevels.LevelledUp(card);
+            reason = $"{card.ProposalId} → Lv.{list[index].Level}";
+            LastRareBonus = string.Empty;
+            return PluginGrantVerdict.LevelledUp;
+        }
+
+        /// <summary>The level this card is carried at, or 0 when it is not carried.</summary>
+        public int LevelOf(string proposalId)
+        {
+            for (int i = 0; i < _carried.Count; ++i)
+                if (string.Equals(_carried[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    return PluginLevels.Clamp(proposalId, _carried[i].Level);
+
+            for (int i = 0; i < _suppressed.Count; ++i)
+                if (string.Equals(_suppressed[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    return PluginLevels.Clamp(proposalId, _suppressed[i].Level);
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Whether this card is owned and cannot go higher. [확정] docs/03 section 3 item 6 takes
+        /// exactly these out of the 보상 후보.
+        /// </summary>
+        public bool IsAtMaxLevel(string proposalId)
+        {
+            int level = LevelOf(proposalId);
+            return level > 0 && !PluginLevels.CanLevel(proposalId, level);
         }
 
         /// <summary>

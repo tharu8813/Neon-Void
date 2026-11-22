@@ -34,16 +34,33 @@ namespace NeonVoid.Plugins
         /// </summary>
         public const char Separator = '#';
 
+        /// <summary>
+        /// Before the level, when there is one above the first. [확정] docs/04 section 3.1:
+        /// 학습할 때 레벨을 유지한다 - so a learned card has to carry what level it was at, and
+        /// an id without this marker is a level 1 card, which every id written before levels
+        /// existed also is.
+        /// </summary>
+        public const string LevelMarker = "@L";
+
         private readonly string _value;
         private readonly string _documentKey;
         private readonly string _unique;
 
-        private PluginInstanceId(string value, string documentKey, string unique)
+        private readonly int _level;
+
+        private PluginInstanceId(string value, string documentKey, string unique, int level)
         {
             _value = value ?? string.Empty;
             _documentKey = documentKey ?? string.Empty;
             _unique = unique ?? string.Empty;
+            _level = level;
         }
+
+        /// <summary>
+        /// The level this instance was archived at. 1 for an id with no marker, which is every
+        /// id written before 2026-11-23 and every card that was never raised.
+        /// </summary>
+        public int Level => _level < PluginLevels.FirstLevel ? PluginLevels.FirstLevel : _level;
 
         // Explicit backing fields, read through ?? : default(PluginInstanceId) never runs the
         // constructor, so auto-properties would hand back null and every length check on them
@@ -86,7 +103,38 @@ namespace NeonVoid.Plugins
             if (unique.IndexOf(Separator) >= 0)
                 throw new ArgumentException($"The unique part may not contain '{Separator}'.", nameof(unique));
 
-            return new PluginInstanceId(documentKey + Separator + unique, documentKey, unique);
+            return Mint(documentKey, unique, PluginLevels.FirstLevel);
+        }
+
+        /// <summary>
+        /// A fresh id for an instance at a given level. [확정] docs/04 section 3.1: 레벨을 유지.
+        /// <para>
+        /// <b>In the id rather than in a new save field.</b> The same reason the document key is:
+        /// the archive and the loadout are lists of strings whose checksum covers the serialized
+        /// text, so a field is a schema version and a schema version is a migration over files
+        /// players already have. A level 1 instance is written without the marker, so every id
+        /// this project has already produced is still exactly what it was.
+        /// </para>
+        /// </summary>
+        public static PluginInstanceId Mint(string documentKey, string unique, int level)
+        {
+            if (string.IsNullOrWhiteSpace(documentKey))
+                throw new ArgumentException("An instance needs a definition to be an instance of.", nameof(documentKey));
+            if (documentKey.IndexOf(Separator) >= 0)
+                throw new ArgumentException($"A document key may not contain '{Separator}'.", nameof(documentKey));
+            if (string.IsNullOrWhiteSpace(unique))
+                throw new ArgumentException("An instance needs a unique part, or two would be one.", nameof(unique));
+            if (unique.IndexOf(Separator) >= 0)
+                throw new ArgumentException($"The unique part may not contain '{Separator}'.", nameof(unique));
+            if (unique.Contains(LevelMarker))
+                throw new ArgumentException($"The unique part may not contain '{LevelMarker}'.", nameof(unique));
+
+            int at = level < PluginLevels.FirstLevel ? PluginLevels.FirstLevel : level;
+            string value = at <= PluginLevels.FirstLevel
+                ? documentKey + Separator + unique
+                : documentKey + Separator + unique + LevelMarker + at;
+
+            return new PluginInstanceId(value, documentKey, unique, at);
         }
 
         /// <summary>A fresh id with a GUID for its unique part.</summary>
@@ -104,9 +152,22 @@ namespace NeonVoid.Plugins
 
             int at = value.IndexOf(Separator);
             if (at <= 0 || at >= value.Length - 1)
-                return new PluginInstanceId(value, string.Empty, value);
+                return new PluginInstanceId(value, string.Empty, value, PluginLevels.FirstLevel);
 
-            return new PluginInstanceId(value, value.Substring(0, at), value.Substring(at + 1));
+            string key = value.Substring(0, at);
+            string rest = value.Substring(at + 1);
+            int level = PluginLevels.FirstLevel;
+
+            int marker = rest.LastIndexOf(LevelMarker, StringComparison.Ordinal);
+            if (marker > 0
+                && int.TryParse(rest.Substring(marker + LevelMarker.Length), out int parsed)
+                && parsed >= PluginLevels.FirstLevel)
+            {
+                level = parsed;
+                rest = rest.Substring(0, marker);
+            }
+
+            return new PluginInstanceId(value, key, rest, level);
         }
 
         /// <summary>The document key an id carries, or empty. The common case, spelled once.</summary>

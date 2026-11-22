@@ -236,9 +236,12 @@ namespace NeonVoid.Tests
         // --- 중복 ---------------------------------------------------------------------------------
 
         [Test]
-        public void ACardTheVaccineAlreadyCarriesIsNotOffered()
+        public void ACardAtItsCeilingIsNotOffered()
         {
-            // [확정] D-007 names 미보유 후보. Offering something already carried is a slot the
+            // [확정] D-007 names 미보유 후보 and [확정] docs/03 3절 6항 narrows which those are:
+            // 현재 최대로 강화된 플러그인은 후보에서 제거. A card the player owns but can still
+            // raise stays in the pool, because taking it again is how it goes up - so what this
+            // holds is that a card at its ceiling never comes back. Offering something already is a slot the
             // player cannot use.
             var loadout = new PluginLoadout();
             var session = new RewardSession(RewardRoller.Approved(), loadout);
@@ -253,9 +256,10 @@ namespace NeonVoid.Tests
                     if (dealt.Cards[i].IsEmpty)
                         continue;
 
+                    string offered = dealt.Cards[i].Definition.ProposalId;
                     Assert.IsFalse(
-                        taken.Contains(dealt.Cards[i].Definition.ProposalId),
-                        $"{dealt.Cards[i].Definition.ProposalId} was offered after being taken");
+                        loadout.IsAtMaxLevel(offered),
+                        $"{offered} was offered after reaching its ceiling");
                 }
 
                 if (session.Pick(0).Ok)

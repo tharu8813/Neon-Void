@@ -125,7 +125,9 @@ namespace NeonVoid.Plugins
                     continue;
                 }
 
-                cards.Add(found);
+                // [확정] docs/04 section 3.1: 레벨을 유지한다. The id carries it, so a card
+                // archived at Lv.3 walks back in at Lv.3 rather than starting over.
+                cards.Add(PluginLevels.At(found, id.Level));
             }
 
             return new Resolution(cards, unnamed, unknown);

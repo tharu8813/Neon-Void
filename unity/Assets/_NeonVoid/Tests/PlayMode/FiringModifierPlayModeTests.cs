@@ -49,6 +49,32 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator ALevelUpReachesTheActorAndNotJustTheLoadout()
+        {
+            // [확정] docs/03 3절 6항: 같은 플러그인 획득 = 레벨 상승. The level was reaching the
+            // carried card and stopping there - the director only republished the stats on a
+            // fresh grant, so a 레벨 상승 the player spent a reward slot on changed nothing they
+            // could feel. Caught in Play mode, not by the loadout tests.
+            _arena = PrototypeArena.Build();
+            yield return WithAnEmptyLoadout();
+
+            _arena.Procs.Grant(PluginCatalog.Lightweight(), out string why);
+            yield return _arena.Tick(1);
+            float atFirst = _arena.Player.MoveSpeedMultiplier;
+            Assert.Greater(atFirst, 1f, why);
+
+            Assert.AreEqual(
+                PluginGrantVerdict.LevelledUp,
+                _arena.Procs.Grant(PluginCatalog.Lightweight(), out why), why);
+            yield return _arena.Tick(1);
+
+            Assert.AreEqual(2, _arena.Procs.Loadout.LevelOf("G02"));
+            Assert.Greater(
+                _arena.Player.MoveSpeedMultiplier, atFirst,
+                "Lv.2 was carried and the player did not move any faster");
+        }
+
+        [UnityTest]
         public IEnumerator TheBasicAttackFiresOneProjectileWithNothingGranted()
         {
             _arena = PrototypeArena.Build(new Vector3(0f, 0.7f, 6f));

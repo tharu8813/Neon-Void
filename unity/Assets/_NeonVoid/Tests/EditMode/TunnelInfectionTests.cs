@@ -187,9 +187,15 @@ namespace NeonVoid.Tests
 
             Assert.IsTrue(loadout.Carries("G02"));
             Assert.IsTrue(loadout.IsSuppressed("G02"));
+
+            // Taking it again raises the one the player owns rather than slipping a second copy
+            // past the suppression - which would hand them a working card out of an infected one.
             Assert.AreEqual(
-                PluginGrantVerdict.RejectedAlreadyCarried,
+                PluginGrantVerdict.LevelledUp,
                 loadout.TryGrant(PluginCatalog.Lightweight(), out string why), why);
+            Assert.AreEqual(1, loadout.Count, "a second 경량화 was added while the first was off");
+            Assert.AreEqual(2, loadout.LevelOf("G02"));
+            Assert.IsTrue(loadout.IsSuppressed("G02"), "the level-up switched it back on");
         }
 
         [Test]

@@ -8,12 +8,19 @@ namespace NeonVoid.Missions
     /// <summary>One card the player may keep on a successful 철수.</summary>
     public readonly struct LearnCandidate
     {
-        public LearnCandidate(string proposalId, string documentKey, PluginRarity rarity)
+        public LearnCandidate(string proposalId, string documentKey, PluginRarity rarity, int level = 1)
         {
             ProposalId = proposalId ?? string.Empty;
             DocumentKey = documentKey ?? string.Empty;
             Rarity = rarity;
+            Level = level < PluginLevels.FirstLevel ? PluginLevels.FirstLevel : level;
         }
+
+        /// <summary>
+        /// The level it is carried at. [확정] docs/04 section 3.1: 학습할 때 레벨을 유지한다 -
+        /// a card raised to Lv.3 in the run is archived at Lv.3, not reset.
+        /// </summary>
+        public int Level { get; }
 
         /// <summary>docs/03's development id, for text and for a log.</summary>
         public string ProposalId { get; }
@@ -141,7 +148,9 @@ namespace NeonVoid.Missions
                     continue;
                 }
 
-                _candidates.Add(new LearnCandidate(plugin.ProposalId, key, plugin.Rarity));
+                _candidates.Add(new LearnCandidate(
+                    plugin.ProposalId, key, plugin.Rarity,
+                    PluginLevels.Clamp(plugin.ProposalId, plugin.Level)));
             }
         }
 
@@ -210,7 +219,7 @@ namespace NeonVoid.Missions
         {
             var ids = new string[_chosenKeys.Count];
             for (int i = 0; i < _chosenKeys.Count; ++i)
-                ids[i] = PluginInstanceId.Mint(_chosenKeys[i], _unique()).Value;
+                ids[i] = PluginInstanceId.Mint(_chosenKeys[i], _unique(), LevelOf(_chosenKeys[i])).Value;
 
             return ids;
         }
@@ -234,6 +243,18 @@ namespace NeonVoid.Missions
             }
 
             return false;
+        }
+
+        /// <summary>The level the chosen card is carried at, so the archive keeps it.</summary>
+        private int LevelOf(string documentKey)
+        {
+            for (int i = 0; i < _candidates.Count; ++i)
+            {
+                if (_candidates[i].DocumentKey == documentKey)
+                    return _candidates[i].Level;
+            }
+
+            return PluginLevels.FirstLevel;
         }
 
         private bool Offers(string documentKey)

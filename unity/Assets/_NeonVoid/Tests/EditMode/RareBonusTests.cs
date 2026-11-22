@@ -138,18 +138,22 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void ItCannotBeCollectedTwice()
+        public void LevellingItUpDoesNotPayTheBonusAgain()
         {
-            // [확정] D-003: 동일 영수증으로 중복 지급할 수 없다. The loadout already refuses a
-            // duplicate card, so collecting twice is impossible rather than guarded against.
+            // [확정] D-003: 동일 영수증으로 중복 지급할 수 없다. Taking G15 again raises it
+            // ([확정] docs/03 3절 6항) and a level is not a new 획득 - a card that paid its
+            // bonus on every level would be a 레어 printer.
             var loadout = new PluginLoadout();
             loadout.TryGrant(PluginCatalog.RareAcquisition(), Rng(), out _);
             int after = loadout.Count;
 
             Assert.AreEqual(
-                PluginGrantVerdict.RejectedAlreadyCarried,
+                PluginGrantVerdict.LevelledUp,
                 loadout.TryGrant(PluginCatalog.RareAcquisition(), Rng(), out _));
-            Assert.AreEqual(after, loadout.Count, "a refused grant still handed out a bonus");
+
+            Assert.AreEqual(after, loadout.Count, "a level-up handed out a second bonus");
+            Assert.IsEmpty(loadout.LastRareBonus);
+            Assert.AreEqual(2, loadout.LevelOf("G15"));
         }
 
         [Test]

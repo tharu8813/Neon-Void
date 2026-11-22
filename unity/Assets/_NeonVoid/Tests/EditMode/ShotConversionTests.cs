@@ -93,20 +93,26 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TheBoomerangThrowsOneUntilLevelsExist()
+        public void TheBoomerangThrowsOneMorePerLevel()
         {
-            // docs/03 says 레벨 상승 시 부메랑 수 증가, and plugin levels are not built (docs/03
-            // section 3 item 6; the loadout still refuses a duplicate). One is what the card is
-            // worth today and the number is data, so the level change is a data change.
+            // [확정] docs/03 L02: 레벨 상승 시 부메랑 수 증가. The one per-level effect any card
+            // actually states, so it is the one count a level changes.
             Assert.AreEqual(1, PluginCatalog.StatedBoomerangCountAtFirstLevel);
             Assert.AreEqual(1, PluginCatalog.BoomerangProtocol().Firing.MainShotCount);
 
             var loadout = new PluginLoadout();
             loadout.TryGrant(PluginCatalog.BoomerangProtocol(), Rng(), out _);
+            Assert.AreEqual(1, FormsOf(PluginCatalog.BoomerangProtocol())[0].Count);
+
             Assert.AreEqual(
-                PluginGrantVerdict.RejectedAlreadyCarried,
-                loadout.TryGrant(PluginCatalog.BoomerangProtocol(), Rng(), out _),
-                "a duplicate was accepted, so the count above is not the whole story");
+                PluginGrantVerdict.LevelledUp,
+                loadout.TryGrant(PluginCatalog.BoomerangProtocol(), Rng(), out string why), why);
+            Assert.AreEqual(2, loadout.LevelOf("L02"));
+
+            var forms = new List<MainShotSpec>();
+            loadout.CollectMainShots(forms);
+            Assert.AreEqual(1, forms.Count);
+            Assert.AreEqual(2, forms[0].Count, "Lv.2 did not add a 부메랑");
         }
 
         // --- what the loadout resolves to ----------------------------------------------------

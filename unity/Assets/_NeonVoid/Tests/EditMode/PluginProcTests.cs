@@ -67,14 +67,17 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TheSamePluginIsNotCarriedTwice()
+        public void TheSamePluginLevelsUpRatherThanBeingCarriedTwice()
         {
+            // [확정] docs/03 3절 6항: 같은 플러그인 획득 = 레벨 상승. It used to be refused,
+            // which is what the same line calls the plan rather than the rule.
             var loadout = new PluginLoadout();
             loadout.TryGrant(PluginCatalog.ArcChain(), out _);
 
             Assert.AreEqual(
-                PluginGrantVerdict.RejectedAlreadyCarried, loadout.TryGrant(PluginCatalog.ArcChain(), out _));
-            Assert.AreEqual(1, loadout.Count);
+                PluginGrantVerdict.LevelledUp, loadout.TryGrant(PluginCatalog.ArcChain(), out _));
+            Assert.AreEqual(1, loadout.Count, "a second copy was added instead of a level");
+            Assert.AreEqual(2, loadout.LevelOf("G10"));
         }
 
         [Test]
