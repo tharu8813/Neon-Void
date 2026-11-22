@@ -945,8 +945,12 @@ namespace NeonVoid.Tests.PlayModeTests
 
             Assert.IsTrue(result.Ok, result.Detail);
             Assert.IsFalse(rewards.Session.IsOpen);
-            Assert.AreEqual(before + 1, _arena.Procs.Loadout.Count);
             Assert.IsTrue(_arena.Procs.Loadout.Carries(taken));
+
+            // G15 희귀 획득 brings a 레어 with it ([확정] D-003), so one card taken is one or
+            // two carried depending on which card it was.
+            int expected = before + 1 + (_arena.Procs.Loadout.LastRareBonus.Length > 0 ? 1 : 0);
+            Assert.AreEqual(expected, _arena.Procs.Loadout.Count);
 
             if (_store != null)
             {

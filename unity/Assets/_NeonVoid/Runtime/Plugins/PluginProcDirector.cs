@@ -540,13 +540,59 @@ namespace NeonVoid.Plugins
             if (owner == null)
                 return;
 
+            float amount = ShieldAmountOf(plugin);
+            if (amount <= 0f)
+                return;
+
             long tick = _runner != null ? _runner.TickIndex : 0L;
-            owner.Shields.Grant(
-                plugin.ProposalId, plugin.Shield.Amount, tick, plugin.Shield.LifetimeTicks);
+            owner.Shields.Grant(plugin.ProposalId, amount, tick, plugin.Shield.LifetimeTicks);
+            BuffTheOwner(plugin);
 
             Debug.Log(
-                $"{plugin.ProposalId} 보호막 {plugin.Shield.Amount:0.#} " +
+                $"{plugin.ProposalId} 보호막 {amount:0.#} " +
                 $"({owner.Shields.LayerCount} standing, {owner.Shields.Total:0.#} total).", this);
+        }
+
+        /// <summary>
+        /// How big a shield this card raises.
+        /// <para>
+        /// G09 비상 복구 states 최대 체력 50%에 해당하는, which is a fraction of whoever is
+        /// carrying it rather than a number. Resolved here, when it fires, so it follows the
+        /// vaccine's growth instead of being half of whatever the carrier had the day the card
+        /// was authored.
+        /// </para>
+        /// </summary>
+        private float ShieldAmountOf(in PluginDefinition plugin) =>
+            plugin.ProposalId == "G09"
+                ? owner.Health.Max * EmergencyRecoveryPolicy.DraftMaxHealthFraction
+                : plugin.Shield.Amount;
+
+        /// <summary>
+        /// G09 비상 복구's 회복 reading: heals a fraction of maximum health.
+        /// <para>
+        /// [미확정] whether the card heals or shields at all - see
+        /// <see cref="EmergencyRecoveryPolicy"/>. Both are implemented; which one the card
+        /// carries is decided there and nowhere else, so this path and
+        /// <see cref="RaiseShield"/> are never both reachable for one card.
+        /// </para>
+        /// <para>
+        /// A heal at full health does nothing and still spends the cooldown, which is the
+        /// difference between the two readings stated as behaviour: docs/03's verification
+        /// point for the equivalent skill is exactly the already-full case.
+        /// </para>
+        /// </summary>
+        private void HealTheOwner(in PluginDefinition plugin)
+        {
+            if (owner == null)
+                return;
+
+            float amount = owner.Health.Max * EmergencyRecoveryPolicy.DraftMaxHealthFraction;
+            float healed = owner.Heal(amount);
+            BuffTheOwner(plugin);
+
+            Debug.Log(
+                $"{plugin.ProposalId} 회복 {healed:0.#} / {amount:0.#} " +
+                $"(HP {owner.Health.Current:0.#}/{owner.Health.Max:0.#}).", this);
         }
 
         private void TickConditions()
@@ -1069,6 +1115,9 @@ namespace NeonVoid.Plugins
                 case PluginEffectKind.GrantShield:
                     RaiseShield(plugin);
                     break;
+                case PluginEffectKind.HealOwner:
+                    HealTheOwner(plugin);
+                    break;
             }
         }
 
@@ -1103,6 +1152,24 @@ namespace NeonVoid.Plugins
 
                 Strike(actor, plugin, HitOrigin.Skill);
             }
+        }
+
+        /// <summary>
+        /// A card whose effect lands on its own carrier also puts its status there.
+        /// <para>
+        /// G09 비상 복구 is 회복 또는 방어 효과 <b>+ 이동속도</b>: one effect and one status on
+        /// one card, the way G08 이동 버퍼 is. Applied through the owner so a 가속 on the player
+        /// goes through the same path an enemy debuff does, rather than a second way to change
+        /// a status that could drift from the first.
+        /// </para>
+        /// </summary>
+        private void BuffTheOwner(in PluginDefinition plugin)
+        {
+            if (owner == null || plugin.AppliedStatus == Combat.Status.StatusEffectId.None)
+                return;
+
+            owner.ApplyStatus(
+                plugin.AppliedStatus, plugin.StatusMagnitude, 0f, plugin.StatusDurationTicksOverride);
         }
 
         /// <summary>G12: the mark itself, applied through the target so its tenacity applies.</summary>

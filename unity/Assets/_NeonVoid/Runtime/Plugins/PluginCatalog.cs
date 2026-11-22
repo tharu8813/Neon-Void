@@ -872,6 +872,85 @@ namespace NeonVoid.Plugins
         };
 
         /// <summary>
+        /// G09 비상 복구 - 체력 임계 아래에서 최대 체력 50% 회복 또는 방어 효과 + 이동속도, CD 60초.
+        /// <para>
+        /// <b>Which of the two it gives is [미확정]</b> and lives in
+        /// <see cref="EmergencyRecoveryPolicy"/>, which implements both. docs/03's exception
+        /// column says 회복/실드 여부 먼저 확인 필요 and the difference is not cosmetic: at full
+        /// health a heal is worth nothing and a 보호막 is worth all of it.
+        /// </para>
+        /// <para>
+        /// The 이동속도 rides on the same card as its applied status rather than needing a
+        /// second effect, the way G08 이동 버퍼 does - a card has one effect and one status, and
+        /// 비상 복구 is exactly one of each.
+        /// </para>
+        /// <para>
+        /// The trigger is the same one R03 위기 반발 uses, so 위기 means the same thing on both
+        /// cards rather than two thresholds that drift apart.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition EmergencyRecovery() => new PluginDefinition
+        {
+            ProposalId = "G09",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.OnOwnerLowHealth,
+            Effect = EmergencyRecoveryPolicy.IsShield
+                ? PluginEffectKind.GrantShield
+                : PluginEffectKind.HealOwner,
+            Damage = default,
+
+            Shield = EmergencyRecoveryPolicy.IsShield
+                ? new PluginShieldGrant
+                {
+                    // Resolved against the carrier's maximum health when it fires, not here:
+                    // a number baked at authoring time would be half of whatever the vaccine
+                    // had the day the card was written.
+                    Amount = 0f,
+                    LifetimeTicks = EmergencyRecoveryPolicy.DraftShieldLifetimeTicks,
+                }
+                : default,
+
+            // 가속 beside the recovery. [초안] magnitude; docs/03 states 이동속도 and no amount.
+            AppliedStatus = StatusEffectId.Haste,
+            StatusMagnitude = 0.3f,
+            StatusDurationTicksOverride = 180,
+
+            // The same threshold R03 위기 반발 uses, so 위기 means one thing.
+            OwnerHealthThresholdFraction = StatedCrisisThresholdFraction,
+
+            // [확정] docs/03: CD 60초.
+            Rule = new ProcEffectRule
+            {
+                EffectId = 16,
+                CanRetriggerItself = false,
+                MaxOccurrencesPerChain = 1,
+                InternalCooldownTicks = EmergencyRecoveryPolicy.StatedCooldownTicks,
+            },
+        };
+
+        /// <summary>
+        /// G15 희귀 획득 - 무작위 레어 플러그인 획득.
+        /// <para>
+        /// [확정] D-003 (2026-11-22): 추가 지급량은 1개, 유효 후보가 없으면 추가 지급하지 않으며,
+        /// 동일 영수증으로 중복 지급할 수 없다. The bonus lands when the card is carried rather
+        /// than on a trigger: 획득 has nothing to wait for.
+        /// </para>
+        /// <para>
+        /// It is 일반 and gives 레어, which is the whole card. The loadout refuses a duplicate,
+        /// so carrying it twice - and collecting twice - is already impossible.
+        /// </para>
+        /// </summary>
+        public static PluginDefinition RareAcquisition() => new PluginDefinition
+        {
+            ProposalId = "G15",
+            Rarity = PluginRarity.Common,
+            Trigger = PluginTriggerKind.None,
+            Effect = PluginEffectKind.GrantRandomRare,
+            Damage = default,
+            StatusDurationTicksOverride = -1,
+        };
+
+        /// <summary>
         /// Every authored card, in a fixed order, so a replay rolls them identically.
         /// <para>
         /// This is the pool <see cref="RewardRoller"/> deals from. It is the catalogue rather
@@ -887,6 +966,8 @@ namespace NeonVoid.Plugins
             CorrosionMark(),
             RandomPatch(),
             Lightweight(),
+            EmergencyRecovery(),
+            RareAcquisition(),
             UntouchedAcceleration(),
             ThrottleAmplifier(),
             PeriodicBarrier(),

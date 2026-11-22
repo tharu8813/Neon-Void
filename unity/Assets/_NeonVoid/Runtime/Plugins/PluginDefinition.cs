@@ -190,6 +190,28 @@ namespace NeonVoid.Plugins
         /// </para>
         /// </summary>
         GrantShield = 12,
+
+        /// <summary>
+        /// Heals the carrier. docs/03 G09 비상 복구's first reading.
+        /// <para>
+        /// The card says <i>회복 또는 방어 효과 [미확정]</i>, so both readings are implemented
+        /// and <see cref="EmergencyRecoveryPolicy"/> chooses between them with one constant.
+        /// A heal and a shield are different enough that guessing would be a balance decision
+        /// nobody made: a heal is worth nothing at full health and a shield is worth the same
+        /// either way.
+        /// </para>
+        /// </summary>
+        HealOwner = 13,
+
+        /// <summary>
+        /// Grants another plugin the moment this one is carried. docs/03 G15 희귀 획득.
+        /// <para>
+        /// [확정] D-003 (2026-11-22): 추가 지급량은 1개, 유효 후보가 없으면 추가 지급 없음,
+        /// 동일 영수증으로 중복 지급 불가. It happens at grant time rather than on a trigger,
+        /// because 획득 is what the card does - there is nothing to wait for.
+        /// </para>
+        /// </summary>
+        GrantRandomRare = 14,
     }
 
     /// <summary>
@@ -285,7 +307,11 @@ namespace NeonVoid.Plugins
             && Effect != PluginEffectKind.FiringModifier
             && Effect != PluginEffectKind.GrowingPassive
             && Effect != PluginEffectKind.ConditionalPassive
-            && Effect != PluginEffectKind.ChargedPassive;
+            && Effect != PluginEffectKind.ChargedPassive
+
+            // Granted the moment the card is carried, so it never waits in the queue and has
+            // no chain rule to register. [확정] D-003.
+            && Effect != PluginEffectKind.GrantRandomRare;
 
         public void Validate()
         {
@@ -300,7 +326,11 @@ namespace NeonVoid.Plugins
             bool untriggered = Effect == PluginEffectKind.Passive
                 || Effect == PluginEffectKind.FiringModifier
                 || Effect == PluginEffectKind.ConditionalPassive
-                || Effect == PluginEffectKind.ChargedPassive;
+                || Effect == PluginEffectKind.ChargedPassive
+
+                // G15 희귀 획득 fires when it is carried. 획득 has nothing to wait for, so a
+                // trigger on it would be a condition that is already true.
+                || Effect == PluginEffectKind.GrantRandomRare;
             if (Trigger == PluginTriggerKind.None && !untriggered)
                 throw new InvalidOperationException($"{ProposalId}: a plugin that nothing triggers would never fire.");
 

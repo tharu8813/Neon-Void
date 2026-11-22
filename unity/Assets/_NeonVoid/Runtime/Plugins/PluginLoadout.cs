@@ -103,8 +103,44 @@ namespace NeonVoid.Plugins
             PluginDefinition carried = definition;
             carried.Passive = definition.Passive.Rolled(rewardRng);
             _carried.Add(carried);
+
+            GrantTheRareBonus(carried, rewardRng);
             return PluginGrantVerdict.Granted;
         }
+
+        /// <summary>
+        /// What G15 희귀 획득 gives, the moment it is carried.
+        /// <para>
+        /// [확정] D-003 (2026-11-22): one 레어, nothing when there is no candidate, never twice.
+        /// Granted after the card itself is in the list, so the bonus cannot be the card that
+        /// is granting it and <see cref="BonusFrom"/> reads as the carrier already holding both.
+        /// </para>
+        /// <para>
+        /// <b>Added directly rather than through TryGrant.</b> The bonus is part of the same
+        /// grant - [확정] D-003 calls it 동일 영수증 - and recursing would let a chain of
+        /// granting cards resolve inside one call, with no bound on its length.
+        /// </para>
+        /// </summary>
+        private void GrantTheRareBonus(in PluginDefinition granting, DeterministicRng rewardRng)
+        {
+            LastRareBonus = string.Empty;
+            if (granting.Effect != PluginEffectKind.GrantRandomRare)
+                return;
+
+            PluginDefinition bonus = RareBonus.Pick(PluginCatalog.All(), _carried, rewardRng);
+            if (string.IsNullOrEmpty(bonus.ProposalId))
+                return;
+
+            bonus.Passive = bonus.Passive.Rolled(rewardRng);
+            _carried.Add(bonus);
+            LastRareBonus = bonus.ProposalId;
+        }
+
+        /// <summary>
+        /// The 레어 the last grant also gave, or empty. [확정] D-003's 추가 지급 is one card and
+        /// the caller has to be able to say which, or a receipt cannot name it.
+        /// </summary>
+        public string LastRareBonus { get; private set; } = string.Empty;
 
         /// <summary>
         /// Appends every carried plugin's passive stat contributions, in carry order.
