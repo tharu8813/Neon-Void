@@ -37,6 +37,7 @@ namespace NeonVoid.EditorTools
             internal PlayerInputRouter Router;
             internal PlayerSimulationDriver Driver;
             internal CombatActor Actor;
+            internal PlayerSkillCaster Caster;
             internal PluginProcDirector Procs;
         }
 
@@ -123,6 +124,7 @@ namespace NeonVoid.EditorTools
                 Router = router,
                 Driver = driver,
                 Actor = actor,
+                Caster = caster,
                 Procs = procs,
             };
         }

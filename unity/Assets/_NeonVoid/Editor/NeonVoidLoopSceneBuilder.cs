@@ -120,6 +120,13 @@ namespace NeonVoid.EditorTools
             AssignSerializedBool(mission, "beginMissionOnAwake", false);
 
             SkillAsset[] authored = NeonVoidPrototypeSkills.Load(skillPaths);
+
+            // [확정] D-009: the pool the 스킬 장착 터미널 offers. The caster holds three; this
+            // holds all seven, because a terminal that could only see the equipped ones would
+            // have nothing to swap to.
+            var libraryObject = new GameObject("Skill Library");
+            var library = libraryObject.AddComponent<SkillLibrary>();
+            library.Configure(authored);
             VaccinePlayer vaccine = CreateVaccinePlayer(
                 new Vector3(0f, AreaWorldBuilder.PlayerStandingLiftUnits, 0f), palette, authored);
 
@@ -192,7 +199,9 @@ namespace NeonVoid.EditorTools
             var rewards = rewardObject.AddComponent<NeonVoid.Plugins.RewardDirector>();
             rewards.Configure(mission, motherboard, vaccine.Procs);
 
-            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings, audio, rewards);
+            BuildHud(
+                vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings, audio, rewards,
+                library, vaccine.Caster);
 
             CreateDirectionalLight();
 
@@ -263,7 +272,9 @@ namespace NeonVoid.EditorTools
             RunDeathDirector deaths,
             NeonVoid.Player.InputBindingDirector bindings,
             NeonVoid.Presentation.GameAudio audio,
-            NeonVoid.Plugins.RewardDirector rewards)
+            NeonVoid.Plugins.RewardDirector rewards,
+            SkillLibrary library,
+            PlayerSkillCaster caster)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -288,7 +299,8 @@ namespace NeonVoid.EditorTools
             HudController controller = host.AddComponent<HudController>();
             // Wired rather than found, so the notice that says whether this session is being
             // written down cannot be the thing that silently went missing.
-            controller.Configure(player, board, null, hub, save, deaths, bindings, audio, rewards);
+            controller.Configure(
+                player, board, null, hub, save, deaths, bindings, audio, rewards, library, caster);
 
             // 설정 is opened with a key and fed one, which is the only part that needs a real
             // keyboard. docs/05 section 2: 설정/오류 복구.

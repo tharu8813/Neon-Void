@@ -68,7 +68,9 @@ namespace NeonVoid.Missions
         /// </para>
         /// </summary>
         public static bool IsConnected(HubTerminalKind kind) =>
-            kind == HubTerminalKind.Mission || kind == HubTerminalKind.Growth;
+            kind == HubTerminalKind.Mission
+            || kind == HubTerminalKind.Growth
+            || kind == HubTerminalKind.Skills;
 
         /// <summary>
         /// Why a terminal does nothing yet, short enough to sit on the HUD, or empty when it
@@ -86,13 +88,11 @@ namespace NeonVoid.Missions
             {
                 case HubTerminalKind.Mission:
                 case HubTerminalKind.Growth:
+                case HubTerminalKind.Skills:
                     return string.Empty;
 
                 case HubTerminalKind.Database:
                     return "미연결 · 플러그인 획득 이후";
-
-                case HubTerminalKind.Skills:
-                    return "미연결 · 스킬 풀 미확정";
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a hub terminal.");
@@ -106,15 +106,12 @@ namespace NeonVoid.Missions
             {
                 case HubTerminalKind.Mission:
                 case HubTerminalKind.Growth:
+                case HubTerminalKind.Skills:
                     return string.Empty;
 
                 case HubTerminalKind.Database:
                     return "보관 DB↔출전 이동은 MovePluginCommand로 커밋되지만, 무엇이 이동 대상인지 " +
                            "고르는 터미널이 아직 없다";
-
-                case HubTerminalKind.Skills:
-                    return "스킬 키·초기 스킬·전체 풀이 미확정이다 (D-009). 장착할 풀이 승인되기 전에 " +
-                           "장착 UI를 만들면 승인되지 않은 목록을 확정처럼 보여준다";
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a hub terminal.");

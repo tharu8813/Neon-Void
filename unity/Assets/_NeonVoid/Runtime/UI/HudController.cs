@@ -64,6 +64,12 @@ namespace NeonVoid.UI
         [Tooltip("The 보상 화면's cards. Found when left empty.")]
         [SerializeField] private RewardDirector rewards;
 
+        [Tooltip("Every skill the 장착 터미널 can offer. Found when left empty.")]
+        [SerializeField] private SkillLibrary skillLibrary;
+
+        [Tooltip("The three slots the terminal writes to. Found when left empty.")]
+        [SerializeField] private PlayerSkillCaster caster;
+
         [Tooltip(
             "The key bindings, so the HUD prints the key the player actually has. " +
             "Found when left empty.")]
@@ -96,6 +102,15 @@ namespace NeonVoid.UI
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
         private Label _saveNotice;
+
+        private VisualElement _skillScreen;
+        private Label _skillSubtitle;
+        private VisualElement _skillSlotRow;
+        private ScrollView _skillPool;
+        private Label _skillMessage;
+        private Button _skillClose;
+        private string _skillSignature = string.Empty;
+        private int _chosenSlot;
 
         private VisualElement _rewardScreen;
         private Label _rewardSubtitle;
@@ -167,6 +182,8 @@ namespace NeonVoid.UI
         private const string DeathDestroyed = "death--destroyed";
         private const string SettingsMessageFailure = "settings__message--failure";
         private const string VolumeSilent = "volume-row--silent";
+        private const string SkillSlotChosen = "skill-slot--chosen";
+        private const string SkillRowEquipped = "skill-row--equipped";
         private const string KeyCapChanged = "key-row__cap--changed";
         private const string KeyCapListening = "key-row__cap--listening";
         private const string SkillReady = "skill--ready";
@@ -225,7 +242,9 @@ namespace NeonVoid.UI
             RunDeathDirector deathDirector = null,
             InputBindingDirector bindingDirector = null,
             GameAudio gameAudio = null,
-            RewardDirector rewardDirector = null)
+            RewardDirector rewardDirector = null,
+            SkillLibrary library = null,
+            PlayerSkillCaster skillCaster = null)
         {
             player = vaccine;
             motherboard = board;
@@ -236,6 +255,8 @@ namespace NeonVoid.UI
             bindings = bindingDirector;
             this.gameAudio = gameAudio;
             rewards = rewardDirector;
+            skillLibrary = library;
+            caster = skillCaster;
         }
 
         private void Awake()
@@ -268,10 +289,19 @@ namespace NeonVoid.UI
 
             if (rewards == null)
                 rewards = FindFirstObjectByType<RewardDirector>();
+
+            if (skillLibrary == null)
+                skillLibrary = FindFirstObjectByType<SkillLibrary>();
+
+            if (caster == null)
+                caster = player != null ? player.GetComponent<PlayerSkillCaster>() : null;
         }
 
         private void OnEnable()
         {
+            if (hub != null)
+                hub.SkillTerminalUsed += OpenSkillScreen;
+
             Bind();
 
             _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
@@ -286,6 +316,9 @@ namespace NeonVoid.UI
 
         private void OnDisable()
         {
+            if (hub != null)
+                hub.SkillTerminalUsed -= OpenSkillScreen;
+
             if (_runner != null)
                 _runner.Unregister(this);
         }
@@ -314,6 +347,7 @@ namespace NeonVoid.UI
             DrawSkillKeys();
             DrawSettings();
             DrawReward();
+            DrawSkillScreen();
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -776,6 +810,173 @@ namespace NeonVoid.UI
 
             if (_router != null)
                 _router.CombatInputSuspended = suspended;
+        }
+
+        /// <summary>Whether the 스킬 장착 화면 is up. [확정] D-009: 허브 터미널에서만.</summary>
+        public bool SkillScreenOpen { get; private set; }
+
+        /// <summary>Which slot the next equip writes to. For a test.</summary>
+        public int ChosenSkillSlot => _chosenSlot;
+
+        /// <summary>The three slots as document keys, in slot order.</summary>
+        public string[] EquippedSkillKeys()
+        {
+            var keys = SkillSlots.None();
+            if (caster == null)
+                return keys;
+
+            for (int i = 0; i < keys.Length; ++i)
+            {
+                SkillAsset asset = caster.SlotAsset(i);
+                keys[i] = asset != null ? asset.DocumentKey : SkillSlots.Empty;
+            }
+
+            return keys;
+        }
+
+        public void OpenSkillScreen()
+        {
+            Sound(AudioCue.UiClick);
+            SkillScreenOpen = true;
+            _chosenSlot = 0;
+            _skillSignature = string.Empty;
+            SuspendCombatInput(true);
+        }
+
+        public void CloseSkillScreen()
+        {
+            Sound(AudioCue.UiClick);
+            SkillScreenOpen = false;
+            _skillSignature = string.Empty;
+            SuspendCombatInput(false);
+        }
+
+        /// <summary>Picks which slot the next equip writes to.</summary>
+        public void ChooseSkillSlot(int slot)
+        {
+            if (slot < 0 || slot >= Core.DesignConstants.ActiveSkillSlots)
+                return;
+
+            Sound(AudioCue.UiClick);
+            _chosenSlot = slot;
+            _skillSignature = string.Empty;
+        }
+
+        /// <summary>
+        /// Puts a skill in the chosen slot. [확정] D-009: 허브 터미널에서만, and the rule for
+        /// what happens when it is already in another slot is <see cref="SkillSlots"/>'s.
+        /// </summary>
+        public SkillEquipResult EquipSkill(string documentKey)
+        {
+            if (caster == null || skillLibrary == null)
+                return default;
+
+            SkillEquipResult result = SkillSlots.Equip(EquippedSkillKeys(), _chosenSlot, documentKey);
+            if (!result.Changed)
+            {
+                Sound(AudioCue.UiRefuse);
+                return result;
+            }
+
+            // Written slot by slot, because a swap moves two of them.
+            for (int i = 0; i < result.Slots.Length; ++i)
+                caster.Equip(i, skillLibrary.Find(result.Slots[i]));
+
+            Sound(AudioCue.UiConfirm);
+            _skillSignature = string.Empty;
+            return result;
+        }
+
+        private void DrawSkillScreen()
+        {
+            Show(_skillScreen, SkillScreenOpen);
+            if (_skillScreen == null || !SkillScreenOpen)
+            {
+                _skillSignature = string.Empty;
+                return;
+            }
+
+            string[] equipped = EquippedSkillKeys();
+            string signature = $"{_chosenSlot}|{string.Join(",", equipped)}";
+            if (signature == _skillSignature)
+                return;
+
+            _skillSignature = signature;
+
+            SetText(
+                _skillSubtitle,
+                $"슬롯을 고른 뒤 아래에서 스킬을 선택하세요. 지금은 {_chosenSlot + 1}번 슬롯입니다.");
+
+            RebuildSkillSlots(equipped);
+            RebuildSkillPool(equipped);
+        }
+
+        private void RebuildSkillSlots(string[] equipped)
+        {
+            if (_skillSlotRow == null)
+                return;
+
+            _skillSlotRow.Clear();
+
+            for (int i = 0; i < equipped.Length; ++i)
+            {
+                int slot = i;
+                SkillAsset asset = skillLibrary != null ? skillLibrary.Find(equipped[i]) : null;
+
+                var panel = new VisualElement();
+                panel.AddToClassList("skill-slot");
+                Toggle(panel, SkillSlotChosen, i == _chosenSlot);
+                panel.RegisterCallback<ClickEvent>(_ => ChooseSkillSlot(slot));
+
+                string key = skillKeys != null && i < skillKeys.Length ? skillKeys[i] : string.Empty;
+                panel.Add(Line("skill-slot__key", KeyFor($"Skill{i + 1}", key)));
+                panel.Add(Line("skill-slot__name", asset != null ? asset.DisplayName : "비어 있음"));
+
+                _skillSlotRow.Add(panel);
+            }
+        }
+
+        private void RebuildSkillPool(string[] equipped)
+        {
+            if (_skillPool == null || skillLibrary == null)
+                return;
+
+            _skillPool.Clear();
+            IReadOnlyList<SkillAsset> pool = skillLibrary.All;
+
+            for (int i = 0; i < pool.Count; ++i)
+            {
+                SkillAsset asset = pool[i];
+                if (asset == null)
+                    continue;
+
+                string documentKey = asset.DocumentKey;
+                int inSlot = SkillSlots.IndexOf(equipped, documentKey);
+
+                var row = new VisualElement();
+                row.AddToClassList("skill-row");
+                Toggle(row, SkillRowEquipped, inSlot >= 0);
+
+                var left = new VisualElement();
+                left.AddToClassList("skill-row__left");
+                left.pickingMode = PickingMode.Ignore;
+                left.Add(Line("skill-row__name", asset.DisplayName));
+                left.Add(Line(
+                    "skill-row__detail",
+                    $"MP {asset.Definition.ManaCost:0} · 쿨타임 {asset.Definition.BaseCooldownTicks / 60f:0.#}초" +
+                    (inSlot >= 0 ? $" · 현재 {inSlot + 1}번 슬롯" : string.Empty)));
+                row.Add(left);
+
+                var equip = new Button(() => EquipSkill(documentKey))
+                {
+                    text = inSlot == _chosenSlot ? "장착됨" : $"{_chosenSlot + 1}번에",
+                };
+                equip.AddToClassList("skill-row__equip");
+                equip.SetEnabled(inSlot != _chosenSlot);
+                row.Add(equip);
+
+                _skillPool.Add(row);
+            }
         }
 
         /// <summary>Whether a 보상 화면 is on screen. For a test.</summary>
@@ -1438,6 +1639,16 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _skillScreen = root.Q<VisualElement>("skillScreen");
+            _skillSubtitle = root.Q<Label>("skillSubtitle");
+            _skillSlotRow = root.Q<VisualElement>("skillSlotRow");
+            _skillPool = root.Q<ScrollView>("skillPool");
+            _skillMessage = root.Q<Label>("skillMessage");
+            _skillClose = root.Q<Button>("skillClose");
+
+            if (_skillClose != null)
+                _skillClose.clicked += CloseSkillScreen;
 
             _rewardScreen = root.Q<VisualElement>("rewardScreen");
             _rewardSubtitle = root.Q<Label>("rewardSubtitle");

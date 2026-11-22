@@ -211,6 +211,12 @@ namespace NeonVoid.Missions
         /// Uses a terminal, without the reach check - for a panel the player already opened, or
         /// a test that does not want to walk.
         /// </summary>
+        /// <summary>
+        /// Raised when the player uses the 스킬 장착 터미널. [확정] D-009 (2026-11-22): 교체는
+        /// 허브에서만, so the hub is what opens the screen and the HUD only draws it.
+        /// </summary>
+        public event System.Action SkillTerminalUsed;
+
         public bool TryUseTerminal(HubTerminalKind kind)
         {
             if (!HubTerminals.IsConnected(kind))
@@ -241,6 +247,10 @@ namespace NeonVoid.Missions
 
                 case HubTerminalKind.Growth:
                     return ReadTheGrowthSheet();
+
+                case HubTerminalKind.Skills:
+                    SkillTerminalUsed?.Invoke();
+                    return true;
 
                 default:
                     // Unreachable while Mission is the only connected kind; here so that

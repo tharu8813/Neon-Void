@@ -312,16 +312,15 @@ namespace NeonVoid.Tests.PlayModeTests
         [UnityTest]
         public IEnumerator AnUnconnectedTerminalRefusesAndSaysWhy()
         {
-            // 스킬 장착, which is waiting on D-009 - 스킬 키·초기 스킬·전체 풀 미확정. Building
-            // the equip screen before the pool is approved would show an unapproved list as if
-            // it were the game's, so the post is placed and says what it is waiting for.
+            // 보관 DB, the last one still waiting: 플러그인 획득 이후. 스킬 장착 used to be
+            // here and was connected by [확정] D-009 (2026-11-22).
             yield return Hub();
             Assert.IsFalse(
-                HubTerminals.IsConnected(HubTerminalKind.Skills),
-                "스킬 장착 was connected; this test needs a terminal that is not");
+                HubTerminals.IsConnected(HubTerminalKind.Database),
+                "보관 DB was connected; this test needs a terminal that is not");
 
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("스킬 장착 터미널"));
-            Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Skills));
+            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("보관 DB"));
+            Assert.IsFalse(_hub.TryUseTerminal(HubTerminalKind.Database));
             Assert.AreEqual(MissionFlowPhase.Hub, Flow.Phase, "an unfinished terminal started something");
         }
 
@@ -744,13 +743,22 @@ namespace NeonVoid.Tests.PlayModeTests
                 Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Mission), mission.Subject);
                 Assert.IsTrue(mission.Available, "the 의뢰 터미널 works and the prompt said otherwise");
 
+                // 스킬 장착 works now ([확정] D-009), so the prompt must say so.
                 StandOn(_hub.Terminal(HubTerminalKind.Skills).position);
                 yield return _arena.Tick(1);
 
                 NeonVoid.UI.HudPrompt skills = hud.GatherPrompt();
                 Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Skills), skills.Subject);
-                Assert.IsFalse(skills.Available, "an unfinished terminal offered itself as usable");
-                Assert.AreEqual(HubTerminals.PendingLabel(HubTerminalKind.Skills), skills.Detail);
+                Assert.IsTrue(skills.Available, "스킬 장착 is connected and the prompt said otherwise");
+
+                // 보관 DB is the one still waiting, and it says what for.
+                StandOn(_hub.Terminal(HubTerminalKind.Database).position);
+                yield return _arena.Tick(1);
+
+                NeonVoid.UI.HudPrompt database = hud.GatherPrompt();
+                Assert.AreEqual(HubTerminals.NameOf(HubTerminalKind.Database), database.Subject);
+                Assert.IsFalse(database.Available, "an unfinished terminal offered itself as usable");
+                Assert.AreEqual(HubTerminals.PendingLabel(HubTerminalKind.Database), database.Detail);
             }
             finally
             {

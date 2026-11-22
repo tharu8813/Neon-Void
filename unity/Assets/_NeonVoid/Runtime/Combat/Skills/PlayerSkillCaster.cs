@@ -107,6 +107,15 @@ namespace NeonVoid.Combat.Skills
         /// is the loadout path, not a test hook, and PlayMode tests use it as such.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// What is in a slot, or null when it is empty. The 장착 터미널 needs to show what the
+        /// player already has before it can offer to change it.
+        /// </summary>
+        public SkillAsset SlotAsset(int slotIndex) =>
+            slotSkills != null && slotIndex >= 0 && slotIndex < slotSkills.Length
+                ? slotSkills[slotIndex]
+                : null;
+
         public void Equip(int slotIndex, SkillAsset asset)
         {
             if (slotSkills == null || slotIndex < 0 || slotIndex >= slotSkills.Length)

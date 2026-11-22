@@ -76,6 +76,20 @@
                 text="→ 뒤의 값은 미리보기입니다. 저장이 커밋해야 확정됩니다." />
     </ui:VisualElement>
 
+    <ui:VisualElement name="skillScreen" class="skills-screen hidden">
+      <ui:VisualElement name="skillCard" class="skills-screen__card">
+        <ui:Label name="skillTitle" class="skills-screen__title" text="스킬 장착" picking-mode="Ignore" />
+        <ui:Label name="skillSubtitle" class="skills-screen__subtitle" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="skillSlotRow" class="skills-screen__slots" />
+        <ui:Label name="skillPoolTitle" class="key-group" text="보유 스킬" picking-mode="Ignore" />
+        <ui:ScrollView name="skillPool" class="skills-screen__pool" />
+        <ui:Label name="skillMessage" class="skills-screen__message hidden" text="" picking-mode="Ignore" />
+        <ui:VisualElement name="skillFooter" class="skills-screen__footer">
+          <ui:Button name="skillClose" class="settings__button" text="닫기" />
+        </ui:VisualElement>
+      </ui:VisualElement>
+    </ui:VisualElement>
+
     <ui:VisualElement name="rewardScreen" class="reward hidden">
       <ui:VisualElement name="rewardCard" class="reward__card">
         <ui:Label name="rewardTitle" class="reward__title" text="보상 플러그인" picking-mode="Ignore" />
