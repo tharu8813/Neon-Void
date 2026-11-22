@@ -291,5 +291,182 @@ namespace NeonVoid.Tests.PlayModeTests
             reopened.Open();
             Assert.AreEqual(2, reopened.Document.Overrides().Count, "the file was overwritten on sight");
         }
+    
+        // --- the 설정 screen ----------------------------------------------------------------
+
+        private NeonVoid.UI.HudController Hud(InputBindingDirector director)
+        {
+            _hudObject = new GameObject("HUD Model");
+            _hudObject.SetActive(false);
+            _hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = _hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(null, bindingDirector: director);
+            return hud;
+        }
+
+        [UnityTest]
+        public IEnumerator TheSettingsScreenOpensAndClosesAndStartsClosed()
+        {
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+
+            Assert.IsFalse(hud.SettingsOpen);
+
+            hud.ToggleSettings();
+            Assert.IsTrue(hud.SettingsOpen);
+
+            hud.ToggleSettings();
+            Assert.IsFalse(hud.SettingsOpen);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator AKeyPressedToRebindItDoesNotAlsoPlay()
+        {
+            // docs/05 section 7: 전투에서 UI 보기 전후. A player holding the screen open and
+            // pressing Space to bind 대시 must not dash while they do it.
+            var routerObject = new GameObject("Router");
+            routerObject.SetActive(false);
+            var router = routerObject.AddComponent<PlayerInputRouter>();
+
+            // The router has no asset here and says so. What is under test is the suspension
+            // flag, which is set from outside it.
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("InputActionAsset"));
+            routerObject.SetActive(true);
+
+            try
+            {
+                InputBindingDirector director = Director(NewSettings());
+                NeonVoid.UI.HudController hud = Hud(director);
+
+                Assert.IsFalse(router.CombatInputSuspended);
+
+                hud.OpenSettings();
+                yield return null;
+                Assert.IsTrue(router.CombatInputSuspended, "combat kept reading the keyboard");
+
+                hud.CloseSettings();
+                yield return null;
+                Assert.IsFalse(router.CombatInputSuspended, "combat never came back");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(routerObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AKeyPressedWhileWaitingIsTakenAndReachesTheFile()
+        {
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+
+            string skill1 = IdOf(director, "Skill1");
+            hud.BeginCapture(skill1);
+
+            Assert.IsTrue(hud.Capture.IsListening);
+            StringAssert.Contains("스킬 1", hud.Capture.Message);
+
+            Assert.IsTrue(hud.OfferCapturedKey("<Keyboard>/z"), "the press was not consumed");
+            yield return null;
+
+            Assert.IsFalse(hud.Capture.IsListening);
+            Assert.IsFalse(hud.Capture.IsFailure, hud.Capture.Message);
+            Assert.AreEqual("Z", director.DisplayKeyFor("Skill1"));
+
+            var reopened = new GlobalSettingsStore(
+                new DiskSaveFileSystem(), GlobalSettingsLayout.Under(_root));
+            reopened.Open();
+            Assert.AreEqual(1, reopened.Document.Overrides().Count);
+        }
+
+        [UnityTest]
+        public IEnumerator EscapeCancelsTheCaptureInsteadOfBindingEscape()
+        {
+            // The press that gets a player out of a prompt they opened by mistake.
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+            hud.BeginCapture(IdOf(director, "Skill1"));
+
+            Assert.IsTrue(hud.OfferCapturedKey("<Keyboard>/escape"));
+            yield return null;
+
+            Assert.IsFalse(hud.Capture.IsListening);
+            Assert.AreEqual("Q", director.DisplayKeyFor("Skill1"), "Escape was bound to 스킬 1");
+            Assert.IsTrue(hud.SettingsOpen, "cancelling a capture closed the whole screen");
+        }
+
+        [UnityTest]
+        public IEnumerator AConflictIsRefusedOnScreenAndNamesTheHolder()
+        {
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+            hud.BeginCapture(IdOf(director, "Skill1"));
+
+            Assert.IsTrue(hud.OfferCapturedKey("<Keyboard>/f"));
+            yield return null;
+
+            Assert.IsTrue(hud.Capture.IsFailure);
+            StringAssert.Contains("상호작용", hud.Capture.Message);
+            Assert.AreEqual("Q", director.DisplayKeyFor("Skill1"));
+        }
+
+        [UnityTest]
+        public IEnumerator APressWhenNothingIsWaitingIsNotConsumed()
+        {
+            // Otherwise the screen would swallow every keystroke the moment it was open.
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+
+            Assert.IsFalse(hud.OfferCapturedKey("<Keyboard>/z"));
+            Assert.AreEqual("Q", director.DisplayKeyFor("Skill1"));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ThePointerAndTheCompositeHeaderRefuseToBeCaptured()
+        {
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+
+            foreach (KeyBindingSlot slot in director.Table.Slots)
+            {
+                if (slot.IsRebindable)
+                    continue;
+
+                hud.BeginCapture(slot.BindingId);
+                Assert.IsFalse(hud.Capture.IsListening, slot.Label);
+                Assert.IsTrue(hud.Capture.IsFailure, slot.Label);
+            }
+
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ResettingFromTheScreenPutsEveryKeyBack()
+        {
+            InputBindingDirector director = Director(NewSettings());
+            NeonVoid.UI.HudController hud = Hud(director);
+            hud.OpenSettings();
+            hud.BeginCapture(IdOf(director, "Skill1"));
+            hud.OfferCapturedKey("<Keyboard>/z");
+            yield return null;
+
+            hud.ResetAllKeys();
+            yield return null;
+
+            Assert.AreEqual("Q", director.DisplayKeyFor("Skill1"));
+            Assert.IsFalse(hud.Capture.IsFailure, hud.Capture.Message);
+
+            var reopened = new GlobalSettingsStore(
+                new DiskSaveFileSystem(), GlobalSettingsLayout.Under(_root));
+            reopened.Open();
+            Assert.IsEmpty(reopened.Document.Overrides());
+        }
     }
 }

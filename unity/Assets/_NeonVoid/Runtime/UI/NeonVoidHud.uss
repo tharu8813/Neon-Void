@@ -182,6 +182,161 @@
     -unity-text-align: middle-right;
 }
 
+/* --- 설정 · 키 ---------------------------------------------------------------- */
+
+.settings {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(4, 7, 14, 0.9);
+}
+
+.settings__card {
+    width: 620px;
+    max-width: 94%;
+    max-height: 86%;
+    padding-top: 18px;
+    padding-right: 20px;
+    padding-bottom: 16px;
+    padding-left: 20px;
+    background-color: rgba(10, 16, 28, 0.97);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.settings__title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    letter-spacing: 4px;
+    color: rgb(120, 230, 255);
+    margin-bottom: 10px;
+}
+
+.settings__message {
+    font-size: 12px;
+    color: rgb(214, 226, 242);
+    white-space: normal;
+    margin-bottom: 8px;
+    padding-top: 4px;
+    padding-right: 8px;
+    padding-bottom: 4px;
+    padding-left: 8px;
+    background-color: rgba(28, 44, 68, 0.9);
+    border-left-width: 2px;
+    border-left-color: rgba(120, 230, 255, 0.7);
+}
+
+.settings__message--failure {
+    color: rgb(255, 182, 172);
+    border-left-color: rgb(255, 92, 82);
+}
+
+.settings__conflicts {
+    font-size: 12px;
+    color: rgb(255, 182, 172);
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.settings__rows {
+    flex-grow: 1;
+    min-height: 240px;
+}
+
+.settings__footer {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.settings__button {
+    height: 26px;
+    min-width: 96px;
+    margin-left: 8px;
+    margin-right: 0;
+    font-size: 12px;
+    color: rgb(226, 236, 250);
+    background-color: rgba(28, 44, 68, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.settings__button:hover {
+    background-color: rgba(44, 70, 104, 0.95);
+}
+
+.key-group {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgba(120, 230, 255, 0.75);
+    margin-top: 10px;
+    margin-bottom: 2px;
+}
+
+.key-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(120, 230, 255, 0.10);
+}
+
+.key-row__name {
+    font-size: 12px;
+    color: rgb(214, 226, 242);
+    flex-grow: 1;
+}
+
+.key-row__why {
+    font-size: 11px;
+    color: rgba(214, 186, 132, 0.9);
+    white-space: normal;
+    flex-grow: 1;
+    -unity-text-align: middle-right;
+    margin-right: 8px;
+}
+
+.key-row__cap {
+    width: 128px;
+    height: 22px;
+    font-size: 12px;
+    color: rgb(226, 236, 250);
+    background-color: rgba(28, 44, 68, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.45);
+    border-right-color: rgba(120, 230, 255, 0.45);
+    border-top-color: rgba(120, 230, 255, 0.45);
+    border-bottom-color: rgba(120, 230, 255, 0.45);
+}
+
+.key-row__cap:hover {
+    background-color: rgba(44, 70, 104, 0.95);
+}
+
+/* 바뀐 키는 기본값과 달라 보여야 한다 - 재설정이 무엇을 되돌리는지 알 수 있게. */
+.key-row__cap--changed {
+    color: rgb(214, 186, 132);
+    border-left-color: rgba(214, 186, 132, 0.8);
+}
+
+.key-row__cap--listening {
+    color: rgb(10, 16, 28);
+    background-color: rgb(120, 230, 255);
+}
+
 /* --- 사망 / 최종 파기 --------------------------------------------------------- */
 
 .death {

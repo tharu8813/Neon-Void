@@ -72,6 +72,7 @@ namespace NeonVoid.UI
 
         private UIDocument _document;
         private SimulationRunner _runner;
+        private PlayerInputRouter _router;
 
         private VisualElement _bossPanel;
         private Label _bossName;
@@ -87,6 +88,14 @@ namespace NeonVoid.UI
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
         private Label _saveNotice;
+
+        private VisualElement _settingsScreen;
+        private Label _settingsMessage;
+        private Label _settingsConflicts;
+        private ScrollView _settingsRows;
+        private Button _settingsReset;
+        private Button _settingsClose;
+        private string _settingsSignature = string.Empty;
 
         private VisualElement _growthPanel;
         private Label _growthPoints;
@@ -134,6 +143,9 @@ namespace NeonVoid.UI
         private const string DeathPending = "death--pending";
         private const string DeathFailed = "death--failed";
         private const string DeathDestroyed = "death--destroyed";
+        private const string SettingsMessageFailure = "settings__message--failure";
+        private const string KeyCapChanged = "key-row__cap--changed";
+        private const string KeyCapListening = "key-row__cap--listening";
         private const string SkillReady = "skill--ready";
         private const string SkillEmpty = "skill--empty";
         private const string GaugeArmed = "area__gauge--armed";
@@ -169,6 +181,12 @@ namespace NeonVoid.UI
         /// can be checked without a panel to draw it on.
         /// </summary>
         public GrowthSheet Growth { get; private set; }
+
+        /// <summary>Whether the 설정 screen is up. docs/05 section 2's 설정/오류 복구.</summary>
+        public bool SettingsOpen { get; private set; }
+
+        /// <summary>What the 설정 screen is waiting for, and what it last said.</summary>
+        public KeyCapture Capture { get; private set; } = KeyCapture.Idle;
 
         private readonly List<HudBoardRow> _board = new List<HudBoardRow>();
 
@@ -261,6 +279,7 @@ namespace NeonVoid.UI
             DrawGrowth(Growth);
 
             DrawSkillKeys();
+            DrawSettings();
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -598,6 +617,208 @@ namespace NeonVoid.UI
         /// otherwise would silently never draw.
         /// </summary>
         /// <summary>
+        /// Opens or closes 설정. Combat input is suspended while it is open: docs/05 section 7
+        /// asks for 리바인딩 as something a person does, and a key pressed to rebind it must
+        /// not also dash.
+        /// </summary>
+        public void ToggleSettings()
+        {
+            if (SettingsOpen)
+                CloseSettings();
+            else
+                OpenSettings();
+        }
+
+        public void OpenSettings()
+        {
+            SettingsOpen = true;
+            Capture = KeyCapture.Idle;
+            _settingsSignature = string.Empty;
+            SuspendCombatInput(true);
+        }
+
+        public void CloseSettings()
+        {
+            SettingsOpen = false;
+            Capture = KeyCapture.Idle;
+            _settingsSignature = string.Empty;
+            SuspendCombatInput(false);
+        }
+
+        /// <summary>Starts waiting for a key for one binding.</summary>
+        public void BeginCapture(string bindingId)
+        {
+            if (bindings == null)
+                return;
+
+            KeyBindingSlot slot = bindings.Table.Find(bindingId);
+            if (!slot.IsRebindable)
+            {
+                Capture = KeyCapture.Refused(
+                    slot.Kind == KeyBindingKind.Pointer ? "조준은 키로 바꿀 수 없습니다" : "방향은 하나씩 바꿉니다");
+                return;
+            }
+
+            Capture = KeyCapture.Listening(bindingId, slot.Label);
+            _settingsSignature = string.Empty;
+        }
+
+        /// <summary>
+        /// Takes one pressed control while the screen is waiting. Returns true when the press
+        /// was consumed by the capture and must not reach anything else.
+        /// <para>
+        /// Public and taking a path rather than a device, so the rule - Escape cancels, a
+        /// conflict refuses, anything else is applied - can be driven without a keyboard.
+        /// </para>
+        /// </summary>
+        public bool OfferCapturedKey(string layoutPath)
+        {
+            if (!Capture.IsListening)
+                return false;
+
+            if (KeyCapturePath.IsCancel(layoutPath))
+            {
+                Capture = KeyCapture.Cancelled();
+                _settingsSignature = string.Empty;
+                return true;
+            }
+
+            string bindingId = Capture.BindingId;
+            string label = Capture.Label;
+            RebindResult result = bindings.Rebind(bindingId, layoutPath);
+
+            Capture = result.Ok
+                ? KeyCapture.Took(label, KeyBindings.DisplayKey(layoutPath))
+                : KeyCapture.Refused(result.Detail);
+
+            _settingsSignature = string.Empty;
+            return true;
+        }
+
+        /// <summary>[확정] docs/05 section 2's 재설정.</summary>
+        public void ResetAllKeys()
+        {
+            if (bindings == null)
+                return;
+
+            Capture = bindings.ResetAll()
+                ? KeyCapture.Refused(string.Empty)
+                : KeyCapture.Refused(bindings.LastRefusal);
+
+            if (!Capture.HasMessage)
+                Capture = KeyCapture.Took("전체", "기본값");
+
+            _settingsSignature = string.Empty;
+        }
+
+        private void SuspendCombatInput(bool suspended)
+        {
+            if (_router == null)
+                _router = FindFirstObjectByType<PlayerInputRouter>();
+
+            if (_router != null)
+                _router.CombatInputSuspended = suspended;
+        }
+
+        private void DrawSettings()
+        {
+            Show(_settingsScreen, SettingsOpen);
+            if (_settingsScreen == null || !SettingsOpen)
+                return;
+
+            Show(_settingsMessage, Capture.HasMessage);
+            SetText(_settingsMessage, Capture.Message);
+            Toggle(_settingsMessage, SettingsMessageFailure, Capture.IsFailure);
+
+            IReadOnlyList<InputBindingConflict> clashes =
+                bindings != null ? bindings.Table.Conflicts() : System.Array.Empty<InputBindingConflict>();
+
+            Show(_settingsConflicts, clashes.Count > 0);
+            if (clashes.Count > 0)
+                SetText(_settingsConflicts, $"키 중복 {clashes.Count}건: {clashes[0]}");
+
+            string signature = Signature(clashes.Count);
+            if (signature == _settingsSignature)
+                return;
+
+            _settingsSignature = signature;
+            RebuildSettingsRows();
+        }
+
+        private string Signature(int conflicts)
+        {
+            if (bindings == null)
+                return "none";
+
+            var text = new System.Text.StringBuilder();
+            text.Append(Capture.BindingId).Append('|').Append(conflicts).Append('|');
+
+            IReadOnlyList<KeyBindingSlot> slots = bindings.Table.Slots;
+            for (int i = 0; i < slots.Count; ++i)
+                text.Append(slots[i].CurrentPath).Append(',');
+
+            return text.ToString();
+        }
+
+        private void RebuildSettingsRows()
+        {
+            if (_settingsRows == null)
+                return;
+
+            _settingsRows.Clear();
+            if (bindings == null)
+                return;
+
+            IReadOnlyList<KeyBindingSlot> slots = bindings.Table.Slots;
+            for (int i = 0; i < slots.Count; ++i)
+            {
+                KeyBindingSlot slot = slots[i];
+
+                // A composite's own row is a heading for the four under it, not a key.
+                if (slot.Kind == KeyBindingKind.CompositeHeader)
+                {
+                    var group = new Label(slot.Label);
+                    group.AddToClassList("key-group");
+                    group.pickingMode = PickingMode.Ignore;
+                    _settingsRows.Add(group);
+                    continue;
+                }
+
+                var line = new VisualElement();
+                line.AddToClassList("key-row");
+
+                var name = new Label(slot.Label);
+                name.AddToClassList("key-row__name");
+                name.pickingMode = PickingMode.Ignore;
+                line.Add(name);
+
+                if (slot.Kind == KeyBindingKind.Pointer)
+                {
+                    // Listed and refused with a reason. [확정] docs/02 section 7: 마우스 조준.
+                    var why = new Label($"{slot.DisplayKey} · 변경 불가");
+                    why.AddToClassList("key-row__why");
+                    why.pickingMode = PickingMode.Ignore;
+                    line.Add(why);
+                    _settingsRows.Add(line);
+                    continue;
+                }
+
+                bool listening = Capture.IsListening && Capture.BindingId == slot.BindingId;
+                string id = slot.BindingId;
+                var cap = new Button(() => BeginCapture(id))
+                {
+                    text = listening ? "키를 누르세요" : slot.DisplayKey,
+                };
+                cap.AddToClassList("key-row__cap");
+                Toggle(cap, KeyCapChanged, slot.IsOverridden);
+                Toggle(cap, KeyCapListening, listening);
+                line.Add(cap);
+
+                _settingsRows.Add(line);
+            }
+        }
+
+        /// <summary>
         /// The key cap to print for an action. The bindings are the source; the serialized
         /// string is only what a scene with no <see cref="InputBindingDirector"/> falls back
         /// to, because a HUD that printed Q while the player had moved 스킬 1 to Z would be
@@ -921,6 +1142,18 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _settingsScreen = root.Q<VisualElement>("settingsScreen");
+            _settingsMessage = root.Q<Label>("settingsMessage");
+            _settingsConflicts = root.Q<Label>("settingsConflicts");
+            _settingsRows = root.Q<ScrollView>("settingsRows");
+            _settingsReset = root.Q<Button>("settingsReset");
+            _settingsClose = root.Q<Button>("settingsClose");
+
+            if (_settingsReset != null)
+                _settingsReset.clicked += ResetAllKeys;
+            if (_settingsClose != null)
+                _settingsClose.clicked += CloseSettings;
 
             _growthPanel = root.Q<VisualElement>("growthPanel");
             _growthPoints = root.Q<Label>("growthPoints");

@@ -47,6 +47,9 @@ namespace NeonVoid.Player
         /// <summary>The settings file, or null when none could be opened.</summary>
         public GlobalSettingsStore Settings => _settings;
 
+        /// <summary>The asset these bindings are on, so the 설정 screen reads the same one.</summary>
+        public InputActionAsset Actions => actions;
+
         /// <summary>True when a rebind would actually be written down.</summary>
         public bool CanPersist => _settings != null;
 

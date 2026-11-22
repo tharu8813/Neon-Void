@@ -276,6 +276,11 @@ namespace NeonVoid.EditorTools
             // written down cannot be the thing that silently went missing.
             controller.Configure(player, board, null, hub, save, deaths, bindings);
 
+            // 설정 is opened with a key and fed one, which is the only part that needs a real
+            // keyboard. docs/05 section 2: 설정/오류 복구.
+            var settingsInput = host.AddComponent<NeonVoid.UI.SettingsScreenInput>();
+            settingsInput.Configure(controller, bindings != null ? bindings.Actions : null);
+
             host.SetActive(true);
         }
     }
