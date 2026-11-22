@@ -80,6 +80,14 @@ namespace NeonVoid.UI
 
         private Label _saveNotice;
 
+        private VisualElement _growthPanel;
+        private Label _growthPoints;
+        private Label _growthUnavailable;
+        private Button _growthRedistribute;
+        private ScrollView _growthRows;
+        private Label _growthRefusal;
+        private string _growthSignature = string.Empty;
+
         private VisualElement _deathScreen;
         private Label _deathTitle;
         private Label _deathStatus;
@@ -147,6 +155,12 @@ namespace NeonVoid.UI
         /// checked without a panel to draw it on.
         /// </summary>
         public DeathScreenSnapshot Death { get; private set; }
+
+        /// <summary>
+        /// The 백신 성장 터미널's screen as the HUD last read it. Public so what it would say
+        /// can be checked without a panel to draw it on.
+        /// </summary>
+        public GrowthSheet Growth { get; private set; }
 
         private readonly List<HudBoardRow> _board = new List<HudBoardRow>();
 
@@ -229,6 +243,9 @@ namespace NeonVoid.UI
 
             Death = GatherDeath();
             DrawDeath(Death);
+
+            Growth = GatherGrowth();
+            DrawGrowth(Growth);
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -584,6 +601,167 @@ namespace NeonVoid.UI
         }
 
         /// <summary>
+        /// The 백신 성장 터미널's screen. Open only while the player stands at the terminal in
+        /// the hub: docs/00 section 6 makes the hub 실제 3D 공간, so this is what a terminal
+        /// shows rather than a menu that can be opened anywhere.
+        /// </summary>
+        public GrowthSheet GatherGrowth()
+        {
+            if (hub == null || hub.Growth == null)
+                return GrowthSheet.Closed;
+
+            bool inTheHub = hub.Flow == null || hub.Flow.Phase == MissionFlowPhase.Hub;
+            return GrowthSheet.From(hub.Growth, inTheHub && hub.IsInReach(HubTerminalKind.Growth));
+        }
+
+        private void DrawGrowth(in GrowthSheet sheet)
+        {
+            Show(_growthPanel, sheet.Shown);
+            if (_growthPanel == null || !sheet.Shown)
+            {
+                _growthSignature = string.Empty;
+                return;
+            }
+
+            SetText(_growthPoints, $"보유 포인트 {sheet.UnusedPoints}p · 투자 {sheet.PointsSpent}p");
+
+            Show(_growthUnavailable, sheet.Unavailable.Length > 0);
+            SetText(_growthUnavailable, sheet.Unavailable);
+
+            Show(_growthRefusal, sheet.Refusal.Length > 0);
+            SetText(_growthRefusal, sheet.Refusal);
+
+            if (_growthRedistribute != null)
+            {
+                _growthRedistribute.text = $"무료 재분배 ({sheet.PointsSpent}p 회수)";
+                _growthRedistribute.SetEnabled(sheet.CanInvest && sheet.PointsSpent > 0);
+            }
+
+            // The table is twenty-two rows and changes only when a purchase lands. Rebuilding
+            // it sixty times a second would be work for nothing.
+            string signature =
+                $"{sheet.UnusedPoints}|{sheet.PointsSpent}|{sheet.CanInvest}|{sheet.Refusal}";
+            if (signature == _growthSignature)
+                return;
+
+            _growthSignature = signature;
+            RebuildGrowthRows(sheet);
+        }
+
+        private void RebuildGrowthRows(in GrowthSheet sheet)
+        {
+            if (_growthRows == null)
+                return;
+
+            _growthRows.Clear();
+
+            for (int i = 0; i < sheet.Rows.Count; ++i)
+            {
+                GrowthSheetRow row = sheet.Rows[i];
+
+                var line = new VisualElement();
+                line.AddToClassList("growth-row");
+
+                var left = new VisualElement();
+                left.AddToClassList("growth-row__left");
+                left.pickingMode = PickingMode.Ignore;
+
+                var name = new Label(row.Steps > 0 ? $"{row.Name} x{row.Steps}" : row.Name);
+                name.AddToClassList("growth-row__name");
+                left.Add(name);
+
+                if (row.Connected)
+                {
+                    left.Add(GrowthValues(row));
+                }
+                else
+                {
+                    // The reason goes under the name, across the row's full width. Squeezed
+                    // into the right-hand column it wrapped to three lines of unreadable text,
+                    // which is a worse answer than no answer.
+                    var why = new Label(row.Unavailable);
+                    why.AddToClassList("growth-row__reason");
+                    why.pickingMode = PickingMode.Ignore;
+                    left.Add(why);
+                }
+
+                line.Add(left);
+
+                if (row.Affordable)
+                {
+                    InvestableStat stat = row.Stat;
+                    var buy = new Button(() => Buy(stat)) { text = $"+1 · {row.Cost}p" };
+                    buy.AddToClassList("growth-row__buy");
+                    line.Add(buy);
+                }
+                else
+                {
+                    // Said, not hidden. A row the player cannot buy and is given no reason for
+                    // reads as a broken button. The unconnected rows said their reason under
+                    // the name already, so here they only need the word.
+                    var state = new Label(row.Connected ? $"{row.Cost}p 부족" : "미연결");
+                    state.AddToClassList("growth-row__why");
+                    state.pickingMode = PickingMode.Ignore;
+                    line.Add(state);
+                }
+
+                _growthRows.Add(line);
+            }
+        }
+
+        /// <summary>
+        /// 구매 전후 값, as two elements. [확정] docs/05 section 2 forbids 저장 전 값 확정 표시,
+        /// so the preview is drawn beside the current value and never in place of it.
+        /// </summary>
+        private static VisualElement GrowthValues(in GrowthSheetRow row)
+        {
+            var values = new VisualElement();
+            values.AddToClassList("growth-row__values");
+            values.pickingMode = PickingMode.Ignore;
+
+            var current = new Label(row.Current);
+            current.AddToClassList("growth-row__current");
+            values.Add(current);
+
+            if (row.HasPreview)
+            {
+                var arrow = new Label("→");
+                arrow.AddToClassList("growth-row__arrow");
+                values.Add(arrow);
+
+                var preview = new Label(row.Preview);
+                preview.AddToClassList("growth-row__preview");
+                values.Add(preview);
+            }
+
+            if (row.CurrentReduction.Length > 0)
+            {
+                // 실제 방어감소율: the number beside 방어력 that says what the point bought.
+                string text = row.PreviewReduction.Length > 0
+                    ? $"감소 {row.CurrentReduction} → {row.PreviewReduction}"
+                    : $"감소 {row.CurrentReduction}";
+
+                var reduction = new Label(text);
+                reduction.AddToClassList("growth-row__reduction");
+                values.Add(reduction);
+            }
+
+            return values;
+        }
+
+        private void Buy(InvestableStat stat)
+        {
+            if (hub != null && hub.Growth != null)
+                hub.Growth.TryInvest(stat);
+        }
+
+        private void Redistribute()
+        {
+            if (hub != null && hub.Growth != null)
+                hub.Growth.TryRedistribute();
+        }
+
+        /// <summary>
         /// The 사망 화면's reading, taken from the ledger and from what permanent state
         /// answered - never from the clone counter alone, because 복제 0 and a destroyed
         /// vaccine look identical in it.
@@ -691,6 +869,16 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _growthPanel = root.Q<VisualElement>("growthPanel");
+            _growthPoints = root.Q<Label>("growthPoints");
+            _growthUnavailable = root.Q<Label>("growthUnavailable");
+            _growthRedistribute = root.Q<Button>("growthRedistribute");
+            _growthRows = root.Q<ScrollView>("growthRows");
+            _growthRefusal = root.Q<Label>("growthRefusal");
+
+            if (_growthRedistribute != null)
+                _growthRedistribute.clicked += Redistribute;
 
             _deathScreen = root.Q<VisualElement>("deathScreen");
             _deathTitle = root.Q<Label>("deathTitle");

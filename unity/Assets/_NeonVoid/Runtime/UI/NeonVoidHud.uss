@@ -22,6 +22,166 @@
     display: none;
 }
 
+/* --- 백신 성장 터미널 ---------------------------------------------------------- */
+
+.growth {
+    position: absolute;
+    top: 56px;
+    right: 24px;
+    bottom: 132px;
+    width: 440px;
+    padding-top: 14px;
+    padding-right: 16px;
+    padding-bottom: 14px;
+    padding-left: 16px;
+    background-color: rgba(10, 16, 28, 0.94);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(120, 230, 255, 0.45);
+    border-right-color: rgba(120, 230, 255, 0.45);
+    border-top-color: rgba(120, 230, 255, 0.45);
+    border-bottom-color: rgba(120, 230, 255, 0.45);
+}
+
+.growth__title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    letter-spacing: 3px;
+    color: rgb(120, 230, 255);
+}
+
+.growth__points {
+    font-size: 13px;
+    color: rgb(226, 236, 250);
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+.growth__unavailable {
+    font-size: 12px;
+    color: rgb(255, 196, 92);
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.growth__redistribute {
+    height: 26px;
+    margin-bottom: 8px;
+    margin-left: 0;
+    margin-right: 0;
+    font-size: 12px;
+    color: rgb(226, 236, 250);
+    background-color: rgba(28, 44, 68, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.growth__redistribute:hover {
+    background-color: rgba(44, 70, 104, 0.95);
+}
+
+.growth__rows {
+    flex-grow: 1;
+}
+
+.growth__refusal {
+    font-size: 12px;
+    color: rgb(255, 150, 140);
+    white-space: normal;
+    margin-top: 6px;
+}
+
+.growth__note {
+    font-size: 11px;
+    color: rgba(150, 168, 190, 0.85);
+    white-space: normal;
+    margin-top: 6px;
+}
+
+.growth-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(120, 230, 255, 0.10);
+}
+
+.growth-row__left {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.growth-row__name {
+    font-size: 12px;
+    color: rgb(214, 226, 242);
+}
+
+.growth-row__values {
+    flex-direction: row;
+    align-items: center;
+}
+
+.growth-row__current {
+    font-size: 12px;
+    color: rgb(120, 230, 255);
+}
+
+/* 미리보기는 현재 값과 같은 색으로 그리지 않는다 - docs/05 section 2: 저장 전 값 확정 표시 금지. */
+.growth-row__arrow {
+    font-size: 11px;
+    color: rgba(150, 168, 190, 0.8);
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+.growth-row__preview {
+    font-size: 12px;
+    color: rgb(214, 186, 132);
+    -unity-font-style: italic;
+}
+
+.growth-row__reduction {
+    font-size: 11px;
+    color: rgba(150, 168, 190, 0.9);
+    margin-left: 8px;
+}
+
+.growth-row__buy {
+    width: 86px;
+    height: 22px;
+    font-size: 11px;
+    color: rgb(226, 236, 250);
+    background-color: rgba(28, 44, 68, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.growth-row__buy:hover {
+    background-color: rgba(44, 70, 104, 0.95);
+}
+
+.growth-row__reason {
+    font-size: 10px;
+    color: rgba(214, 186, 132, 0.85);
+    white-space: normal;
+}
+
+.growth-row__why {
+    width: 72px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(214, 186, 132, 0.9);
+    -unity-text-align: middle-right;
+}
+
 /* --- 사망 / 최종 파기 --------------------------------------------------------- */
 
 .death {

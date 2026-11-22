@@ -270,6 +270,21 @@ namespace NeonVoid.Tests.PlayModeTests
                 Assert.IsFalse(
                     hud.GatherSaveNotice().Shown,
                     "the HUD warned about a save that is working");
+
+                // Nor does one whose writes are aimed somewhere other than the real directory.
+                // The flag names that directory; a store injected over it is still a store, and
+                // a session being written down must not be told it is not.
+                UnityEngine.Object.Destroy(_saveObject);
+                yield return null;
+
+                VaccineSaveDirector elsewhere = AddDirector(false, NewStore());
+                Assert.IsTrue(elsewhere.CanCommit, elsewhere.Result.Detail);
+                Assert.AreEqual(SaveCommitReadiness.Committing, elsewhere.Readiness);
+
+                hud.Configure(_arena.Player, saveDirector: elsewhere);
+                Assert.IsFalse(
+                    hud.GatherSaveNotice().Shown,
+                    "a committing save was reported as switched off");
             }
             finally
             {

@@ -25,6 +25,7 @@ namespace NeonVoid.Tests
         {
             Assert.IsFalse(DeathScreenSnapshot.None.Shown);
             Assert.AreEqual(DeathScreenPhase.None, DeathScreenSnapshot.None.Phase);
+            Assert.IsEmpty(DeathScreenSnapshot.None.Unsettled, "a default struct handed back null");
         }
 
         [Test]

@@ -65,6 +65,17 @@
 
     </ui:VisualElement>
 
+    <ui:VisualElement name="growthPanel" class="growth hidden">
+      <ui:Label name="growthTitle" class="growth__title" text="백신 성장 터미널" picking-mode="Ignore" />
+      <ui:Label name="growthPoints" class="growth__points" text="" picking-mode="Ignore" />
+      <ui:Label name="growthUnavailable" class="growth__unavailable hidden" text="" picking-mode="Ignore" />
+      <ui:Button name="growthRedistribute" class="growth__redistribute" text="무료 재분배" />
+      <ui:ScrollView name="growthRows" class="growth__rows" />
+      <ui:Label name="growthRefusal" class="growth__refusal hidden" text="" picking-mode="Ignore" />
+      <ui:Label name="growthNote" class="growth__note" picking-mode="Ignore"
+                text="→ 뒤의 값은 미리보기입니다. 저장이 커밋해야 확정됩니다." />
+    </ui:VisualElement>
+
     <ui:VisualElement name="deathScreen" class="death hidden" picking-mode="Ignore">
       <ui:VisualElement name="deathCard" class="death__card" picking-mode="Ignore">
         <ui:Label name="deathTitle" class="death__title" text="사망" />

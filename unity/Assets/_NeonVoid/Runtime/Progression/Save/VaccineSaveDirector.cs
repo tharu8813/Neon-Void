@@ -104,7 +104,10 @@ namespace NeonVoid.Progression.Save
         {
             get
             {
-                if (!writeToRealSaveDirectory)
+                // Off AND no store. A store injected through UseStore is a real store in a
+                // different directory, and a session that is being written down must not be
+                // told it is not - the flag names the real save directory, not writing itself.
+                if (!writeToRealSaveDirectory && Store == null)
                     return SaveCommitReadiness.SwitchedOff;
 
                 if (Store != null && Store.State == SaveStoreState.Halted)
@@ -369,7 +372,7 @@ namespace NeonVoid.Progression.Save
         /// <summary>One line for the debug overlay, in the terms the save actually uses.</summary>
         public string StatusLine()
         {
-            if (!writeToRealSaveDirectory)
+            if (!writeToRealSaveDirectory && Store == null)
                 return "save: off (no clone will be spent)";
             if (Store == null)
                 return "save: unavailable";

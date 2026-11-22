@@ -34,6 +34,11 @@ namespace NeonVoid.Presentation
         [Tooltip("Shown even when the player is nowhere near the terminal. For debugging.")]
         [SerializeField] private bool alwaysVisible;
 
+        [Tooltip(
+            "Disables this panel in a scene that has the UI Toolkit 성장 터미널 화면, so the " +
+            "two do not stack on top of each other.")]
+        [SerializeField] private bool standDownForTheRealScreen = true;
+
         private GUIStyle _label;
         private GUIStyle _header;
         private Vector2 _scroll;
@@ -42,6 +47,11 @@ namespace NeonVoid.Presentation
         {
             if (hub == null)
                 hub = FindFirstObjectByType<HubRuntime>();
+
+            // The loop scene has the real terminal screen now, with 구매 전후 값 and
+            // 실제 방어감소율 that this one never had.
+            if (standDownForTheRealScreen && FindFirstObjectByType<NeonVoid.UI.HudController>() != null)
+                enabled = false;
         }
 
         /// <summary>Whether the panel would be drawn right now.</summary>

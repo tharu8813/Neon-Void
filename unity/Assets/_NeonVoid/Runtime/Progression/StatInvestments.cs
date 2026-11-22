@@ -115,7 +115,7 @@ namespace NeonVoid.Progression
     /// live here as named constants rather than anywhere they would be mistaken for approved.
     /// </para>
     /// <para>
-    /// <b>Six of the twenty-two rows are refused, not quietly stored.</b> 이동속도, 발사속도,
+    /// <b>Seven of the twenty-two rows are refused, not quietly stored.</b> 이동속도, 발사속도,
     /// 탄환속도, 행운, 최대 마나, 초당 마나 재생 and 탄환 크기 are real rows in the table, but
     /// they are not fields of <see cref="CombatStats"/> - they live in the motion config, the
     /// auto-attacker and the mana pool, each of which reads its own serialized value rather
@@ -320,6 +320,87 @@ namespace NeonVoid.Progression
 
             return result;
         }
+
+        /// <summary>
+        /// One stat's value out of a computed block, so a terminal can show 구매 전후 값
+        /// (docs/05 section 2) without re-deriving the increment itself.
+        /// <para>
+        /// Reading the value is deliberately separate from applying it. A preview computed as
+        /// "current + the table's increment" would be wrong for every row whose increment is
+        /// not in the stat's own unit - 치명타 피해 is stored as a multiplier and 관통률 as a
+        /// fraction - so a caller gets its preview by running <see cref="Apply"/> over an
+        /// allocation with one more step and reading the result here.
+        /// </para>
+        /// <returns>NaN for a row nothing applies; there is no value to show.</returns>
+        /// </summary>
+        public static float ValueOf(in CombatStats stats, InvestableStat stat)
+        {
+            switch (stat)
+            {
+                case InvestableStat.MaxHealth: return stats.MaxHealth;
+                case InvestableStat.AttackDamage: return stats.AttackDamage;
+                case InvestableStat.AbilityPower: return stats.AbilityPower;
+                case InvestableStat.PhysicalArmor: return stats.PhysicalArmor;
+                case InvestableStat.MagicResistance: return stats.MagicResistance;
+                case InvestableStat.CritChance: return stats.CritChancePercent;
+                case InvestableStat.CritDamage: return stats.CritDamageMultiplier;
+                case InvestableStat.SkillHaste: return stats.SkillHaste;
+                case InvestableStat.PhysicalPenFlat: return stats.PhysicalPenFlat;
+                case InvestableStat.MagicPenFlat: return stats.MagicPenFlat;
+                case InvestableStat.PhysicalPenPercent: return stats.PhysicalPenPercent;
+                case InvestableStat.MagicPenPercent: return stats.MagicPenPercent;
+                case InvestableStat.OnHitLifesteal: return stats.OnHitLifestealPercent;
+                case InvestableStat.Omnivamp: return stats.OmnivampPercent;
+                case InvestableStat.Tenacity: return stats.TenacityPercent;
+                default: return float.NaN;
+            }
+        }
+
+        /// <summary>
+        /// A stat's value as the terminal prints it, in that stat's own unit. A percentage
+        /// stored as a 0~1 fraction and one stored as 0~100 points would otherwise read as the
+        /// same number meaning different things.
+        /// </summary>
+        public static string Format(InvestableStat stat, float value)
+        {
+            if (float.IsNaN(value))
+                return "-";
+
+            switch (stat)
+            {
+                case InvestableStat.CritDamage:
+                    return $"x{value:0.##}";
+
+                case InvestableStat.PhysicalPenPercent:
+                case InvestableStat.MagicPenPercent:
+                    // Stored 0..1, read by a player as a percentage.
+                    return $"{value * 100f:0.#}%";
+
+                case InvestableStat.CritChance:
+                case InvestableStat.OnHitLifesteal:
+                case InvestableStat.Omnivamp:
+                case InvestableStat.Tenacity:
+                    return $"{value:0.#}%";
+
+                default:
+                    return value.ToString("0.##");
+            }
+        }
+
+        /// <summary>
+        /// True for the two rows whose number is not what it does: docs/05 section 2 asks the
+        /// 영구 스탯 screen for 실제 방어감소율 beside 방어력, because the curve is not linear
+        /// and the raw number alone does not say what a point bought.
+        /// </summary>
+        public static bool HasDamageReduction(InvestableStat stat) =>
+            stat == InvestableStat.PhysicalArmor || stat == InvestableStat.MagicResistance;
+
+        /// <summary>
+        /// 실제 방어감소율 for a resistance, through the same curve combat uses. Negative
+        /// resistance amplifies, so this can be negative.
+        /// </summary>
+        public static float DamageReductionPercent(float resistance) =>
+            (1f - DamageMath.MitigationMultiplier(resistance)) * 100f;
 
         private static StatInvestmentStep Row(
             InvestableStat stat, string key, string name, float increment, int cost, bool connected) =>

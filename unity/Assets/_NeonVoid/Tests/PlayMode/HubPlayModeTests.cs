@@ -42,6 +42,7 @@ namespace NeonVoid.Tests.PlayModeTests
         private GameObject _boardObject;
         private GameObject _growthObject;
         private GameObject _hubObject;
+        private GameObject _hudObject;
         private MotherboardDirector _motherboard;
         private HubRuntime _hub;
         private VaccineGrowthDirector _growth;
@@ -59,6 +60,10 @@ namespace NeonVoid.Tests.PlayModeTests
         [TearDown]
         public void TearDown()
         {
+            if (_hudObject != null)
+                UnityEngine.Object.Destroy(_hudObject);
+            _hudObject = null;
+
             if (_hubObject != null)
                 UnityEngine.Object.Destroy(_hubObject);
             if (_boardObject != null)
@@ -209,12 +214,20 @@ namespace NeonVoid.Tests.PlayModeTests
 
             _arena = PrototypeArena.BuildWaitingInTheHub(SessionSeed);
 
+            // Before the hub, which resolves it in its own Awake.
+            _growthObject = new GameObject("Vaccine Growth Director");
+            _growthObject.SetActive(false);
+            _growth = _growthObject.AddComponent<VaccineGrowthDirector>();
+            _growth.Configure(_arena.Player, director);
+            _growthObject.SetActive(true);
+
             _hubObject = new GameObject("Defender Hub");
             _hubObject.SetActive(false);
             _hubObject.transform.position = HubAt;
             _hub = _hubObject.AddComponent<HubRuntime>();
             _hub.Configure(_arena.Mission, null, _arena.PlayerObject.transform);
             _hubObject.SetActive(true);
+            _hub.ConfigureGeometry(RingRadius, HubReach);
 
             StandOn(HubAt);
             yield return _arena.Tick(1);
@@ -738,6 +751,124 @@ namespace NeonVoid.Tests.PlayModeTests
             {
                 UnityEngine.Object.Destroy(hudObject);
             }
+        }
+    
+        // --- 백신 성장 터미널 화면 ----------------------------------------------------------
+
+        /// <summary>A HUD with no panel, so what it would draw can be read.</summary>
+        private NeonVoid.UI.HudController AddHud()
+        {
+            _hudObject = new GameObject("HUD Model");
+            _hudObject.SetActive(false);
+            _hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = _hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(_arena.Player, _motherboard, null, _hub);
+            return hud;
+        }
+
+        [UnityTest]
+        public IEnumerator TheGrowthTerminalScreenOpensAtTheTerminalAndNowhereElse()
+        {
+            // docs/00 section 6 makes the hub 실제 3D 공간, so this is what a terminal shows the
+            // player standing at it, not a menu that can be opened anywhere.
+            yield return Hub();
+            NeonVoid.UI.HudController hud = AddHud();
+
+            Assert.IsFalse(
+                hud.GatherGrowth().Shown,
+                "the terminal's screen was up in the middle of the hub");
+
+            StandOn(_hub.Terminal(HubTerminalKind.Growth).position);
+            yield return _arena.Tick(1);
+
+            NeonVoid.UI.GrowthSheet sheet = hud.GatherGrowth();
+            Assert.IsTrue(sheet.Shown, "standing at the terminal showed nothing");
+            Assert.AreEqual(StatInvestments.All.Length, sheet.Rows.Count);
+            Assert.IsTrue(sheet.CanInvest, "the save is connected in this fixture");
+
+            // With no points earned yet nothing is offered, which is its own correct answer.
+            Assert.AreEqual(0, sheet.UnusedPoints);
+            for (int i = 0; i < sheet.Rows.Count; ++i)
+                Assert.IsFalse(sheet.Rows[i].Affordable, $"{sheet.Rows[i].Name} offered a free point");
+
+            // And it closes again when the player walks away.
+            StandOn(HubAt);
+            yield return _arena.Tick(1);
+            Assert.IsFalse(hud.GatherGrowth().Shown);
+        }
+
+        [UnityTest]
+        public IEnumerator ThePreviewOnTheTerminalIsWhatThePurchaseActuallyProduces()
+        {
+            // [확정] docs/05 section 2 asks for 구매 전후 값 and forbids 저장 전 값 확정 표시.
+            // The test the screen has to pass is that the 구매 후 값 it showed is the number the
+            // player ends up with - read back from the file, not from the panel.
+            yield return Hub();
+            _store.Snapshot.vaccine.unusedStatPoints = 6;
+            NeonVoid.UI.HudController hud = AddHud();
+
+            StandOn(_hub.Terminal(HubTerminalKind.Growth).position);
+            yield return _arena.Tick(1);
+
+            NeonVoid.UI.GrowthSheet before = hud.GatherGrowth();
+            NeonVoid.UI.GrowthSheetRow row = default;
+            for (int i = 0; i < before.Rows.Count; ++i)
+            {
+                if (before.Rows[i].Stat == InvestableStat.PhysicalArmor)
+                    row = before.Rows[i];
+            }
+
+            Assert.IsTrue(row.Affordable, "방어력 could not be bought in this fixture");
+            Assert.IsNotEmpty(row.CurrentReduction, "방어력 showed no 실제 방어감소율");
+            string promised = row.Preview;
+            string promisedReduction = row.PreviewReduction;
+
+            Assert.IsTrue(
+                _growth.TryInvest(InvestableStat.PhysicalArmor), _growth.LastRefusal);
+            yield return _arena.Tick(1);
+
+            NeonVoid.UI.GrowthSheet after = hud.GatherGrowth();
+            for (int i = 0; i < after.Rows.Count; ++i)
+            {
+                if (after.Rows[i].Stat != InvestableStat.PhysicalArmor)
+                    continue;
+
+                Assert.AreEqual(
+                    promised, after.Rows[i].Current,
+                    "the terminal promised a value the purchase did not produce");
+                Assert.AreEqual(
+                    promisedReduction, after.Rows[i].CurrentReduction,
+                    "the 실제 방어감소율 the terminal promised is not what was bought");
+                Assert.AreEqual(1, after.Rows[i].Steps);
+            }
+
+            // And the player actually carries it, which is the point of the purchase.
+            Assert.AreEqual(
+                StatInvestments.ValueOf(_arena.Player.Stats, InvestableStat.PhysicalArmor),
+                StatInvestments.ValueOf(
+                    StatInvestments.Apply(_growth.Uninvested, _growth.Allocation),
+                    InvestableStat.PhysicalArmor),
+                0.001f);
+        }
+
+        [UnityTest]
+        public IEnumerator WithNoPermanentWritesTheTerminalOffersNothingAndSaysWhy()
+        {
+            // The default since D-020. A terminal whose buttons silently did nothing would read
+            // as broken; the actual reason is that the save is not committing.
+            yield return HubWithoutPermanentWrites();
+            NeonVoid.UI.HudController hud = AddHud();
+
+            StandOn(_hub.Terminal(HubTerminalKind.Growth).position);
+            yield return _arena.Tick(1);
+
+            NeonVoid.UI.GrowthSheet sheet = hud.GatherGrowth();
+            Assert.IsTrue(sheet.Shown, "the terminal showed nothing at all");
+            Assert.IsFalse(sheet.CanInvest);
+            Assert.IsNotEmpty(sheet.Unavailable);
+
+            for (int i = 0; i < sheet.Rows.Count; ++i)
+                Assert.IsFalse(sheet.Rows[i].Affordable, $"{sheet.Rows[i].Name} offered a purchase");
         }
     }
 }

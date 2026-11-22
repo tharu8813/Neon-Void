@@ -136,7 +136,7 @@ namespace NeonVoid.UI
                 : 0;
 
         /// <summary>What docs/05 asks for that no decision has given a value to.</summary>
-        public IReadOnlyList<string> Unsettled => _unsettled;
+        public IReadOnlyList<string> Unsettled => _unsettled ?? Nothing;
 
         /// <summary>
         /// A death the save has not answered. No counts: nothing has been charged, and a clone
