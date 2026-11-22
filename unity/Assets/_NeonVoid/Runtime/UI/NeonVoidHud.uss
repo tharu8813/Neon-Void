@@ -182,6 +182,196 @@
     -unity-text-align: middle-right;
 }
 
+/* --- 보상 플러그인 ------------------------------------------------------------- */
+
+.reward {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(4, 7, 14, 0.9);
+}
+
+.reward__card {
+    width: 760px;
+    max-width: 95%;
+    padding-top: 20px;
+    padding-right: 22px;
+    padding-bottom: 16px;
+    padding-left: 22px;
+    background-color: rgba(10, 16, 28, 0.97);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.reward__title {
+    font-size: 18px;
+    -unity-font-style: bold;
+    letter-spacing: 5px;
+    color: rgb(120, 230, 255);
+}
+
+.reward__subtitle {
+    font-size: 12px;
+    color: rgba(176, 192, 214, 0.9);
+    margin-top: 2px;
+    margin-bottom: 12px;
+}
+
+.reward__slots {
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.reward-slot {
+    width: 32%;
+    padding-top: 12px;
+    padding-right: 12px;
+    padding-bottom: 10px;
+    padding-left: 12px;
+    background-color: rgba(18, 26, 42, 0.95);
+    border-left-width: 3px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgba(150, 168, 190, 0.7);
+    border-right-color: rgba(120, 230, 255, 0.2);
+    border-top-color: rgba(120, 230, 255, 0.2);
+    border-bottom-color: rgba(120, 230, 255, 0.2);
+}
+
+/* 등급이 한눈에 달라 보여야 한다 - 이름을 읽기 전에 알아야 하는 정보다. */
+.reward-slot--rare {
+    border-left-color: rgb(120, 230, 255);
+}
+
+.reward-slot--legendary {
+    border-left-color: rgb(255, 196, 92);
+    background-color: rgba(34, 28, 18, 0.95);
+}
+
+.reward-slot--empty {
+    border-left-color: rgba(100, 112, 130, 0.5);
+    background-color: rgba(14, 18, 26, 0.8);
+}
+
+.reward-slot__grade {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgba(150, 168, 190, 0.9);
+}
+
+.reward-slot--rare .reward-slot__grade {
+    color: rgb(120, 230, 255);
+}
+
+.reward-slot--legendary .reward-slot__grade {
+    color: rgb(255, 196, 92);
+}
+
+.reward-slot__name {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgb(230, 240, 255);
+    white-space: normal;
+    margin-top: 2px;
+    margin-bottom: 6px;
+}
+
+.reward-slot__effect {
+    font-size: 11px;
+    color: rgb(176, 192, 214);
+    white-space: normal;
+    min-height: 44px;
+}
+
+/* 등급이 모자라 한 단계 아래로 대체된 카드는 그렇게 말한다 (D-007). */
+.reward-slot__fallback {
+    font-size: 10px;
+    color: rgba(214, 186, 132, 0.9);
+    white-space: normal;
+    margin-bottom: 4px;
+}
+
+.reward-slot__buttons {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.reward-slot__take {
+    flex-grow: 1;
+    height: 26px;
+    font-size: 12px;
+    color: rgb(226, 236, 250);
+    background-color: rgba(28, 44, 68, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.5);
+    border-right-color: rgba(120, 230, 255, 0.5);
+    border-top-color: rgba(120, 230, 255, 0.5);
+    border-bottom-color: rgba(120, 230, 255, 0.5);
+}
+
+.reward-slot__take:hover {
+    background-color: rgba(44, 70, 104, 0.95);
+}
+
+.reward-slot__reroll {
+    width: 72px;
+    height: 26px;
+    margin-left: 6px;
+    font-size: 11px;
+    color: rgb(214, 226, 242);
+    background-color: rgba(22, 32, 50, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.35);
+    border-right-color: rgba(120, 230, 255, 0.35);
+    border-top-color: rgba(120, 230, 255, 0.35);
+    border-bottom-color: rgba(120, 230, 255, 0.35);
+}
+
+.reward-slot__reroll:hover {
+    background-color: rgba(40, 60, 92, 0.95);
+}
+
+.reward__footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+}
+
+.reward__rerolls {
+    font-size: 12px;
+    color: rgb(120, 230, 255);
+}
+
+.reward__refusal {
+    font-size: 12px;
+    color: rgb(255, 182, 172);
+    white-space: normal;
+    margin-top: 10px;
+}
+
+.reward__dismiss {
+    height: 26px;
+    min-width: 120px;
+    margin-right: 0;
+    font-size: 11px;
+    color: rgba(200, 214, 232, 0.85);
+    background-color: rgba(20, 28, 44, 0.95);
+    border-left-color: rgba(120, 230, 255, 0.3);
+    border-right-color: rgba(120, 230, 255, 0.3);
+    border-top-color: rgba(120, 230, 255, 0.3);
+    border-bottom-color: rgba(120, 230, 255, 0.3);
+}
+
 /* --- 설정 · 키 ---------------------------------------------------------------- */
 
 .settings {

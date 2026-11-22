@@ -114,6 +114,19 @@ namespace NeonVoid.Missions
         /// </summary>
         public event System.Action MissionEnded;
 
+        /// <summary>
+        /// Raised once per area, after its 정화 is committed. [확정] docs/01 ties a 보상 화면
+        /// to a purification, so this is where one opens.
+        /// <para>
+        /// Raised <b>after</b> the commit, never before: docs/04 section 7's forbidden outcome
+        /// is a reward shown for a purification that was not written.
+        /// </para>
+        /// </summary>
+        public event System.Action<HardwareId> AreaPurified;
+
+        /// <summary>How many areas this mission has purified. Raises the upper card grades.</summary>
+        public int PurifiedCount => _purified.Count;
+
         public AreaProgressPhase AreaPhase { get; private set; } = AreaProgressPhase.None;
 
         /// <summary>The live mission. Identity, 의뢰 레벨, purification count.</summary>
@@ -335,6 +348,10 @@ namespace NeonVoid.Missions
             _purified.Add(_area);
             _run.TryRecordPurification();
             AreaPhase = AreaProgressPhase.Purified;
+
+            // After the commit and after the state, so a listener that opens a reward screen
+            // is reading a purification that is already true.
+            AreaPurified?.Invoke(_area);
             return Accept();
         }
 

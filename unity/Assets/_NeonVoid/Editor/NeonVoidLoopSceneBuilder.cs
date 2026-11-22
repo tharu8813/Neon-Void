@@ -186,7 +186,13 @@ namespace NeonVoid.EditorTools
             var audio = audioObject.AddComponent<NeonVoid.Presentation.GameAudio>();
             audio.Configure(bindings, vaccine.Actor);
 
-            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings, audio);
+            // 보상 플러그인. [확정] docs/01 ties a 보상 화면 to a 정화, and the flow raises it
+            // after the purification is committed.
+            var rewardObject = new GameObject("Reward Director");
+            var rewards = rewardObject.AddComponent<NeonVoid.Plugins.RewardDirector>();
+            rewards.Configure(mission, motherboard, vaccine.Procs);
+
+            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths, bindings, audio, rewards);
 
             CreateDirectionalLight();
 
@@ -256,7 +262,8 @@ namespace NeonVoid.EditorTools
             VaccineSaveDirector save,
             RunDeathDirector deaths,
             NeonVoid.Player.InputBindingDirector bindings,
-            NeonVoid.Presentation.GameAudio audio)
+            NeonVoid.Presentation.GameAudio audio,
+            NeonVoid.Plugins.RewardDirector rewards)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -281,7 +288,7 @@ namespace NeonVoid.EditorTools
             HudController controller = host.AddComponent<HudController>();
             // Wired rather than found, so the notice that says whether this session is being
             // written down cannot be the thing that silently went missing.
-            controller.Configure(player, board, null, hub, save, deaths, bindings, audio);
+            controller.Configure(player, board, null, hub, save, deaths, bindings, audio, rewards);
 
             // 설정 is opened with a key and fed one, which is the only part that needs a real
             // keyboard. docs/05 section 2: 설정/오류 복구.

@@ -43,6 +43,7 @@ namespace NeonVoid.Tests.PlayModeTests
         private GameObject _growthObject;
         private GameObject _hubObject;
         private GameObject _hudObject;
+        private GameObject _rewardObject;
         private MotherboardDirector _motherboard;
         private HubRuntime _hub;
         private VaccineGrowthDirector _growth;
@@ -63,6 +64,10 @@ namespace NeonVoid.Tests.PlayModeTests
             if (_hudObject != null)
                 UnityEngine.Object.Destroy(_hudObject);
             _hudObject = null;
+
+            if (_rewardObject != null)
+                UnityEngine.Object.Destroy(_rewardObject);
+            _rewardObject = null;
 
             if (_hubObject != null)
                 UnityEngine.Object.Destroy(_hubObject);
@@ -869,6 +874,131 @@ namespace NeonVoid.Tests.PlayModeTests
 
             for (int i = 0; i < sheet.Rows.Count; ++i)
                 Assert.IsFalse(sheet.Rows[i].Affordable, $"{sheet.Rows[i].Name} offered a purchase");
+        }
+    
+        // --- 보상 화면 -------------------------------------------------------------------------
+
+        /// <summary>A reward director over this test's mission, built after the flow exists.</summary>
+        private NeonVoid.Plugins.RewardDirector Rewards()
+        {
+            _rewardObject = new GameObject("Reward Director");
+            _rewardObject.SetActive(false);
+            var rewards = _rewardObject.AddComponent<NeonVoid.Plugins.RewardDirector>();
+            rewards.Configure(_arena.Mission, _motherboard, _arena.Procs);
+            _rewardObject.SetActive(true);
+            return rewards;
+        }
+
+        [UnityTest]
+        public IEnumerator PurifyingAnAreaOpensARewardScreen()
+        {
+            // [확정] docs/01 ties a 보상 화면 to a 정화, and MissionFlow raises it after the
+            // purification is committed - never for one that was not written.
+            yield return Hub();
+            NeonVoid.Plugins.RewardDirector rewards = Rewards();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission), "the mission did not begin");
+            yield return _arena.Tick(1);
+
+            Assert.IsFalse(rewards.Session.IsOpen, "a screen was open before anything was purified");
+
+            yield return EnterArea(HardwareId.Cpu);
+            yield return ClearTheStandingArea();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(rewards.Session.IsOpen, "정화를 끝냈는데 보상 화면이 안 열렸다");
+            Assert.AreEqual(
+                NeonVoid.Core.DesignConstants.RewardCardSlots, rewards.Session.Screen.Cards.Count);
+            Assert.AreEqual(
+                NeonVoid.Core.DesignConstants.InitialRewardRerolls, rewards.Session.RerollsLeft);
+        }
+
+        [UnityTest]
+        public IEnumerator TakingACardPutsItOnThePlayerForTheRestOfTheMission()
+        {
+            // [확정] docs/04 section 1: 임시 플러그인 is 의뢰 상태. It reaches the loadout and
+            // nothing is written to the save until 철수.
+            yield return Hub();
+            NeonVoid.Plugins.RewardDirector rewards = Rewards();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            yield return _arena.Tick(1);
+            yield return EnterArea(HardwareId.Cpu);
+            yield return ClearTheStandingArea();
+            yield return _arena.Tick(1);
+
+            int before = _arena.Procs.Loadout.Count;
+            int revisionBefore = _store != null ? _store.Snapshot.snapshotRevision : 0;
+
+            string taken = rewards.Session.Screen.Cards[0].Definition.ProposalId;
+            NeonVoid.Plugins.RewardResult result = rewards.Session.Pick(0);
+
+            Assert.IsTrue(result.Ok, result.Detail);
+            Assert.IsFalse(rewards.Session.IsOpen);
+            Assert.AreEqual(before + 1, _arena.Procs.Loadout.Count);
+            Assert.IsTrue(_arena.Procs.Loadout.Carries(taken));
+
+            if (_store != null)
+            {
+                Assert.AreEqual(
+                    revisionBefore, _store.Snapshot.snapshotRevision,
+                    "카드 하나 받는 것이 영구 저장을 건드렸다");
+            }
+
+            yield return _arena.Tick(1);
+        }
+
+        [UnityTest]
+        public IEnumerator TheHudDrawsWhateverTheScreenOffers()
+        {
+            yield return Hub();
+            NeonVoid.Plugins.RewardDirector rewards = Rewards();
+            yield return _arena.Tick(1);
+
+            _hudObject = new GameObject("HUD Model");
+            _hudObject.SetActive(false);
+            _hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = _hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(_arena.Player, _motherboard, null, _hub, rewardDirector: rewards);
+
+            Assert.IsFalse(hud.RewardOpen);
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            yield return _arena.Tick(1);
+            yield return EnterArea(HardwareId.Cpu);
+            yield return ClearTheStandingArea();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(hud.RewardOpen, "화면이 열렸는데 HUD가 모른다");
+
+            NeonVoid.Plugins.RewardResult taken = hud.TakeReward(0);
+            Assert.IsTrue(taken.Ok, taken.Detail);
+            Assert.IsFalse(hud.RewardOpen, "카드를 받았는데 화면이 안 닫혔다");
+        }
+
+        [UnityTest]
+        public IEnumerator AMissionThatEndsTakesItsRewardScreenWithIt()
+        {
+            // A card picked from a screen that outlived its mission is a reward for a run that
+            // is over.
+            yield return Hub();
+            NeonVoid.Plugins.RewardDirector rewards = Rewards();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission));
+            yield return _arena.Tick(1);
+            yield return EnterArea(HardwareId.Cpu);
+            yield return ClearTheStandingArea();
+            yield return _arena.Tick(1);
+
+            Assert.IsTrue(rewards.Session.IsOpen);
+
+            Assert.IsTrue(Flow.TryFail(), Flow.LastRefusal);
+            yield return _arena.Tick(1);
+
+            Assert.IsFalse(rewards.Session.IsOpen, "의뢰가 끝났는데 보상 화면이 남아 있다");
         }
     }
 }

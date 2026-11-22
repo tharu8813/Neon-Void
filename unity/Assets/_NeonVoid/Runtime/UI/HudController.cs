@@ -4,6 +4,7 @@ using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Missions;
 using NeonVoid.Player;
+using NeonVoid.Plugins;
 using NeonVoid.Presentation;
 using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
@@ -60,6 +61,9 @@ namespace NeonVoid.UI
         [Tooltip("음량, for the 설정 screen's sliders. Found when left empty.")]
         [SerializeField] private GameAudio gameAudio;
 
+        [Tooltip("The 보상 화면's cards. Found when left empty.")]
+        [SerializeField] private RewardDirector rewards;
+
         [Tooltip(
             "The key bindings, so the HUD prints the key the player actually has. " +
             "Found when left empty.")]
@@ -92,6 +96,14 @@ namespace NeonVoid.UI
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
         private Label _saveNotice;
+
+        private VisualElement _rewardScreen;
+        private Label _rewardSubtitle;
+        private VisualElement _rewardSlots;
+        private Label _rewardRefusal;
+        private Label _rewardRerolls;
+        private Button _rewardDismiss;
+        private string _rewardSignature = string.Empty;
 
         private VisualElement _settingsVolumes;
         private readonly SliderInt[] _volumeSliders = new SliderInt[4];
@@ -212,7 +224,8 @@ namespace NeonVoid.UI
             VaccineSaveDirector saveDirector = null,
             RunDeathDirector deathDirector = null,
             InputBindingDirector bindingDirector = null,
-            GameAudio gameAudio = null)
+            GameAudio gameAudio = null,
+            RewardDirector rewardDirector = null)
         {
             player = vaccine;
             motherboard = board;
@@ -222,6 +235,7 @@ namespace NeonVoid.UI
             deaths = deathDirector;
             bindings = bindingDirector;
             this.gameAudio = gameAudio;
+            rewards = rewardDirector;
         }
 
         private void Awake()
@@ -251,6 +265,9 @@ namespace NeonVoid.UI
 
             if (gameAudio == null)
                 gameAudio = FindFirstObjectByType<GameAudio>();
+
+            if (rewards == null)
+                rewards = FindFirstObjectByType<RewardDirector>();
         }
 
         private void OnEnable()
@@ -296,6 +313,7 @@ namespace NeonVoid.UI
 
             DrawSkillKeys();
             DrawSettings();
+            DrawReward();
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -758,6 +776,142 @@ namespace NeonVoid.UI
 
             if (_router != null)
                 _router.CombatInputSuspended = suspended;
+        }
+
+        /// <summary>Whether a 보상 화면 is on screen. For a test.</summary>
+        public bool RewardOpen => rewards != null && rewards.Session != null && rewards.Session.IsOpen;
+
+        /// <summary>Takes the card in a slot. The screen closes only if the loadout took it.</summary>
+        public RewardResult TakeReward(int slot)
+        {
+            if (rewards == null || rewards.Session == null)
+                return default;
+
+            RewardResult result = rewards.Session.Pick(slot);
+            Sound(result.Ok ? AudioCue.UiConfirm : AudioCue.UiRefuse);
+            _rewardSignature = string.Empty;
+            return result;
+        }
+
+        /// <summary>Rerolls one slot. [확정] docs/03 section 3: 나머지 2장 유지.</summary>
+        public RewardResult RerollReward(int slot)
+        {
+            if (rewards == null || rewards.Session == null)
+                return default;
+
+            RewardResult result = rewards.Session.Reroll(slot);
+            Sound(result.Ok ? AudioCue.UiClick : AudioCue.UiRefuse);
+            _rewardSignature = string.Empty;
+            return result;
+        }
+
+        /// <summary>Closes without taking anything. 보상 화면 닫기 정책 is [미확정].</summary>
+        public void DismissReward()
+        {
+            if (rewards == null || rewards.Session == null)
+                return;
+
+            Sound(AudioCue.UiClick);
+            rewards.Session.Dismiss();
+            _rewardSignature = string.Empty;
+        }
+
+        private void DrawReward()
+        {
+            bool open = RewardOpen;
+            Show(_rewardScreen, open);
+
+            if (_rewardScreen == null || !open)
+            {
+                _rewardSignature = string.Empty;
+                return;
+            }
+
+            RewardSession session = rewards.Session;
+            RewardScreen screen = session.Screen;
+
+            SetText(_rewardRerolls, $"리롤 {session.RerollsLeft}회 남음");
+            Show(_rewardRefusal, session.LastRefusal.Length > 0);
+            SetText(_rewardRefusal, session.LastRefusal);
+
+            string signature = $"{screen}|{session.RerollsLeft}|{session.LastRefusal}";
+            if (signature == _rewardSignature)
+                return;
+
+            _rewardSignature = signature;
+            SetText(_rewardSubtitle, $"{screen.Offered}장 중 하나를 선택하세요");
+            RebuildRewardSlots(session, screen);
+        }
+
+        private void RebuildRewardSlots(RewardSession session, RewardScreen screen)
+        {
+            if (_rewardSlots == null)
+                return;
+
+            _rewardSlots.Clear();
+
+            for (int i = 0; i < screen.Cards.Count; ++i)
+            {
+                RewardCard card = screen.Cards[i];
+                int slot = i;
+
+                var panel = new VisualElement();
+                panel.AddToClassList("reward-slot");
+
+                if (card.IsEmpty)
+                {
+                    // [확정] D-007: 전체 후보가 부족하면 유효한 것만 표시한다. An empty slot says
+                    // so rather than vanishing, or the screen looks like it dealt two cards.
+                    panel.AddToClassList("reward-slot--empty");
+                    panel.Add(Line("reward-slot__grade", "—"));
+                    panel.Add(Line("reward-slot__name", "남은 후보 없음"));
+                    panel.Add(Line("reward-slot__effect", "이 등급과 그 아래에 줄 수 있는 플러그인이 없습니다."));
+                    _rewardSlots.Add(panel);
+                    continue;
+                }
+
+                PluginRarity grade = card.Definition.Rarity;
+                if (grade == PluginRarity.Rare)
+                    panel.AddToClassList("reward-slot--rare");
+                else if (grade >= PluginRarity.Legendary)
+                    panel.AddToClassList("reward-slot--legendary");
+
+                PluginCardText text = PluginCardTexts.For(card.Definition.ProposalId);
+                panel.Add(Line("reward-slot__grade", PluginCardTexts.LabelOf(grade)));
+                panel.Add(Line("reward-slot__name", text.Name));
+
+                if (card.FellBack)
+                {
+                    panel.Add(Line(
+                        "reward-slot__fallback",
+                        $"{PluginCardTexts.LabelOf(card.RolledGrade)} 후보가 없어 대체되었습니다"));
+                }
+
+                panel.Add(Line("reward-slot__effect", text.Effect));
+
+                var buttons = new VisualElement();
+                buttons.AddToClassList("reward-slot__buttons");
+
+                var take = new Button(() => TakeReward(slot)) { text = "받기" };
+                take.AddToClassList("reward-slot__take");
+                buttons.Add(take);
+
+                var reroll = new Button(() => RerollReward(slot)) { text = "리롤" };
+                reroll.AddToClassList("reward-slot__reroll");
+                reroll.SetEnabled(session.RerollsLeft > 0);
+                buttons.Add(reroll);
+
+                panel.Add(buttons);
+                _rewardSlots.Add(panel);
+            }
+        }
+
+        private static Label Line(string className, string text)
+        {
+            var label = new Label(text);
+            label.AddToClassList(className);
+            label.pickingMode = PickingMode.Ignore;
+            return label;
         }
 
         /// <summary>
@@ -1284,6 +1438,16 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _rewardScreen = root.Q<VisualElement>("rewardScreen");
+            _rewardSubtitle = root.Q<Label>("rewardSubtitle");
+            _rewardSlots = root.Q<VisualElement>("rewardSlots");
+            _rewardRefusal = root.Q<Label>("rewardRefusal");
+            _rewardRerolls = root.Q<Label>("rewardRerolls");
+            _rewardDismiss = root.Q<Button>("rewardDismiss");
+
+            if (_rewardDismiss != null)
+                _rewardDismiss.clicked += DismissReward;
 
             _settingsVolumes = root.Q<VisualElement>("settingsVolumes");
             BuildVolumeRows();
