@@ -52,5 +52,22 @@ namespace NeonVoid.Combat.Skills
         /// a defence debuff, with no cone to aim.
         /// </summary>
         SingleTarget = 6,
+
+        /// <summary>
+        /// Gives the caster a 보호막. `skill.data_shell`, added by [확정] D-009 (2026-11-22).
+        /// <para>
+        /// Not a heal with another name. A heal gives back health the player already lost; a
+        /// shield stops damage that has not landed, which makes it the button you press when
+        /// you see a boss telegraph. Before this the only answer to one was 패킷 점멸, and
+        /// [확정] D-004 settled every rule a shield obeys while leaving the player no way to
+        /// raise one themselves - only three plugins could.
+        /// </para>
+        /// <para>
+        /// The amount comes from the damage formula the way a heal's does, and the lifetime
+        /// from <see cref="SkillShape.Field"/>'s duration, so the two numbers a shield needs
+        /// are both already in the data.
+        /// </para>
+        /// </summary>
+        SelfShield = 7,
     }
 }

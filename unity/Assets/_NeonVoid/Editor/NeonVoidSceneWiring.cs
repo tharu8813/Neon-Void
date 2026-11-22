@@ -104,16 +104,10 @@ namespace NeonVoid.EditorTools
             AssignSerialized(caster, "motionDriver", driver);
             AssignSerialized(caster, "fieldMaterial", palette.Field);
 
-            // Three slots, however many assets exist: the rest are authored and sitting in the
-            // project for a slot to be pointed at, which is how docs/00 describes skills
-            // changing.
-            int slots = authoredSkills != null
-                ? Mathf.Min(DesignConstants.ActiveSkillSlots, authoredSkills.Length)
-                : 0;
-            var equipped = new SkillAsset[slots];
-            if (slots > 0)
-                System.Array.Copy(authoredSkills, equipped, slots);
-            AssignSerializedObjectArray(caster, "slotSkills", equipped);
+            // [확정] D-009: the starting three are named, not "whichever came first in the
+            // array". The rest are authored and sitting in the project for the hub's 스킬 장착
+            // 터미널 to point a slot at.
+            AssignSerializedObjectArray(caster, "slotSkills", StartingSet(authoredSkills));
 
             PluginProcDirector procs = player.AddComponent<PluginProcDirector>();
             AssignSerialized(procs, "owner", actor);
@@ -138,6 +132,42 @@ namespace NeonVoid.EditorTools
         /// loudly: the scene would still open and still look correct, but nothing would respond
         /// to the keyboard, which is the exact failure this build step exists to prevent.
         /// </summary>
+        /// <summary>
+        /// The assets for <see cref="StartingSkills.DocumentKeys"/>, in that order.
+        /// <para>
+        /// A missing one is reported rather than skipped: a starting slot that silently came up
+        /// empty is three skills becoming two, with nothing in the log to say why.
+        /// </para>
+        /// </summary>
+        private static SkillAsset[] StartingSet(SkillAsset[] authored)
+        {
+            string[] wanted = StartingSkills.DocumentKeys;
+            var equipped = new SkillAsset[Mathf.Min(DesignConstants.ActiveSkillSlots, wanted.Length)];
+
+            for (int slot = 0; slot < equipped.Length; ++slot)
+            {
+                equipped[slot] = FindByDocumentKey(authored, wanted[slot]);
+                if (equipped[slot] == null)
+                    Debug.LogError($"Starting skill '{wanted[slot]}' has no asset; its slot is empty.");
+            }
+
+            return equipped;
+        }
+
+        private static SkillAsset FindByDocumentKey(SkillAsset[] authored, string documentKey)
+        {
+            if (authored == null)
+                return null;
+
+            for (int i = 0; i < authored.Length; ++i)
+            {
+                if (authored[i] != null && authored[i].DocumentKey == documentKey)
+                    return authored[i];
+            }
+
+            return null;
+        }
+
         internal static void AssignInputAsset(Component reader)
         {
             var asset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);

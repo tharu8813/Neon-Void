@@ -46,14 +46,18 @@ namespace NeonVoid.EditorTools
             // The AssetDatabase has to know the folder exists before anything is created in it.
             AssetDatabase.Refresh();
 
-            // All six of docs/03's prototype pool exist as assets; the caster has three slots,
-            // and docs/00 has skills swapped mid-mission, so the other three are authored and
-            // ready to be dropped into a slot rather than written when somebody wants them.
+            // [확정] D-009 (2026-11-22): the pool is seven - docs/03's six plus 데이터 외피.
+            // The caster has three slots and the hub terminal is where they are swapped, so the
+            // other four are authored and waiting rather than written when somebody wants them.
+            //
+            // The order matters: the first three are the [초안] starting set.
             string[] paths =
             {
                 ArcPulse(),
-                FirewallField(),
                 PacketBlink(),
+                DataShell(),
+
+                FirewallField(),
                 PatchBurst(),
                 Cleanse(),
                 LockOn(),
@@ -211,6 +215,49 @@ namespace NeonVoid.EditorTools
                 },
             },
             new SkillShape { Kind = SkillEffectKind.SelfHeal },
+            SkillStatusEffect.None);
+
+        /// <summary>
+        /// `skill.data_shell` 데이터 외피 - 자신에게 보호막. [확정] D-009 (2026-11-22).
+        /// <para>
+        /// The answer to a boss telegraph that is not running away from it. Before this the
+        /// only one was 패킷 점멸, and [확정] D-004 settled every rule a shield obeys while
+        /// leaving the player unable to raise one - only three plugins could.
+        /// </para>
+        /// <para>
+        /// Deliberately smaller than 복구 버스트 heals and on a shorter cooldown: a shield that
+        /// is up before the hit is worth more than a heal after it, so it costs less to get
+        /// wrong. Both numbers are [초안] and D-011 will retune them.
+        /// </para>
+        /// </summary>
+        private static string DataShell() => Author(
+            "SK_DataShell",
+            "skill.data_shell",
+            "데이터 외피",
+            new SkillDefinition
+            {
+                SkillId = 1007,
+                ManaCost = 25f,                 // [초안]
+                BaseCooldownTicks = 420,        // [초안] 7 s
+                IsMovementSkill = false,
+                Damage = new DamageRequest
+                {
+                    // A magnitude, not damage - the shield's size uses the same formula a heal
+                    // does, so it scales with the same stats.
+                    Flat = 14f,                 // [초안]
+                    ApRatio = 0.4f,             // [초안]
+                    Type = DamageType.Magic,
+                    CanCrit = false,
+                },
+            },
+            new SkillShape
+            {
+                Kind = SkillEffectKind.SelfShield,
+
+                // [초안] 5 s. Long enough to cover a telegraph the player reacted to, short
+                // enough that holding it for the next fight is not the play.
+                Field = new FieldSchedule { DurationTicks = 300, TickIntervalTicks = 0 },
+            },
             SkillStatusEffect.None);
 
         /// <summary>

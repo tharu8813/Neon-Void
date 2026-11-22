@@ -245,6 +245,9 @@ namespace NeonVoid.Combat.Skills
                 case SkillEffectKind.SelfHeal:
                     CastSelfHeal(asset);
                     break;
+                case SkillEffectKind.SelfShield:
+                    CastSelfShield(asset);
+                    break;
                 case SkillEffectKind.CleanseControl:
                     CastCleanse(asset);
                     break;
@@ -319,6 +322,26 @@ namespace NeonVoid.Combat.Skills
             float healed = _actor.Heal(amount);
             if (healed <= 0f)
                 Debug.Log($"{asset.DisplayName}: already at full health; the cast was spent anyway.", this);
+        }
+
+        /// <summary>
+        /// Gives the caster a 보호막 that lasts the shape's field duration.
+        /// <para>
+        /// Granted through <see cref="ShieldStack"/> like every other shield, so it obeys
+        /// [확정] D-004 without this knowing any of it: it stacks as its own layer beside one a
+        /// plugin gave, it is spent before older ones, and it still absorbs on the tick it
+        /// expires.
+        /// </para>
+        /// </summary>
+        private void CastSelfShield(SkillAsset asset)
+        {
+            float amount = DamageMath.RawDamage(asset.Definition.Damage, _actor.Stats, critRolled: false);
+            if (amount <= 0f)
+                return;
+
+            long now = _runner != null ? _runner.TickIndex : 0L;
+            _actor.Shields.Grant(
+                asset.Definition.SkillId.ToString(), amount, now, asset.Shape.Field.DurationTicks);
         }
 
         /// <summary>

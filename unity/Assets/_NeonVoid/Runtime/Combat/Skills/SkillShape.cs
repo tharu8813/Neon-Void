@@ -68,6 +68,16 @@ namespace NeonVoid.Combat.Skills
                     // needed; a radius here would only look like it meant something.
                     return;
 
+                case SkillEffectKind.SelfShield:
+                    // A shield with no lifetime never expires, and [확정] D-004 is a set of
+                    // rules about when one does. Refused rather than given a default, because
+                    // a permanent shield is a different feature from the one asked for.
+                    if (Field.DurationTicks <= 0)
+                        throw new InvalidOperationException(
+                            $"A {nameof(SkillEffectKind.SelfShield)} needs {nameof(Field)}.{nameof(Field.DurationTicks)} " +
+                            "above zero; a 보호막 that never expires is not what D-004 settled.");
+                    return;
+
                 case SkillEffectKind.SingleTarget:
                     RequirePositive(RadiusUnits, nameof(RadiusUnits));
                     return;
