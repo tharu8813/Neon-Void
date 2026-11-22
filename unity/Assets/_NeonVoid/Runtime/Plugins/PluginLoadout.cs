@@ -42,18 +42,125 @@ namespace NeonVoid.Plugins
     {
         private readonly List<PluginDefinition> _carried = new List<PluginDefinition>();
 
+        /// <summary>
+        /// Cards the vaccine owns that are switched off for the moment. [확정] docs/00 section 7
+        /// 터널감염: 미학습 소지 플러그인 1~2개 비활성.
+        /// <para>
+        /// <b>A second list, not a flag on each card.</b> Twenty-one loops read
+        /// <see cref="_carried"/> - passives, firing, every trigger kind - and a flag would have
+        /// to be checked in all of them. One missed loop is a card that is off everywhere except
+        /// in the one place that still fires it, which reads as the environment not working
+        /// rather than as a bug. Moving the card out means every one of those loops skips it
+        /// without being touched.
+        /// </para>
+        /// <para>
+        /// It is still <b>owned</b>: <see cref="Carries"/> and the 레어 bonus look in both lists,
+        /// so a suppressed card is never offered again as if the vaccine did not have it.
+        /// </para>
+        /// </summary>
+        private readonly List<PluginDefinition> _suppressed = new List<PluginDefinition>();
+
+        /// <summary>
+        /// Proposal ids that came from the 출전 목록 - 학습된 플러그인. docs/01 section 4 makes
+        /// them the exception 터널감염 may not touch, which is the whole reason this is tracked.
+        /// </summary>
+        private readonly HashSet<string> _learned = new HashSet<string>(System.StringComparer.Ordinal);
+
+        /// <summary>How many cards are active. Suppressed ones are owned and not counted.</summary>
         public int Count => _carried.Count;
+
+        /// <summary>How many are owned, active or not.</summary>
+        public int OwnedCount => _carried.Count + _suppressed.Count;
+
+        /// <summary>The cards switched off right now.</summary>
+        public IReadOnlyList<PluginDefinition> Suppressed => _suppressed;
+
+        /// <summary>Whether this card came in on the 출전 목록 rather than being found in the run.</summary>
+        public bool IsLearned(string proposalId) =>
+            !string.IsNullOrEmpty(proposalId) && _learned.Contains(proposalId);
+
+        /// <summary>
+        /// Marks everything carried right now as 학습된 - called once, straight after the 의뢰's
+        /// loadout is seeded from the 출전 목록. Anything granted afterwards was found in the run
+        /// and is therefore 미학습.
+        /// </summary>
+        public void MarkCarriedAsLearned()
+        {
+            _learned.Clear();
+            for (int i = 0; i < _carried.Count; ++i)
+                _learned.Add(_carried[i].ProposalId);
+        }
+
+        /// <summary>
+        /// Switches one card off. Refuses a 학습된 card outright: [확정] docs/01 section 4 makes
+        /// 학습 출전분 the exception, and a caller that got the choice wrong must not be able to
+        /// take it anyway.
+        /// </summary>
+        public bool Suppress(string proposalId)
+        {
+            if (string.IsNullOrEmpty(proposalId) || IsLearned(proposalId))
+                return false;
+
+            for (int i = 0; i < _carried.Count; ++i)
+            {
+                if (!string.Equals(_carried[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    continue;
+
+                _suppressed.Add(_carried[i]);
+                _carried.RemoveAt(i);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Switches everything back on and says how many came back. The card returns exactly as
+        /// it was - its passive was rolled when it was granted, not here, so nothing is re-rolled
+        /// by leaving an infected area.
+        /// </summary>
+        public int RestoreSuppressed()
+        {
+            int restored = _suppressed.Count;
+            for (int i = 0; i < _suppressed.Count; ++i)
+                _carried.Add(_suppressed[i]);
+
+            _suppressed.Clear();
+            return restored;
+        }
 
         public PluginDefinition At(int index) => _carried[index];
 
         public IReadOnlyList<PluginDefinition> Carried => _carried;
 
-        /// <summary>Whether a plugin with this proposal id is carried.</summary>
+        /// <summary>
+        /// Whether a plugin with this proposal id is <b>owned</b>, active or suppressed.
+        /// <para>
+        /// Both lists, because this is what refuses a duplicate grant. A suppressed card offered
+        /// again would hand the player a second copy of something they already have, and the
+        /// infection would end with them up a card.
+        /// </para>
+        /// </summary>
         public bool Carries(string proposalId)
         {
             for (int i = 0; i < _carried.Count; ++i)
                 if (string.Equals(_carried[i].ProposalId, proposalId, System.StringComparison.Ordinal))
                     return true;
+
+            for (int i = 0; i < _suppressed.Count; ++i)
+                if (string.Equals(_suppressed[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>Whether this card is owned and switched off.</summary>
+        public bool IsSuppressed(string proposalId)
+        {
+            for (int i = 0; i < _suppressed.Count; ++i)
+                if (string.Equals(_suppressed[i].ProposalId, proposalId, System.StringComparison.Ordinal))
+                    return true;
+
             return false;
         }
 
@@ -127,7 +234,13 @@ namespace NeonVoid.Plugins
             if (granting.Effect != PluginEffectKind.GrantRandomRare)
                 return;
 
-            PluginDefinition bonus = RareBonus.Pick(PluginCatalog.All(), _carried, rewardRng);
+            // Owned, not active: a 레어 the player is holding but cannot use right now is still
+            // theirs, and offering it again would turn 터널감염 into a way to duplicate a card.
+            _owned.Clear();
+            _owned.AddRange(_carried);
+            _owned.AddRange(_suppressed);
+
+            PluginDefinition bonus = RareBonus.Pick(PluginCatalog.All(), _owned, rewardRng);
             if (string.IsNullOrEmpty(bonus.ProposalId))
                 return;
 
@@ -400,7 +513,15 @@ namespace NeonVoid.Plugins
         }
 
         /// <summary>Drops everything, e.g. when a mission ends. Saves nothing.</summary>
-        public void Clear() => _carried.Clear();
+        /// <summary>Reused so the 레어 bonus allocates nothing per grant.</summary>
+        private readonly List<PluginDefinition> _owned = new List<PluginDefinition>();
+
+        public void Clear()
+        {
+            _carried.Clear();
+            _suppressed.Clear();
+            _learned.Clear();
+        }
 
         /// <summary>
         /// Appends every carried plugin that this hit sets off, in carry order so the queue

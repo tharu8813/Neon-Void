@@ -63,12 +63,11 @@ namespace NeonVoid.Tests
         }
 
         [Test]
-        public void TunnelInfectionDoesNothingToTheAreaAndIsStillUnbuilt()
+        public void TunnelInfectionChangesThePlayerAndNotTheArea()
         {
             // [확정] docs/00: 터널감염 disables 미학습 소지 플러그인 1~2개 - a change to the
-            // player, not to the map. This build has no way to switch a carried card off for a
-            // while, so the effect is not built; a count nothing could act on is not returned
-            // either, because that is the failure this type exists to fix.
+            // player, not to the map. It lives in TunnelInfection and is applied when the area
+            // is entered; nothing about the generated area differs, which is what this holds.
             EnvironmentEffects infection = Of(EnvironmentKind.TunnelInfection);
 
             Assert.AreEqual(EnvironmentEffects.NominalPercent, infection.SizePercent);

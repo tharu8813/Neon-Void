@@ -272,6 +272,11 @@ namespace NeonVoid.Plugins
             for (int i = 0; i < resolved.Cards.Count; ++i)
                 Carry(resolved.Cards[i]);
 
+            // Everything carried at this point came off the 출전 목록, which means it is
+            // 학습된 - [확정] docs/01 section 4 makes exactly those cards the ones 터널감염 may
+            // not touch. Anything granted after this line was found in the run.
+            _router.Loadout.MarkCarriedAsLearned();
+
             if (resolved.Missing > 0)
             {
                 // Owned, and not in the player's hands this run. Said out loud: a loadout
@@ -853,6 +858,56 @@ namespace NeonVoid.Plugins
             }
 
             PushPassivesToOwner();
+        }
+
+        /// <summary>
+        /// 터널감염. Switches off up to <paramref name="count"/> 미학습 소지 플러그인 for as long
+        /// as the area lasts, and says which - an environment the player cannot see working is
+        /// indistinguishable from one that is not.
+        /// </summary>
+        /// <returns>How many were actually switched off, which may be fewer than asked.</returns>
+        public int InfectUnlearned(int count, uint seed)
+        {
+            if (_router == null)
+                return 0;
+
+            List<string> chosen = TunnelInfection.Choose(_router.Loadout, count, seed);
+            int taken = 0;
+            for (int i = 0; i < chosen.Count; ++i)
+            {
+                if (_router.Loadout.Suppress(chosen[i]))
+                    taken++;
+            }
+
+            if (taken > 0)
+            {
+                PushPassivesToOwner();
+                Debug.Log($"터널감염: 미학습 소지 {taken}개 비활성 ({string.Join(", ", chosen)}).", this);
+            }
+            else
+            {
+                // Said out loud: the player walked in with nothing the infection could touch,
+                // and that is the 학습 exception working rather than the environment failing.
+                Debug.Log("터널감염: 비활성화할 미학습 소지 플러그인이 없다 (학습 출전분은 제외).", this);
+            }
+
+            return taken;
+        }
+
+        /// <summary>Lifts the infection. Nothing is re-rolled; the cards come back as they were.</summary>
+        public int CureInfection()
+        {
+            if (_router == null)
+                return 0;
+
+            int restored = _router.Loadout.RestoreSuppressed();
+            if (restored > 0)
+            {
+                PushPassivesToOwner();
+                Debug.Log($"터널감염 해제: {restored}개 복구.", this);
+            }
+
+            return restored;
         }
 
         public void EndMission()

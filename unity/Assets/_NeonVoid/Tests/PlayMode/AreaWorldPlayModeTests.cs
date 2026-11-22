@@ -436,6 +436,70 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator TunnelInfectionSwitchesOffWhatWasFoundInTheRunAndNotWhatWasDeployed()
+        {
+            // [확정] docs/00 section 7: 미학습 소지 플러그인 1~2개 비활성. [확정] docs/01
+            // section 4: 학습된 플러그인 제외. Until 2026-11-23 the board rolled this and
+            // nothing read it.
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(1);
+
+            // Deployed: what the vaccine walked in with, off the 출전 목록.
+            _arena.Procs.Loadout.Clear();
+            _arena.Procs.PushPassivesToOwner();
+            _arena.Procs.Grant(PluginCatalog.KillStack(), out string why);
+            _arena.Procs.Loadout.MarkCarriedAsLearned();
+
+            // Found in the run: everything after that.
+            _arena.Procs.Grant(PluginCatalog.Lightweight(), out why);
+            _arena.Procs.Grant(PluginCatalog.ArcChain(), out why);
+            Assert.AreEqual(3, _arena.Procs.Loadout.Count, why);
+
+            var infected = new AreaConditions(
+                HardwareId.Cpu, HardwareDifficulty.Normal, EnvironmentKind.TunnelInfection, 0);
+            AreaBuildResult area = BuildArea(infected);
+            yield return _arena.Tick(2);
+
+            Assert.IsTrue(area.Runtime.IsInfected, "the area never applied its 환경");
+            Assert.Less(
+                _arena.Procs.Loadout.Count, 3, "nothing was switched off in an infected area");
+            Assert.AreEqual(
+                3, _arena.Procs.Loadout.OwnedCount, "a suppressed card stopped being owned");
+
+            // The 출전 card is untouchable.
+            Assert.IsFalse(
+                _arena.Procs.Loadout.IsSuppressed("R02"),
+                "[확정] docs/01 4절: 학습된 플러그인 제외 - the deployed card was switched off");
+            Assert.IsTrue(_arena.Procs.Loadout.Carries("R02"));
+
+            // And leaving lifts it.
+            area.Runtime.LiftTheEnvironmentFromThePlayer();
+            yield return _arena.Tick(1);
+
+            Assert.IsFalse(area.Runtime.IsInfected);
+            Assert.AreEqual(3, _arena.Procs.Loadout.Count, "the cards did not come back");
+            Assert.IsEmpty(_arena.Procs.Loadout.Suppressed);
+        }
+
+        [UnityTest]
+        public IEnumerator AnAreaWithNoInfectionLeavesTheLoadoutAlone()
+        {
+            _arena = PrototypeArena.Build();
+            yield return _arena.Tick(1);
+
+            _arena.Procs.Loadout.Clear();
+            _arena.Procs.PushPassivesToOwner();
+            _arena.Procs.Grant(PluginCatalog.Lightweight(), out string why);
+
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(2);
+
+            Assert.IsFalse(area.Runtime.IsInfected, why);
+            Assert.AreEqual(1, _arena.Procs.Loadout.Count);
+            Assert.IsEmpty(_arena.Procs.Loadout.Suppressed);
+        }
+
+        [UnityTest]
         public IEnumerator TheArmedPadIsFinishedByAskingForIt()
         {
             // Until the area runtime read 상호작용, nothing in the game called

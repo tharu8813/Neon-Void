@@ -85,6 +85,13 @@ namespace NeonVoid.Missions
         private AreaObjectiveChain _chain;
         private bool _entered;
         private bool _extractionRequested;
+        private bool _infected;
+
+        /// <summary>
+        /// This area's 환경, for 터널감염. Pushed in by whatever built the area, because the
+        /// board rolled it and the runtime is not the place that decides it.
+        /// </summary>
+        private AreaConditions _conditions;
         private bool _learningOffered;
 
         /// <summary>
@@ -138,6 +145,18 @@ namespace NeonVoid.Missions
         /// R-015's 0~2개 is a choice made on a successful 철수, not before one is possible.
         /// </summary>
         public ExtractionLearning Learning => _learning;
+
+        /// <summary>This area's 환경, as the board rolled it.</summary>
+        public AreaConditions Conditions => _conditions;
+
+        /// <summary>Whether 터널감염 is in force here right now.</summary>
+        public bool IsInfected => _infected;
+
+        /// <summary>
+        /// Hands the area the 환경 it was built under. Called before the player enters, so the
+        /// infection lands on entry rather than a tick later.
+        /// </summary>
+        public void UseConditions(in AreaConditions conditions) => _conditions = conditions;
 
         /// <summary>
         /// The chain this area's <see cref="AreaObjectiveKind.Sequence"/> nodes make, or null
@@ -301,6 +320,7 @@ namespace NeonVoid.Missions
             }
 
             _entered = true;
+            ApplyTheEnvironmentToThePlayer();
             bossGate.Close();
             _console.Reset();
             _pad.Reset();
@@ -331,6 +351,10 @@ namespace NeonVoid.Missions
                 return false;
             }
 
+            // Lifted before the commit, not after: 철수 ends the mission, and a card left
+            // switched off by an area nobody is in any more would follow the player to the hub.
+            LiftTheEnvironmentFromThePlayer();
+
             if (flow.TryExtract(learnedInstanceIds))
             {
                 Debug.Log($"철수 complete from {area}. {flow.LastCommitDetail}", this);
@@ -358,6 +382,61 @@ namespace NeonVoid.Missions
             TickPurificationConsole(flow);
             TickExtractionPad(flow);
             TakeTheExtractionIfItIsAskedFor();
+        }
+
+        /// <summary>
+        /// 터널감염: switches off up to 1~2 미학습 소지 플러그인 while this area lasts.
+        /// <para>
+        /// [확정] docs/00 section 7 names the effect and docs/01 section 4 names the exception -
+        /// 학습된 플러그인 제외. The loadout enforces the exception itself, so a mistake here
+        /// cannot take a card off the 출전 목록.
+        /// </para>
+        /// <para>
+        /// The count comes from this area's own seed, so walking into the same area twice
+        /// infects the same cards. An environment that rerolled would be a slot machine rather
+        /// than a condition of the place.
+        /// </para>
+        /// </summary>
+        private void ApplyTheEnvironmentToThePlayer()
+        {
+            if (_infected || _conditions.Environment != EnvironmentKind.TunnelInfection)
+                return;
+
+            Plugins.PluginProcDirector director = CarriedPluginsDirector();
+            if (director == null)
+                return;
+
+            _infected = true;
+            uint missionSeed = mission != null
+                ? mission.Flow.Run.SeedFor(RandomStream.Mission)
+                : 0u;
+            uint seed = AreaSeeds.For(missionSeed, area);
+
+            director.InfectUnlearned(Plugins.TunnelInfection.CountFor(seed), seed);
+        }
+
+        /// <summary>
+        /// Lifts the infection. Called when this area is done with the player - a 철수, or the
+        /// area being left. A card switched off by an area the player has walked out of would be
+        /// an environment that followed them.
+        /// </summary>
+        public void LiftTheEnvironmentFromThePlayer()
+        {
+            if (!_infected)
+                return;
+
+            _infected = false;
+            Plugins.PluginProcDirector director = CarriedPluginsDirector();
+            if (director != null)
+                director.CureInfection();
+        }
+
+        private Plugins.PluginProcDirector CarriedPluginsDirector()
+        {
+            if (procs == null)
+                procs = FindFirstObjectByType<Plugins.PluginProcDirector>();
+
+            return procs;
         }
 
         /// <summary>

@@ -307,9 +307,20 @@ namespace NeonVoid.Missions
             if (player != null)
                 PlaceAtEntrance(player, PositionOf(layout, layout.Start));
 
+            // Copied out of the `in` parameter: a lambda cannot capture one, and the runtime
+            // needs its 환경 before it wakes.
+            AreaConditions areaConditions = conditions;
+
             HardwareAreaRuntime runtime = AddAsleep<HardwareAreaRuntime>(
                 "Area Runtime", root.transform,
-                r => r.Configure(layout.Spec.Hardware, mission, player, devices, bossGate, console, pad, roomGates));
+                r =>
+                {
+                    r.Configure(layout.Spec.Hardware, mission, player, devices, bossGate, console, pad, roomGates);
+
+                    // Before it wakes: 터널감염 lands when the player enters, and an area that
+                    // learned its 환경 a tick later would infect them a tick into the fight.
+                    r.UseConditions(areaConditions);
+                });
 
             Debug.Log(
                 $"Built {layout.Spec.Hardware} from {layout.ReceiptLine()}: " +
