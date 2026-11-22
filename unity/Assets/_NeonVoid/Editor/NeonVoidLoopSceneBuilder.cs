@@ -151,6 +151,12 @@ namespace NeonVoid.EditorTools
             var database = saveObject.AddComponent<NeonVoid.Progression.PluginDatabaseDirector>();
             AssignSerialized(database, "saveDirector", saveDirector);
 
+            // 출전 소지: what the player put in the 출전 list is what the 의뢰 starts with.
+            // Without it the hub's database terminal moves cards that change nothing.
+            var deployed = saveObject.AddComponent<NeonVoid.Progression.DeployedLoadoutDirector>();
+            AssignSerialized(deployed, "saveDirector", saveDirector);
+            AssignSerialized(deployed, "procs", vaccine.Actor.GetComponent<NeonVoid.Plugins.PluginProcDirector>());
+
             // 메인보드: five portals and the builder that puts an area up behind one of them.
             var boardObject = new GameObject("Motherboard");
             boardObject.transform.position = MotherboardAt;

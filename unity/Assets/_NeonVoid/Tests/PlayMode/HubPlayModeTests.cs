@@ -395,6 +395,71 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator AMissionStartsWithWhatIsInTheDeployList()
+        {
+            // [확정] docs/00 section 5: 출전 소지 플러그인은 사망 시 소실되므로 '들고 간 영구
+            // 자산'도 위험 자산이다. Until the 의뢰 actually started with the 출전 list, the
+            // hub's database terminal moved cards that changed nothing.
+            yield return Hub();
+
+            string carried = NeonVoid.Plugins.PluginInstanceId
+                .Mint(NeonVoid.Plugins.PluginDocumentKeys.KeyFor("R02"), "deploy-test").Value;
+            _store.Snapshot.vaccine.carriedPluginInstanceIds.Add(carried);
+
+            var deployObject = new GameObject("Deployed Loadout Director");
+            deployObject.SetActive(false);
+            var deployed = deployObject.AddComponent<DeployedLoadoutDirector>();
+
+            try
+            {
+                deployed.Configure(_saveObject.GetComponent<VaccineSaveDirector>(), _arena.Procs);
+                deployObject.SetActive(true);
+
+                Assert.IsTrue(deployed.Available, "the save could not be read");
+                Assert.AreEqual(1, deployed.DeployedInstanceIds.Count);
+                Assert.IsTrue(_arena.Procs.StartsFromDeployedList);
+
+                // The arena's proc director has already run its Start, so the deployment is
+                // asserted through the resolution rather than by replaying the scene: what the
+                // director would carry is exactly what this resolves.
+                NeonVoid.Plugins.DeployedPlugins.Resolution resolved =
+                    NeonVoid.Plugins.DeployedPlugins.Resolve(deployed.DeployedInstanceIds);
+
+                Assert.AreEqual(1, resolved.Cards.Count);
+                Assert.AreEqual("R02", resolved.Cards[0].ProposalId);
+                Assert.AreEqual(0, resolved.Missing);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(deployObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WithNoSaveThereIsNoDeployListAndThePrototypeSetStands()
+        {
+            // A source that answered "nothing" when it simply could not read would start every
+            // mission empty and look like a rule. No save means no source at all.
+            yield return Hub(connectSave: false);
+
+            var deployObject = new GameObject("Deployed Loadout Director");
+            var deployed = deployObject.AddComponent<DeployedLoadoutDirector>();
+
+            try
+            {
+                Assert.IsFalse(deployed.Available);
+                Assert.IsEmpty(deployed.DeployedInstanceIds);
+                Assert.IsFalse(
+                    _arena.Procs.StartsFromDeployedList,
+                    "a mission with no save claimed to start from the 출전 목록");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(deployObject);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator WithNoSaveTheDatabaseSaysSoRatherThanMovingNothing()
         {
             // A button that silently did nothing would read as broken. The screen greys out and

@@ -193,6 +193,22 @@ namespace NeonVoid.Plugins
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects + 1;
 
+        /// <summary>
+        /// Where the 출전 소지 list comes from, registered by whatever can read the save.
+        /// <para>
+        /// Registered rather than found, because Plugins must not reference Progression.Save -
+        /// the same direction <c>IMissionCommitGate</c> points. Null is a scene with no save,
+        /// and the prototype set is what that scene plays with.
+        /// </para>
+        /// </summary>
+        private IDeployedPluginSource _deployed;
+
+        /// <summary>Hands the director the 출전 목록 source. Call it before Start.</summary>
+        public void UseDeployedSource(IDeployedPluginSource source) => _deployed = source;
+
+        /// <summary>Whether a 의뢰 would start from the save rather than the prototype set.</summary>
+        public bool StartsFromDeployedList => _deployed != null && _deployed.Available;
+
         private void Awake()
         {
             if (owner == null)
@@ -217,20 +233,67 @@ namespace NeonVoid.Plugins
                 ? missionDirector.CreateRng(RandomStream.Reward)
                 : new DeterministicRng(fallbackRewardSeed);
 
+            if (GrantWhatIsDeployed())
+                return;
+
             if (!grantPrototypePluginsOnStart)
                 return;
 
             IReadOnlyList<PluginDefinition> prototype = PluginCatalog.Prototype();
             for (int i = 0; i < prototype.Count; ++i)
-            {
-                PluginGrantVerdict verdict = _router.TryGrant(prototype[i], _rewardRng, out string reason);
-                if (verdict == PluginGrantVerdict.Granted)
-                    Debug.Log($"Plugin {prototype[i].ProposalId} carried.", this);
-                else
-                    Debug.LogWarning($"Plugin {prototype[i].ProposalId} not carried: {verdict} - {reason}", this);
-            }
+                Carry(prototype[i]);
 
             PushPassivesToOwner();
+        }
+
+        /// <summary>
+        /// Starts the 의뢰 with what the vaccine is 출전 소지 with.
+        /// <para>
+        /// [확정] docs/00 section 5: 출전 소지 플러그인은 사망 시 소실되므로 '들고 간 영구 자산'도
+        /// 위험 자산이다. That sentence only means anything if what the player put in the 출전
+        /// list in the hub is what they walk in with - until this, a mission started with a fixed
+        /// prototype set and the 보관 DB terminal moved cards that changed nothing.
+        /// </para>
+        /// <para>
+        /// <b>Returns false when there is no source to read</b>, which is not the same as a
+        /// vaccine carrying nothing. A scene with no save falls back to the prototype set; a
+        /// vaccine that genuinely carries nothing starts empty, and the reward screens in the
+        /// run are where its plugins come from.
+        /// </para>
+        /// </summary>
+        private bool GrantWhatIsDeployed()
+        {
+            if (_deployed == null || !_deployed.Available)
+                return false;
+
+            DeployedPlugins.Resolution resolved =
+                DeployedPlugins.Resolve(_deployed.DeployedInstanceIds);
+
+            for (int i = 0; i < resolved.Cards.Count; ++i)
+                Carry(resolved.Cards[i]);
+
+            if (resolved.Missing > 0)
+            {
+                // Owned, and not in the player's hands this run. Said out loud: a loadout
+                // quietly shorter than the 보관 DB terminal listed is the kind of thing that
+                // gets blamed on the terminal.
+                Debug.LogWarning(
+                    $"{name}: 출전 목록의 {resolved.Missing}개를 이 빌드가 알지 못해 들고 가지 " +
+                    $"못했다 (이름 없음 {resolved.Unnamed}, 모르는 키 {resolved.Unknown}).", this);
+            }
+
+            Debug.Log($"출전 소지: {resolved}.", this);
+            PushPassivesToOwner();
+            return true;
+        }
+
+        private void Carry(in PluginDefinition plugin)
+        {
+            PluginGrantVerdict verdict = _router.TryGrant(plugin, _rewardRng, out string reason);
+            if (verdict == PluginGrantVerdict.Granted)
+                Debug.Log($"Plugin {plugin.ProposalId} carried.", this);
+            else
+                Debug.LogWarning($"Plugin {plugin.ProposalId} not carried: {verdict} - {reason}", this);
         }
 
         private void OnEnable()
