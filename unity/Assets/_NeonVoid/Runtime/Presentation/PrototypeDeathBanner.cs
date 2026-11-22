@@ -22,6 +22,11 @@ namespace NeonVoid.Presentation
     {
         [SerializeField] private RunDeathDirector deathDirector;
 
+        [Tooltip(
+            "Disables this banner in a scene that has the UI Toolkit 사망 화면, so the two do " +
+            "not stack on top of each other.")]
+        [SerializeField] private bool standDownForTheRealScreen = true;
+
         private GUIStyle _titleStyle;
         private GUIStyle _lineStyle;
 
@@ -29,6 +34,11 @@ namespace NeonVoid.Presentation
         {
             if (deathDirector == null)
                 deathDirector = FindFirstObjectByType<RunDeathDirector>();
+
+            // The loop scene has the real 사망 화면 now. Two death panels over each other is
+            // worse than either alone, and this one is the one that was always temporary.
+            if (standDownForTheRealScreen && FindFirstObjectByType<NeonVoid.UI.HudController>() != null)
+                enabled = false;
         }
 
         private void OnGUI()

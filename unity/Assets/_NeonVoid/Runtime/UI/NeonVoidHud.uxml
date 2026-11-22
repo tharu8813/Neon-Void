@@ -64,5 +64,21 @@
       </ui:VisualElement>
 
     </ui:VisualElement>
+
+    <ui:VisualElement name="deathScreen" class="death hidden" picking-mode="Ignore">
+      <ui:VisualElement name="deathCard" class="death__card" picking-mode="Ignore">
+        <ui:Label name="deathTitle" class="death__title" text="사망" />
+        <ui:Label name="deathStatus" class="death__status" text="" />
+        <ui:Label name="deathDetail" class="death__detail" text="" />
+        <ui:VisualElement name="deathCounts" class="death__counts hidden" picking-mode="Ignore">
+          <ui:Label name="deathClones" class="death__count" text="" />
+          <ui:Label name="deathRemaining" class="death__count" text="" />
+        </ui:VisualElement>
+        <ui:VisualElement name="deathUnsettled" class="death__unsettled hidden" picking-mode="Ignore" />
+        <ui:Label name="deathNext" class="death__next" text="" />
+        <ui:Label name="deathId" class="death__id" text="" />
+      </ui:VisualElement>
+    </ui:VisualElement>
+
   </ui:VisualElement>
 </ui:UXML>

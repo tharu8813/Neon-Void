@@ -3,6 +3,7 @@ using NeonVoid.Combat;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Missions;
+using NeonVoid.Progression;
 using NeonVoid.Progression.Save;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -51,6 +52,9 @@ namespace NeonVoid.UI
             "Found when left empty.")]
         [SerializeField] private VaccineSaveDirector save;
 
+        [Tooltip("The death ledger the 사망 화면 reads. Found when left empty.")]
+        [SerializeField] private RunDeathDirector deaths;
+
         [Header("[초안] labels")]
         [Tooltip("[초안] D-009 has not settled the keys; these are the prototype's Q/E/R.")]
         [SerializeField] private string[] skillKeys = { "Q", "E", "R" };
@@ -76,6 +80,18 @@ namespace NeonVoid.UI
 
         private Label _saveNotice;
 
+        private VisualElement _deathScreen;
+        private Label _deathTitle;
+        private Label _deathStatus;
+        private Label _deathDetail;
+        private VisualElement _deathCounts;
+        private Label _deathClones;
+        private Label _deathRemaining;
+        private VisualElement _deathUnsettled;
+        private Label _deathNext;
+        private Label _deathId;
+        private string _deathSignature = string.Empty;
+
         private VisualElement _boardPanel;
         private VisualElement _boardRows;
 
@@ -99,6 +115,9 @@ namespace NeonVoid.UI
 
         private const string Hidden = "hidden";
         private const string SaveNoticeFailure = "save-notice--failure";
+        private const string DeathPending = "death--pending";
+        private const string DeathFailed = "death--failed";
+        private const string DeathDestroyed = "death--destroyed";
         private const string SkillReady = "skill--ready";
         private const string SkillEmpty = "skill--empty";
         private const string GaugeArmed = "area__gauge--armed";
@@ -123,6 +142,12 @@ namespace NeonVoid.UI
         /// </summary>
         public HudSaveNotice SaveNotice { get; private set; }
 
+        /// <summary>
+        /// The 사망/파기 화면 as the HUD last read it. Public so what it would say can be
+        /// checked without a panel to draw it on.
+        /// </summary>
+        public DeathScreenSnapshot Death { get; private set; }
+
         private readonly List<HudBoardRow> _board = new List<HudBoardRow>();
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects + 10;
@@ -133,13 +158,15 @@ namespace NeonVoid.UI
             MotherboardDirector board = null,
             HardwareAreaRuntime areaRuntime = null,
             HubRuntime hubRuntime = null,
-            VaccineSaveDirector saveDirector = null)
+            VaccineSaveDirector saveDirector = null,
+            RunDeathDirector deathDirector = null)
         {
             player = vaccine;
             motherboard = board;
             area = areaRuntime;
             hub = hubRuntime;
             save = saveDirector;
+            deaths = deathDirector;
         }
 
         private void Awake()
@@ -160,6 +187,9 @@ namespace NeonVoid.UI
 
             if (save == null)
                 save = FindFirstObjectByType<VaccineSaveDirector>();
+
+            if (deaths == null)
+                deaths = FindFirstObjectByType<RunDeathDirector>();
         }
 
         private void OnEnable()
@@ -196,6 +226,9 @@ namespace NeonVoid.UI
 
             SaveNotice = GatherSaveNotice();
             DrawSaveNotice(SaveNotice);
+
+            Death = GatherDeath();
+            DrawDeath(Death);
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -550,6 +583,85 @@ namespace NeonVoid.UI
             Toggle(_saveNotice, SaveNoticeFailure, notice.IsFailure);
         }
 
+        /// <summary>
+        /// The 사망 화면's reading, taken from the ledger and from what permanent state
+        /// answered - never from the clone counter alone, because 복제 0 and a destroyed
+        /// vaccine look identical in it.
+        /// </summary>
+        public DeathScreenSnapshot GatherDeath()
+        {
+            if (deaths == null)
+                return DeathScreenSnapshot.None;
+
+            RunDeathLedger ledger = deaths.Ledger;
+            VaccineSaveState vaccine = save != null && save.Store != null
+                ? save.Store.Snapshot.vaccine
+                : null;
+
+            return DeathScreenSnapshot.From(
+                ledger.Phase,
+                ledger.RegisteredDeathId,
+                ledger.LastFailureReason,
+                commitConnected: deaths.HasCommitService,
+                vaccineAlive: vaccine == null || vaccine.alive,
+                clonesRemaining: vaccine != null ? vaccine.copiesRemaining : 0,
+                deathCount: vaccine != null ? vaccine.deathCount : 0);
+        }
+
+        private void DrawDeath(DeathScreenSnapshot death)
+        {
+            Show(_deathScreen, death.Shown);
+            if (_deathScreen == null || !death.Shown)
+            {
+                _deathSignature = string.Empty;
+                return;
+            }
+
+            Toggle(_deathScreen, DeathPending, death.Phase == DeathScreenPhase.AwaitingCommit);
+            Toggle(_deathScreen, DeathFailed, death.Phase == DeathScreenPhase.CommitFailed);
+            Toggle(_deathScreen, DeathDestroyed, death.Phase == DeathScreenPhase.Destroyed);
+
+            // The whole screen changes only when the death does, which is at most four times in
+            // a vaccine's life. Rewriting six labels every tick would be work for nothing.
+            string signature = death.Phase + "|" + death.DeathIdText + "|" + death.Status;
+            if (signature == _deathSignature)
+                return;
+
+            _deathSignature = signature;
+
+            SetText(_deathTitle, death.Title);
+            SetText(_deathStatus, death.Status);
+            SetText(_deathDetail, death.Detail);
+            SetText(_deathNext, death.NextStep);
+            SetText(_deathId, death.DeathIdText);
+
+            Show(_deathCounts, death.NumbersKnown);
+            if (death.NumbersKnown)
+            {
+                SetText(_deathClones, $"복제 잔여 {death.ClonesRemaining}");
+                SetText(_deathRemaining, $"파기까지 {death.DeathsLeft}회");
+            }
+
+            Show(_deathUnsettled, death.Unsettled.Count > 0);
+            if (_deathUnsettled == null)
+                return;
+
+            _deathUnsettled.Clear();
+            for (int i = 0; i < death.Unsettled.Count; ++i)
+            {
+                var line = new Label(death.Unsettled[i]);
+                line.AddToClassList("death__unsettled-line");
+                line.pickingMode = PickingMode.Ignore;
+                _deathUnsettled.Add(line);
+            }
+        }
+
+        private static void SetText(Label label, string text)
+        {
+            if (label != null)
+                label.text = text;
+        }
+
         private bool Bind()
         {
             if (_bound)
@@ -579,6 +691,17 @@ namespace NeonVoid.UI
             }
 
             _saveNotice = root.Q<Label>("saveNotice");
+
+            _deathScreen = root.Q<VisualElement>("deathScreen");
+            _deathTitle = root.Q<Label>("deathTitle");
+            _deathStatus = root.Q<Label>("deathStatus");
+            _deathDetail = root.Q<Label>("deathDetail");
+            _deathCounts = root.Q<VisualElement>("deathCounts");
+            _deathClones = root.Q<Label>("deathClones");
+            _deathRemaining = root.Q<Label>("deathRemaining");
+            _deathUnsettled = root.Q<VisualElement>("deathUnsettled");
+            _deathNext = root.Q<Label>("deathNext");
+            _deathId = root.Q<Label>("deathId");
 
             _boardPanel = root.Q<VisualElement>("boardPanel");
             _boardRows = root.Q<VisualElement>("boardRows");

@@ -174,7 +174,7 @@ namespace NeonVoid.EditorTools
 
             // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
             // to be chosen 실제 검증 후 - which needs a HUD to verify.
-            BuildHud(vaccine.Actor, motherboard, hub, saveDirector);
+            BuildHud(vaccine.Actor, motherboard, hub, saveDirector, deaths);
 
             CreateDirectionalLight();
 
@@ -241,7 +241,8 @@ namespace NeonVoid.EditorTools
             NeonVoid.Combat.CombatActor player,
             MotherboardDirector board,
             HubRuntime hub,
-            VaccineSaveDirector save)
+            VaccineSaveDirector save,
+            RunDeathDirector deaths)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -266,7 +267,7 @@ namespace NeonVoid.EditorTools
             HudController controller = host.AddComponent<HudController>();
             // Wired rather than found, so the notice that says whether this session is being
             // written down cannot be the thing that silently went missing.
-            controller.Configure(player, board, null, hub, save);
+            controller.Configure(player, board, null, hub, save, deaths);
 
             host.SetActive(true);
         }

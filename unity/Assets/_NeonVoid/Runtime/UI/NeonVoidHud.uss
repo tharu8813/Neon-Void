@@ -22,6 +22,125 @@
     display: none;
 }
 
+/* --- 사망 / 최종 파기 --------------------------------------------------------- */
+
+.death {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(4, 7, 14, 0.93);
+}
+
+.death__card {
+    width: 640px;
+    max-width: 92%;
+    padding-top: 26px;
+    padding-right: 30px;
+    padding-bottom: 26px;
+    padding-left: 30px;
+    background-color: rgba(10, 16, 28, 0.96);
+    border-left-width: 3px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: rgb(255, 92, 82);
+    border-right-color: rgba(120, 230, 255, 0.25);
+    border-top-color: rgba(120, 230, 255, 0.25);
+    border-bottom-color: rgba(120, 230, 255, 0.25);
+}
+
+.death__title {
+    font-size: 30px;
+    -unity-font-style: bold;
+    letter-spacing: 6px;
+    color: rgb(255, 110, 100);
+    margin-bottom: 10px;
+}
+
+.death__status {
+    font-size: 17px;
+    -unity-font-style: bold;
+    color: rgb(230, 240, 255);
+    margin-bottom: 8px;
+}
+
+.death__detail {
+    font-size: 13px;
+    color: rgb(176, 192, 214);
+    white-space: normal;
+    margin-bottom: 12px;
+}
+
+.death__counts {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.death__count {
+    font-size: 14px;
+    color: rgb(120, 230, 255);
+    margin-right: 22px;
+}
+
+.death__unsettled {
+    margin-bottom: 12px;
+    padding-left: 10px;
+    border-left-width: 2px;
+    border-left-color: rgba(255, 196, 92, 0.6);
+}
+
+.death__unsettled-line {
+    font-size: 12px;
+    color: rgb(214, 186, 132);
+    white-space: normal;
+}
+
+.death__next {
+    font-size: 13px;
+    color: rgb(200, 214, 232);
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.death__id {
+    font-size: 11px;
+    color: rgba(150, 168, 190, 0.7);
+    letter-spacing: 1px;
+}
+
+/* 저장이 아직 답하지 않았거나 실패한 상태는 결과가 아니다 - 결과처럼 보이지 않게 한다. */
+.death--pending .death__card {
+    border-left-color: rgba(120, 230, 255, 0.7);
+}
+
+.death--pending .death__title {
+    color: rgb(170, 200, 230);
+}
+
+.death--failed .death__card {
+    border-left-color: rgb(255, 196, 92);
+}
+
+.death--failed .death__title {
+    color: rgb(255, 196, 92);
+}
+
+/* [확정] docs/04 section 2: 4번째 사망만 최종 파기. */
+.death--destroyed .death__card {
+    border-left-color: rgb(255, 60, 90);
+    border-right-color: rgba(255, 60, 90, 0.35);
+    border-top-color: rgba(255, 60, 90, 0.35);
+    border-bottom-color: rgba(255, 60, 90, 0.35);
+}
+
+.death--destroyed .death__title {
+    color: rgb(255, 70, 96);
+}
+
 /* --- 저장 상태 -------------------------------------------------------------- */
 
 .save-notice {

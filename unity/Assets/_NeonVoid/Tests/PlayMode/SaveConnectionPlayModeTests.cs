@@ -31,6 +31,7 @@ namespace NeonVoid.Tests.PlayModeTests
         private string _root;
         private PrototypeArena _arena;
         private GameObject _saveObject;
+        private GameObject _hudObject;
 
         [SetUp]
         public void SetUp()
@@ -42,6 +43,10 @@ namespace NeonVoid.Tests.PlayModeTests
         [TearDown]
         public void TearDown()
         {
+            if (_hudObject != null)
+                UnityEngine.Object.Destroy(_hudObject);
+            _hudObject = null;
+
             if (_saveObject != null)
                 UnityEngine.Object.Destroy(_saveObject);
             _arena?.Dispose();
@@ -270,6 +275,81 @@ namespace NeonVoid.Tests.PlayModeTests
             {
                 UnityEngine.Object.Destroy(hudObject);
             }
+        }
+    
+        // --- the 사망 화면 ------------------------------------------------------------------
+
+        /// <summary>Adds a HUD that draws nothing, so what it would say can be read.</summary>
+        private NeonVoid.UI.HudController AddHud(
+            VaccineSaveDirector saveDirector, RunDeathDirector deathDirector)
+        {
+            _hudObject = new GameObject("HUD Model");
+            _hudObject.SetActive(false);
+            _hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = _hudObject.AddComponent<NeonVoid.UI.HudController>();
+            hud.Configure(
+                _arena.Player, saveDirector: saveDirector, deathDirector: deathDirector);
+            return hud;
+        }
+
+        [UnityTest]
+        public IEnumerator TheDeathScreenShowsNoLossesUntilTheSaveHasAnswered()
+        {
+            // [확정] CLAUDE.md: 보상/사망/철수/DB 이동은 저장 커밋 승인 후 UI 및 게임 상태 확정.
+            // With permanent writes off - the default since D-020 - there is no commit service,
+            // so this death never settles, and the screen must say that rather than invent a
+            // clone count.
+            _arena = PrototypeArena.Build();
+            VaccineSaveDirector off = AddDirector(false, null);
+            NeonVoid.UI.HudController hud = AddHud(off, _arena.DeathDirector);
+
+            Assert.IsFalse(hud.GatherDeath().Shown, "the screen was up before anyone died");
+
+            PrototypeArena.Kill(_arena.Player);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(RunDeathPhase.AwaitingCommit, _arena.DeathDirector.Ledger.Phase);
+            Assert.IsFalse(_arena.DeathDirector.HasCommitService);
+
+            NeonVoid.UI.DeathScreenSnapshot death = hud.GatherDeath();
+            Assert.IsTrue(death.Shown, "the player died and the screen said nothing");
+            Assert.AreEqual(NeonVoid.UI.DeathScreenPhase.AwaitingCommit, death.Phase);
+            Assert.IsFalse(
+                death.NumbersKnown,
+                "the screen charged a clone that no write has charged");
+            Assert.IsEmpty(death.Unsettled);
+        }
+
+        [UnityTest]
+        public IEnumerator ACommittedDeathPutsTheWrittenCloneCountOnTheScreen()
+        {
+            // And here the numbers exist, because a verified write produced them. They are read
+            // back from the store rather than counted in the scene.
+            _arena = PrototypeArena.Build();
+            SaveStore store = NewStore();
+            VaccineSaveDirector director = AddDirector(true, store);
+            NeonVoid.UI.HudController hud = AddHud(director, _arena.DeathDirector);
+
+            Assert.IsTrue(director.CanCommit, director.Result.Detail);
+
+            PrototypeArena.Kill(_arena.Player);
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(RunDeathPhase.Committed, _arena.DeathDirector.Ledger.Phase,
+                _arena.DeathDirector.Ledger.LastFailureReason);
+
+            NeonVoid.UI.DeathScreenSnapshot death = hud.GatherDeath();
+            Assert.AreEqual(NeonVoid.UI.DeathScreenPhase.Settled, death.Phase);
+            Assert.IsTrue(death.NumbersKnown);
+            Assert.AreEqual(
+                store.Snapshot.vaccine.copiesRemaining, death.ClonesRemaining,
+                "the screen disagrees with the file it claims to be reporting");
+            Assert.AreEqual(VaccineSaveState.DesignStartingCopies - 1, death.ClonesRemaining);
+            Assert.AreEqual(1, death.DeathCount);
+            Assert.AreEqual(
+                VaccineSaveState.DesignDeathsBeforeFinalDestruction - 1, death.DeathsLeft);
+            Assert.IsFalse(death.LastChance, "the first of four deaths read as the last chance");
+            Assert.IsNotEmpty(death.Unsettled, "D-012 and D-006/D-007 went unmentioned");
         }
     }
 }

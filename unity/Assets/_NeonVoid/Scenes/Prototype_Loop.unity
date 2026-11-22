@@ -154,6 +154,7 @@ MonoBehaviour:
   area: {fileID: 0}
   hub: {fileID: 2123269494}
   save: {fileID: 1217997894}
+  deaths: {fileID: 1392016106}
   skillKeys:
   - Q
   - E
