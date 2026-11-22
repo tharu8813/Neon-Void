@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using NeonVoid.Core;
+using NeonVoid.Plugins;
 
 namespace NeonVoid.EditorTools
 {
@@ -430,10 +431,11 @@ namespace NeonVoid.EditorTools
             var text = new StringBuilder();
             RewardRollCandidate[] candidates = All();
 
-            text.AppendLine("# D-006 보상 카드 확률 시뮬레이션 — 승인 전 자료");
+            text.AppendLine("# D-006 보상 카드 확률 시뮬레이션 — 승인 근거");
             text.AppendLine();
-            text.AppendLine("> **이 문서는 결정이 아니다.** docs/08 D-006은 미확정이며, 여기의 숫자는 어느 것도 게임에 적용되어 있지 않다.");
-            text.AppendLine("> 시뮬레이터는 `unity/Assets/_NeonVoid/Editor/RewardRollSimulator.cs`에 있고, **Editor 어셈블리라 런타임이 참조할 수 없다** — 승인 전에 실수로 출시될 수 없다는 뜻이다.");
+            text.AppendLine("> **2026-11-22: B. 곡선이 승인되어 게임에 적용되었다** (docs/08 §4-1의 D-006, `Runtime/Plugins/RewardRollTable.cs`).");
+            text.AppendLine("> 이 문서는 **무엇을 비교해서 그렇게 골랐는지의 기록**이다. A안과 C안은 적용되지 않았고 시뮬레이터에만 남아 있다.");
+            text.AppendLine("> 시뮬레이터는 `unity/Assets/_NeonVoid/Editor/RewardRollSimulator.cs`에 있다. 맨 아래 자체 검증이 **B안이 게임에 들어간 표와 같은지** 매번 확인한다.");
             text.AppendLine();
 
             text.AppendLine("## 모델이 지킨 [확정] 규칙");
@@ -638,9 +640,9 @@ namespace NeonVoid.EditorTools
             text.AppendLine("- **위험**: **행운이 필수 스탯이 된다.** 모든 빌드가 행운을 먼저 찍고 시작하면 영구 투자의 선택지가 22개에서 사실상 21개로 줄어든다. 게다가 행운은 지금 *어디서도 읽히지 않는* 미연결 스탯이라, 이 안을 고르면 D-011(투자 비용)이 함께 묶인다.");
             text.AppendLine();
 
-            text.AppendLine("## 추천");
+            text.AppendLine("## 추천 — 2026-11-22 승인됨");
             text.AppendLine();
-            text.AppendLine("**B. 곡선**을 추천한다.");
+            text.AppendLine("**B. 곡선**을 추천했고, 기획자가 승인했다. 아래가 그 근거다.");
             text.AppendLine();
             text.AppendLine("- 가뭄은 A와 구별되지 않는다(중앙값 7화면으로 동일, p95 13화면으로 동일). **A의 유일한 장점을 잃지 않는다.**");
             text.AppendLine("- 그러면서 **후반/초반 2.34배**로 A의 1.55배보다 훨씬 또렷하게 '더 깊이 들어가면 더 좋은 것이 나온다'를 만든다. 이건 docs/01이 이미 [확정]한 *정화 1곳 후 철수 가능* 규칙에 실제 선택의 무게를 주는 유일한 후보다.");
@@ -706,6 +708,29 @@ namespace NeonVoid.EditorTools
 
             // 7. A pool with no candidates is never dealt from.
             text.AppendLine($"| 전설 풀 3종, 신화 풀 0종 | {(PoolSize[2] == 3 && PoolSize[3] == 0 ? "통과" : "**실패**")} |");
+
+            // 8. B is what was approved, so the two must not drift apart. If this fails, the
+            //    report is describing numbers the game no longer uses.
+            RewardRollCandidate candidateB = Curved();
+            RewardRollTable shipped = RewardRollTable.Approved();
+            bool matches = true;
+            for (int i = 0; i < RewardRollTable.Grades && matches; ++i)
+            {
+                matches =
+                    Math.Abs(candidateB.BaseWeight[i] - shipped.BaseWeight[i]) < 0.0001f
+                    && Math.Abs(candidateB.LuckPerPoint[i] - shipped.LuckPerPoint[i]) < 0.0001f
+                    && Math.Abs(candidateB.HardMul[i] - shipped.HardMul[i]) < 0.0001f
+                    && Math.Abs(candidateB.EasyMul[i] - shipped.EasyMul[i]) < 0.0001f
+                    && Math.Abs(candidateB.ProgressPerPurify[i] - shipped.ProgressPerPurify[i]) < 0.0001f;
+            }
+
+            matches = matches
+                && Math.Abs(candidateB.PityGrowthPerScreen - shipped.PityGrowthPerScreen) < 0.0001f
+                && Math.Abs(candidateB.PityCap - shipped.PityCap) < 0.0001f
+                && candidateB.PityAfterScreens == RewardRollTable.PityAfterScreens;
+
+            text.AppendLine(
+                $"| **B안이 게임에 들어간 표와 같다** | {(matches ? "통과" : "**실패 — 리포트가 설명하는 숫자를 게임이 쓰지 않는다**")} |");
 
             return text.ToString();
         }

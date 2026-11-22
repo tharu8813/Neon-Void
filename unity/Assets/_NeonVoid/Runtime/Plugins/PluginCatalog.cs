@@ -871,6 +871,42 @@ namespace NeonVoid.Plugins
             StatusDurationTicksOverride = -1,
         };
 
+        /// <summary>
+        /// Every authored card, in a fixed order, so a replay rolls them identically.
+        /// <para>
+        /// This is the pool <see cref="RewardRoller"/> deals from. It is the catalogue rather
+        /// than a separate list because a card that exists and is not offered is a card nobody
+        /// can ever get - and the four of the twenty-seven that are not written yet are absent
+        /// here by being absent from the file.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<PluginDefinition> All() => new[]
+        {
+            ArcChain(),
+            DetonationGlyph(),
+            CorrosionMark(),
+            RandomPatch(),
+            Lightweight(),
+            UntouchedAcceleration(),
+            ThrottleAmplifier(),
+            PeriodicBarrier(),
+            ExecutionBarrier(),
+            DashBarrier(),
+            CrisisRepulse(),
+            FeverTime(),
+            SkillResponse(),
+            SeekerRound(),
+            ExpandedWarhead(),
+            WeaknessAnalysis(),
+            ExecutionAlgorithm(),
+            SupportRound(),
+            QuadCache(),
+            DismantleProtocol(),
+            DashDetonation(),
+            MovementBuffer(),
+            KillStack(),
+        };
+
         /// <summary>The prototype set in a fixed order, so a replay grants them identically.</summary>
         public static IReadOnlyList<PluginDefinition> Prototype() => new[]
         {
