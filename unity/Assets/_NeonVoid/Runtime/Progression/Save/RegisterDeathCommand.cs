@@ -198,10 +198,16 @@ namespace NeonVoid.Progression.Save
 
             // [확정] docs/04 section 3.5: 사망 시 출전 소지분은 소실. Both branches, because a
             // destroyed vaccine loses them as well.
+            //
+            // Counted before it is cleared, and written on the receipt. Until 출전 소지 was
+            // wired to the 의뢰 (2026-11-23) this was always zero and nothing was lost; now it
+            // is the one number that says how much a death actually cost, and a receipt that
+            // did not carry it could never answer "what did I lose" afterwards.
+            int carriedLost = vaccine.carriedPluginInstanceIds.Count;
             vaccine.carriedPluginInstanceIds.Clear();
 
             if (deaths >= VaccineSaveState.DesignDeathsBeforeFinalDestruction)
-                return Destroy(vaccine, deaths);
+                return Destroy(vaccine, deaths, carriedLost);
 
             vaccine.copiesRemaining = VaccineSaveState.DesignStartingCopies - deaths;
 
@@ -230,7 +236,7 @@ namespace NeonVoid.Progression.Save
             return SaveCommandOutcome.Accept(
                 $"deaths={deaths};copiesRemaining={vaccine.copiesRemaining};destroyed=false;" +
                 $"settledXp={_settlement.PermanentXp};settledPoints={_settlement.StatPoints};" +
-                $"purifications={_settlement.Purifications};" +
+                $"purifications={_settlement.Purifications};carriedLost={carriedLost};" +
                 $"level={growth.Level};levelsGained={growth.LevelsGained};" +
                 $"levelPoints={growth.PointsGained};points={vaccine.unusedStatPoints}");
         }
@@ -241,10 +247,12 @@ namespace NeonVoid.Progression.Save
         /// later would only put a number on the receipt that the player never had. The receipt
         /// says so rather than leaving the zero to be read as a settlement that failed.
         /// </summary>
-        private SaveCommandOutcome Destroy(VaccineSaveState vaccine, int deaths)
+        private SaveCommandOutcome Destroy(VaccineSaveState vaccine, int deaths, int carriedLost)
         {
             vaccine.alive = false;
             vaccine.copiesRemaining = 0;
+
+            int archiveLost = vaccine.archivePluginInstanceIds.Count;
             vaccine.archivePluginInstanceIds.Clear();
             vaccine.permanentXp = 0L;
             vaccine.permanentLevel = 1;
@@ -252,7 +260,8 @@ namespace NeonVoid.Progression.Save
 
             return SaveCommandOutcome.Accept(
                 $"deaths={deaths};copiesRemaining=0;destroyed=true;settledXp=0;settledPoints=0;" +
-                $"purifications={_settlement.Purifications};level=1;levelsGained=0;levelPoints=0;points=0;" +
+                $"purifications={_settlement.Purifications};carriedLost={carriedLost};" +
+                $"archiveLost={archiveLost};level=1;levelsGained=0;levelPoints=0;points=0;" +
                 $"note=settlement-moot-on-destruction");
         }
     }

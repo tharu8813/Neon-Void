@@ -122,6 +122,14 @@ namespace NeonVoid.Missions
         /// same key and is answered with the id already allocated.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Raised once a 의뢰 has actually begun - after the run id is spent and the flow has
+        /// taken the transition, never before. What listens rebuilds per-mission state: the
+        /// plugin loadout is read from 출전 소지 here, because a session plays more than one
+        /// mission and the second must not start with what the first lost.
+        /// </summary>
+        public event System.Action MissionBegun;
+
         public bool TryBeginNextMission()
         {
             // Before anything, and before a run id is spent: the previous mission's death has to
@@ -164,6 +172,7 @@ namespace NeonVoid.Missions
                 $"Mission {ordinal} begun: {identity} (mission stream {identity.SeedFor(RandomStream.Mission)}, " +
                 $"combat {identity.SeedFor(RandomStream.Combat)}, reward {identity.SeedFor(RandomStream.Reward)}).",
                 this);
+            MissionBegun?.Invoke();
             return true;
         }
 

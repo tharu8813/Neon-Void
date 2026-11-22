@@ -146,13 +146,42 @@ namespace NeonVoid.Tests
         public void ASettledDeathNamesWhatIsStillUndecidedRatherThanShowingItAsZero()
         {
             // docs/05 section 2 asks this screen for 이번 의뢰 손실 and 보존 XP. D-012 has not
-            // fixed the settlement and D-006/D-007 have not given the player anything to lose.
-            // "0 XP" would read as a settled loss of everything.
+            // fixed the settlement, so "0 XP" would read as a settled loss of everything.
             DeathScreenSnapshot settled =
                 DeathScreenSnapshot.SettledDeath(AnId, clonesRemaining: 1, deathCount: 2);
 
             CollectionAssert.Contains(settled.Unsettled, DeathScreenSnapshot.UnsettledXp);
-            CollectionAssert.Contains(settled.Unsettled, DeathScreenSnapshot.UnsettledCarried);
+        }
+
+        [Test]
+        public void ThePluginLossIsStatedAsSomethingThatHappened()
+        {
+            // It used to sit in the undecided list as 획득 자체가 미구현 (D-006/D-007). Those
+            // were approved on 2026-11-22 and a 의뢰 now starts with the 출전 목록, so a player
+            // reading that line had just lost something the screen said could not be acquired.
+            DeathScreenSnapshot settled =
+                DeathScreenSnapshot.SettledDeath(AnId, clonesRemaining: 1, deathCount: 2);
+
+            StringAssert.Contains(DeathScreenSnapshot.CarriedLost, settled.Detail);
+            Assert.AreEqual(
+                1, settled.Unsettled.Count,
+                "the plugin loss is decided and should not be listed as waiting on anything");
+
+            // [확정] docs/04 3.5: 보관 DB is not touched by a death the vaccine survives, and
+            // the screen says so - it is the difference between a setback and a disaster.
+            StringAssert.Contains("보관 DB", settled.Detail);
+        }
+
+        [Test]
+        public void TheLastChanceReadingStillSaysWhatWasLost()
+        {
+            // 복제 0 changes the warning, not the loss.
+            DeathScreenSnapshot last =
+                DeathScreenSnapshot.SettledDeath(AnId, clonesRemaining: 0, deathCount: 3);
+
+            Assert.IsTrue(last.LastChance);
+            StringAssert.Contains(DeathScreenSnapshot.CarriedLost, last.Detail);
+            StringAssert.Contains("파기가 아닙니다", last.Detail);
         }
 
         [Test]

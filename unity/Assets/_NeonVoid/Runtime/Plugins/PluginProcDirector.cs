@@ -319,6 +319,9 @@ namespace NeonVoid.Plugins
             if (_flow != null)
                 _flow.MissionEnded += EndMission;
 
+            if (missionDirector != null)
+                missionDirector.MissionBegun += BeginMission;
+
             _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
             if (_runner == null)
             {
@@ -340,6 +343,9 @@ namespace NeonVoid.Plugins
                 _caster.SkillCast -= OnOwnerSkillCast;
             if (_flow != null)
                 _flow.MissionEnded -= EndMission;
+
+            if (missionDirector != null)
+                missionDirector.MissionBegun -= BeginMission;
             if (_runner != null)
                 _runner.Unregister(this);
         }
@@ -816,6 +822,39 @@ namespace NeonVoid.Plugins
         /// "applied but has no effect" failure this project keeps finding.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Rebuilds the loadout from 출전 소지 at the start of every 의뢰.
+        /// <para>
+        /// <b>Why not once per scene.</b> A session plays more than one mission. Seeding only in
+        /// Start meant the second mission kept the first one's cards - including ones a death
+        /// had just taken: the save said 출전 0 and the player was still firing them. [확정]
+        /// docs/04 section 3.5 makes the loss permanent, and a loss the next mission does not
+        /// feel is not a loss.
+        /// </para>
+        /// <para>
+        /// It clears first. The cards picked up inside a 의뢰 are that 의뢰's - docs/00 section 5
+        /// is explicit that 성공 귀환해도 자동 DB 보관 없음 - so carrying them into the next one
+        /// would hand the player a permanent reward the rules never gave.
+        /// </para>
+        /// </summary>
+        public void BeginMission()
+        {
+            if (_router == null)
+                return;
+
+            _router.Loadout.Clear();
+            _growthStacks.Clear();
+
+            if (!GrantWhatIsDeployed() && grantPrototypePluginsOnStart)
+            {
+                IReadOnlyList<PluginDefinition> prototype = PluginCatalog.Prototype();
+                for (int i = 0; i < prototype.Count; ++i)
+                    Carry(prototype[i]);
+            }
+
+            PushPassivesToOwner();
+        }
+
         public void EndMission()
         {
             if (_growthStacks.Count == 0)

@@ -436,6 +436,58 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator TheSecondMissionDoesNotKeepTheFirstOnesCards()
+        {
+            // A session plays more than one 의뢰, and the loadout used to be seeded once per
+            // scene. So the second mission kept the first one's cards - including ones a death
+            // had just taken, with the save reading 출전 0 while the player still fired them.
+            // [확정] docs/00 section 5: 성공 귀환해도 자동 DB 보관 없음.
+            yield return Hub();
+
+            string deployed = NeonVoid.Plugins.PluginInstanceId
+                .Mint(NeonVoid.Plugins.PluginDocumentKeys.KeyFor("R02"), "reseed-test").Value;
+            _store.Snapshot.vaccine.carriedPluginInstanceIds.Add(deployed);
+
+            var deployObject = new GameObject("Deployed Loadout Director");
+            deployObject.SetActive(false);
+            var source = deployObject.AddComponent<DeployedLoadoutDirector>();
+
+            try
+            {
+                source.Configure(_saveObject.GetComponent<VaccineSaveDirector>(), _arena.Procs);
+                deployObject.SetActive(true);
+
+                // First mission: the 출전 card, plus one picked up inside the run.
+                Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission), "the first mission did not begin");
+                yield return _arena.Tick(1);
+
+                Assert.IsTrue(_arena.Procs.Loadout.Carries("R02"), "the 출전 card was not deployed");
+                _arena.Procs.Grant(NeonVoid.Plugins.PluginCatalog.Lightweight(), out string why);
+                Assert.IsTrue(_arena.Procs.Loadout.Carries("G02"), why);
+
+                // The mission ends badly, which is the case that matters.
+                Assert.IsTrue(Flow.TryEnterArea(HardwareId.Cpu, 1));
+                Assert.IsTrue(Flow.TryFail());
+                yield return _arena.Tick(1);
+
+                Assert.IsTrue(_hub.TryUseTerminal(HubTerminalKind.Mission), "the second mission did not begin");
+                yield return _arena.Tick(1);
+
+                Assert.IsFalse(
+                    _arena.Procs.Loadout.Carries("G02"),
+                    "the second 의뢰 began with a card picked up in the first");
+                Assert.IsTrue(
+                    _arena.Procs.Loadout.Carries("R02"),
+                    "the 출전 card was dropped: only the in-run pickups should go");
+                Assert.AreEqual(1, _arena.Procs.Loadout.Count);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(deployObject);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator WithNoSaveThereIsNoDeployListAndThePrototypeSetStands()
         {
             // A source that answered "nothing" when it simply could not read would start every

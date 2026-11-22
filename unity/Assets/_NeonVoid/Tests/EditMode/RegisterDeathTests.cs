@@ -546,5 +546,89 @@ namespace NeonVoid.Tests
             public DeathSettlement SettlementFor(in DeathReport report) =>
                 throw new InvalidOperationException("undecided");
         }
+    
+        // --- what a death actually costs now ---------------------------------------------------
+
+        [Test]
+        public void ADeathLosesEveryDeployedPluginAndKeepsTheArchive()
+        {
+            // [확정] docs/04 section 3.5: 사망 시 출전 소지분은 소실, 보관 DB는 남는다. Until
+            // 출전 소지 reached the 의뢰 (2026-11-23) this cleared an always-empty list, so the
+            // rule had never actually cost anything.
+            Vaccine.carriedPluginInstanceIds.Add("plugin.kill_stack#a");
+            Vaccine.carriedPluginInstanceIds.Add("plugin.lightweight#b");
+            Vaccine.archivePluginInstanceIds.Add("plugin.arc_chain#c");
+
+            Assert.IsTrue(Die(1).Acknowledged);
+
+            Assert.IsEmpty(Vaccine.carriedPluginInstanceIds, "출전 소지분이 남았다");
+            Assert.AreEqual(1, Vaccine.archivePluginInstanceIds.Count, "보관 DB까지 지워졌다");
+            Assert.AreEqual("plugin.arc_chain#c", Vaccine.archivePluginInstanceIds[0]);
+        }
+
+        [Test]
+        public void TheReceiptSaysHowMuchWasLost()
+        {
+            // The receipt is the only thing that can answer "what did I lose" afterwards: the
+            // snapshot has already been cleared by the time anything reads it.
+            Vaccine.carriedPluginInstanceIds.Add("plugin.kill_stack#a");
+            Vaccine.carriedPluginInstanceIds.Add("plugin.lightweight#b");
+
+            Assert.IsTrue(Die(1).Acknowledged);
+
+            StringAssert.Contains("carriedLost=2", ReceiptFor(1));
+        }
+
+        [Test]
+        public void ADeathWithNothingDeployedSaysZeroRatherThanNothing()
+        {
+            // A fresh vaccine owns nothing, and a missing field would be indistinguishable
+            // from an older receipt written before this was recorded at all.
+            Assert.IsTrue(Die(1).Acknowledged);
+            StringAssert.Contains("carriedLost=0", ReceiptFor(1));
+        }
+
+        [Test]
+        public void TheFourthDeathRecordsTheArchiveItDestroyed()
+        {
+            // [확정] docs/04 section 2: 4회 사망에 해당 백신 성장 자산 일괄 파기. The archive is
+            // part of that, and the receipt is what says how much of it there was.
+            Vaccine.archivePluginInstanceIds.Add("plugin.arc_chain#c");
+            Vaccine.archivePluginInstanceIds.Add("plugin.kill_stack#d");
+
+            for (int i = 1; i <= 4; ++i)
+            {
+                // Re-equipped between deaths, the way a player does: each death empties the
+                // 출전 list, so a card added once would be gone long before the fourth.
+                Vaccine.carriedPluginInstanceIds.Add($"plugin.lightweight#e{i}");
+                Assert.IsTrue(Die(i).Acknowledged, $"death {i}");
+            }
+
+            Assert.IsFalse(Vaccine.alive);
+            Assert.IsEmpty(Vaccine.archivePluginInstanceIds);
+            Assert.IsEmpty(Vaccine.carriedPluginInstanceIds);
+
+            string receipt = ReceiptFor(4);
+            StringAssert.Contains("destroyed=true", receipt);
+            StringAssert.Contains("archiveLost=2", receipt);
+            StringAssert.Contains("carriedLost=1", receipt);
+        }
+
+        [Test]
+        public void ARetriedDeathDoesNotChargeTheDeployedListTwice()
+        {
+            // A lost acknowledgement must not cost a second loadout any more than a second
+            // clone. The receipt answers the retry.
+            Vaccine.carriedPluginInstanceIds.Add("plugin.kill_stack#a");
+            Assert.IsTrue(Die(1).Acknowledged);
+
+            Vaccine.carriedPluginInstanceIds.Add("plugin.lightweight#b");
+            Assert.IsTrue(Die(1).Acknowledged, "the retry was refused outright");
+
+            Assert.AreEqual(
+                1, Vaccine.carriedPluginInstanceIds.Count,
+                "the replayed death cleared a loadout the player had re-equipped");
+            Assert.AreEqual(1, Vaccine.deathCount, "the retry charged a second death");
+        }
     }
 }

@@ -59,7 +59,17 @@ namespace NeonVoid.UI
         /// [확정] docs/04 section 3 item 5: 사망 시 출전 소지분은 소실. There is nothing to lose
         /// yet, because plugin acquisition is D-006/D-007 and does not exist.
         /// </summary>
-        public const string UnsettledCarried = "출전 소지 플러그인 손실 — 획득 자체가 미구현 (D-006/D-007)";
+        /// <summary>
+        /// What a death costs in plugins, stated as the fact it now is.
+        /// <para>
+        /// It used to read <i>출전 소지 플러그인 손실 — 획득 자체가 미구현 (D-006/D-007)</i>, and
+        /// that was true when it was written. D-006 and D-007 were approved on 2026-11-22, the
+        /// 보상 화면 grants cards, 철수 learns them and a 의뢰 starts with the 출전 목록 - so a
+        /// player reading that line had just lost something the screen told them could not be
+        /// acquired.
+        /// </para>
+        /// </summary>
+        public const string CarriedLost = "출전 소지 플러그인은 소실되었습니다. 보관 DB는 보존됩니다.";
 
         private DeathScreenSnapshot(
             DeathScreenPhase phase,
@@ -192,17 +202,22 @@ namespace NeonVoid.UI
                 status: last
                     ? "복제 0 · 마지막 기회"
                     : $"복제 {clonesRemaining}개 남음",
-                detail: last
+                detail: (last
                     // [확정] docs/04 section 2: '복제 0'은 죽은 상태가 아니라 마지막 기회.
-                    ? "복제 0은 파기가 아닙니다. 다음 사망에서 이 백신이 파기됩니다."
-                    : "복제를 하나 쓰고 허브에서 재시도합니다. 복제 회복은 어떤 수단으로도 불가합니다.",
+                    ? "복제 0은 파기가 아닙니다. 다음 사망에서 이 백신이 파기됩니다. "
+                    : "복제를 하나 쓰고 허브에서 재시도합니다. 복제 회복은 어떤 수단으로도 불가합니다. ")
+                    + CarriedLost,
                 nextStep: "이 의뢰는 실패했습니다. 다음 의뢰는 새 시드·새 적으로 생성됩니다.",
                 deathId: id.ToString(),
                 numbersKnown: true,
                 clonesRemaining: clonesRemaining,
                 deathCount: deathCount,
                 lastChance: last,
-                unsettled: new[] { UnsettledXp, UnsettledCarried });
+
+                // Only the XP share is still undecided (D-012). The plugin loss is [확정] and
+                // is said in the detail above, as something that happened rather than as
+                // something waiting for a decision.
+                unsettled: new[] { UnsettledXp });
         }
 
         /// <summary>
