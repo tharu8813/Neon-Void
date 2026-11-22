@@ -214,6 +214,15 @@ namespace NeonVoid.Tests.PlayModeTests
             typeof(VaccineSaveDirector)
                 .GetField("writeToRealSaveDirectory", BindingFlags.NonPublic | BindingFlags.Instance)
                 .SetValue(director, false);
+
+            // The 샌드박스 too, which is on by default so a 의뢰 can be finished in play. A test
+            // must be handed a temporary directory ([확정] docs/04 section 4), and the sandbox is
+            // a real path under Application.persistentDataPath - and this test is about the mode
+            // where nothing is written at all.
+            typeof(VaccineSaveDirector)
+                .GetField("useSandboxSaveWhenRealWritesAreOff", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(director, false);
+
             _saveObject.SetActive(true);
             Assert.IsFalse(director.CanCommit);
 

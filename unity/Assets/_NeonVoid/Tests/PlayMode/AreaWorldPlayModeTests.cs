@@ -379,6 +379,55 @@ namespace NeonVoid.Tests.PlayModeTests
         }
 
         [UnityTest]
+        public IEnumerator TheArmedPadIsFinishedByAskingForIt()
+        {
+            // Until the area runtime read 상호작용, nothing in the game called
+            // TryConfirmExtraction at all: the pad armed, the HUD said 철수 준비 완료, and there
+            // was no way to finish the 의뢰. The test drives the same path a key press does.
+            ConnectSave();
+            _arena = PrototypeArena.Build();
+            AreaBuildResult area = BuildArea();
+            yield return _arena.Tick(1);
+
+            _arena.MakePlayerUnkillable();
+            yield return _arena.ClearObjectives(area);
+            PrototypeArena.Kill(area.BossGate.Boss);
+            yield return _arena.Tick(1);
+
+            StandOn(area.Layout.Purification);
+            yield return _arena.Tick(DwellTicks + 1);
+            Assert.AreEqual(AreaProgressPhase.Purified, Flow.AreaPhase, Flow.LastRefusal);
+
+            // Asking before the pad is armed must do nothing: 철수 gives up every area not yet
+            // cleared, so it cannot be triggered from across the room.
+            area.Runtime.RequestExtraction();
+            yield return _arena.Tick(2);
+            Assert.AreNotEqual(MissionFlowPhase.Extracted, Flow.Phase, "철수 happened off the pad");
+
+            StandOn(area.Layout.Extraction);
+            yield return _arena.Tick(DwellTicks + 1);
+            Assert.IsTrue(area.Runtime.IsExtractionArmed, "the pad never armed");
+
+            // And a press held from before the arming is not honoured by the arming itself.
+            Assert.IsFalse(area.Runtime.IsExtractionRequested, "a stale request survived the wait");
+            Assert.AreNotEqual(MissionFlowPhase.Extracted, Flow.Phase, "the pad extracted on its own");
+
+            area.Runtime.RequestExtraction();
+            yield return _arena.Tick(2);
+
+            Assert.AreEqual(MissionFlowPhase.Extracted, Flow.Phase, Flow.LastRefusal);
+            Assert.AreEqual(MissionPhase.Completed, Flow.Run.Phase);
+
+            var reopened = new SaveStore(new DiskSaveFileSystem(), SaveSlotLayout.Under(_root));
+            reopened.Open();
+            Assert.AreEqual(
+                1,
+                reopened.Snapshot.CountReceipts(
+                    ExtractRunCommand.ReceiptIdFor(Flow.Run.Identity.RunId)),
+                "the 철수 never reached the file");
+        }
+
+        [UnityTest]
         public IEnumerator ThePlayersOwnFireDestroysAPlacedDevice()
         {
             // The devices are Prototype primitives, and a primitive whose collider the shot's

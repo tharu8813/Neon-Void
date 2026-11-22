@@ -17,6 +17,12 @@ namespace NeonVoid.Progression.Save
 
         /// <summary>Writes were on and the store stopped accepting them mid-session.</summary>
         Halted = 3,
+
+        /// <summary>
+        /// Being written down, but to a 샌드박스 path rather than the player's real save. A death
+        /// here spends a sandbox clone and none of the player's.
+        /// </summary>
+        Sandbox = 4,
     }
 
     /// <summary>
@@ -60,6 +66,13 @@ namespace NeonVoid.Progression.Save
             "spends a clone, and [확정] docs/04 section 2 makes 복제 회복 impossible.")]
         [SerializeField] private bool writeToRealSaveDirectory = false;
 
+        [Tooltip(
+            "With the real save off, write to a 샌드박스 path beside it instead of writing " +
+            "nothing. On by default, because an extraction is permanent and a session with no " +
+            "store at all cannot finish a 의뢰 - PrototypeMissionCommits refuses 철수, correctly. " +
+            "The sandbox spends sandbox clones and never touches the player's files.")]
+        [SerializeField] private bool useSandboxSaveWhenRealWritesAreOff = true;
+
         [Tooltip("Save slot. One vaccine lineage per slot; generations within it.")]
         [SerializeField] private string slotId = "slot-1";
 
@@ -75,7 +88,14 @@ namespace NeonVoid.Progression.Save
         [SerializeField] private RunDeathDirector deathDirector;
 
         private bool _prepared;
+        private bool _writingToSandbox;
         private string _sessionNonce = string.Empty;
+
+        /// <summary>
+        /// Whether this session's store is the 샌드박스 one. False for the player's real save and
+        /// false for a store injected by a test, which brings its own temporary directory.
+        /// </summary>
+        public bool IsSandbox => _writingToSandbox && Store != null;
 
         /// <summary>The store, or null when permanent writes are off or the root was refused.</summary>
         public SaveStore Store { get; private set; }
@@ -113,7 +133,14 @@ namespace NeonVoid.Progression.Save
                 if (Store != null && Store.State == SaveStoreState.Halted)
                     return SaveCommitReadiness.Halted;
 
-                return CanCommit ? SaveCommitReadiness.Committing : SaveCommitReadiness.Unavailable;
+                if (!CanCommit)
+                    return SaveCommitReadiness.Unavailable;
+
+                // Committing and Sandbox are both "being written down"; they differ in whose
+                // clone a death spends, which is the one thing the player has to be told.
+                return _writingToSandbox
+                    ? SaveCommitReadiness.Sandbox
+                    : SaveCommitReadiness.Committing;
             }
         }
 
@@ -202,6 +229,7 @@ namespace NeonVoid.Progression.Save
 
             _prepared = true;
             Store = store;
+            _writingToSandbox = false;
             _sessionNonce = string.IsNullOrWhiteSpace(sessionNonce)
                 ? Guid.NewGuid().ToString("N")
                 : sessionNonce;
@@ -237,19 +265,23 @@ namespace NeonVoid.Progression.Save
             // run can be walked without consequences.
             _sessionNonce = Guid.NewGuid().ToString("N");
 
-            if (!writeToRealSaveDirectory)
+            _writingToSandbox = !writeToRealSaveDirectory;
+
+            if (_writingToSandbox && !useSandboxSaveWhenRealWritesAreOff)
             {
                 Result = VaccineSlotBootstrap.NotConnected("permanent writes are switched off");
                 Debug.LogWarning(
-                    $"{name}: permanent writes are off. Deaths will be reported and left " +
-                    "uncommitted, and no clone will be spent.", this);
+                    $"{name}: permanent writes are off and the 샌드박스 is off too. Deaths will be " +
+                    "reported and left uncommitted, no clone will be spent, and 철수 will be " +
+                    "refused - an extraction is permanent, so it cannot happen with no store.", this);
                 return;
             }
 
             try
             {
-                Store = new SaveStore(
-                    new DiskSaveFileSystem(), SaveSlotLayout.Under(UnitySaveRoot.Resolve(), slotId));
+                string realRoot = UnitySaveRoot.Resolve();
+                string root = _writingToSandbox ? UnitySaveRoot.SandboxUnder(realRoot) : realRoot;
+                Store = new SaveStore(new DiskSaveFileSystem(), SaveSlotLayout.Under(root, slotId));
             }
             catch (Exception e)
             {
@@ -382,7 +414,8 @@ namespace NeonVoid.Progression.Save
                 return $"save: {Result.Verdict} - {Result.Detail}";
 
             VaccineSaveState vaccine = Store.Snapshot.vaccine;
-            return $"save: run {RunId} - gen {vaccine.generation} - clones {vaccine.copiesRemaining}" +
+            string where = _writingToSandbox ? "sandbox" : "real";
+            return $"save: {where} - run {RunId} - gen {vaccine.generation} - clones {vaccine.copiesRemaining}" +
                 $" - deaths {vaccine.deathCount} - rev {Store.Snapshot.snapshotRevision}";
         }
     }

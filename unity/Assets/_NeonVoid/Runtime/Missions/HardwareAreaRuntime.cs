@@ -56,6 +56,12 @@ namespace NeonVoid.Missions
         [Tooltip("Where 철수 is performed. Arms once something is purified.")]
         [SerializeField] private Transform extractionPad;
 
+        [Tooltip(
+            "Where 상호작용 comes from. Found automatically when left empty. Without it the pad " +
+            "arms and nothing can confirm 철수, which is how this shipped: the HUD said " +
+            "철수 준비 완료 and no key finished the 의뢰.")]
+        [SerializeField] private PlayerInputRouter input;
+
         [Header("[초안] interaction")]
         [Tooltip("[초안] how close counts as standing at the console.")]
         [SerializeField, Min(0.1f)] private float consoleRadiusUnits = 2f;
@@ -78,6 +84,7 @@ namespace NeonVoid.Missions
         private DwellGate _pad;
         private AreaObjectiveChain _chain;
         private bool _entered;
+        private bool _extractionRequested;
         private bool _extractionArmed;
 
         /// <summary>Which hardware this area is.</summary>
@@ -115,6 +122,9 @@ namespace NeonVoid.Missions
         /// </para>
         /// </summary>
         public bool IsExtractionArmed => _extractionArmed;
+
+        /// <summary>Whether a 철수 has been asked for and is waiting for the next tick.</summary>
+        public bool IsExtractionRequested => _extractionRequested;
 
         /// <summary>
         /// The chain this area's <see cref="AreaObjectiveKind.Sequence"/> nodes make, or null
@@ -175,6 +185,8 @@ namespace NeonVoid.Missions
 
             if (mission == null)
                 mission = FindFirstObjectByType<MissionRunDirector>();
+            if (input == null)
+                input = FindFirstObjectByType<PlayerInputRouter>();
             if (player == null)
             {
                 var driver = FindFirstObjectByType<PlayerSimulationDriver>();
@@ -332,7 +344,69 @@ namespace NeonVoid.Missions
             SyncBossGate(flow);
             TickPurificationConsole(flow);
             TickExtractionPad(flow);
+            TakeTheExtractionIfItIsAskedFor();
         }
+
+        /// <summary>
+        /// 철수 on 상호작용, once the pad is armed.
+        /// <para>
+        /// <b>Why this is not the pad's dwell.</b> 정화 fires on its own dwell because it is pure
+        /// gain. 철수 ends the mission and gives up every area not yet cleared, so standing on
+        /// the pad arms it and a deliberate press finishes it - the asymmetry
+        /// <see cref="IsExtractionArmed"/> already describes. Until this method existed the
+        /// second half had no caller at all: the HUD said 철수 준비 완료 and nothing could act
+        /// on it, so a 의뢰 could not be finished in play.
+        /// </para>
+        /// <para>
+        /// <b>Nothing is learned here.</b> [확정] R-015 allows 0~2 일반·레어 to be learned on a
+        /// successful 철수, and which ones is the player's choice on a screen that does not
+        /// exist yet - so this passes none rather than choosing for them. Zero is allowed by the
+        /// same rule, and an extraction that banks XP and 포인트 without learning is a complete,
+        /// correct extraction.
+        /// </para>
+        /// </summary>
+        private void TakeTheExtractionIfItIsAskedFor()
+        {
+            if (!_extractionArmed)
+            {
+                // A press held from before the pad armed must not extract the moment it does.
+                _extractionRequested = false;
+                return;
+            }
+
+            if (!TakeInteract())
+                return;
+
+            TryConfirmExtraction(NothingLearned);
+        }
+
+        /// <summary>
+        /// Takes this tick's 상호작용 from either source, the way <see cref="HubRuntime"/> does:
+        /// the router's command is read rather than consumed, because the input slot ticks long
+        /// before this one and the press has already been latched into it.
+        /// </summary>
+        private bool TakeInteract()
+        {
+            bool requested = _extractionRequested;
+            _extractionRequested = false;
+
+            if (input == null)
+                return requested;
+
+            return requested || input.LastConsumedCommand.InteractPressed;
+        }
+
+        /// <summary>
+        /// Asks for 철수 without a key, for a test and for a button. Honoured on the next tick
+        /// and only while the pad is armed, so it cannot skip standing on it.
+        /// </summary>
+        public void RequestExtraction() => _extractionRequested = true;
+
+        /// <summary>
+        /// [확정] R-015 allows zero. Named rather than written as an empty array at the call
+        /// site, so it reads as a decision and not as an omission.
+        /// </summary>
+        private static readonly string[] NothingLearned = new string[0];
 
         /// <summary>
         /// Wakes the room the player has walked into, and no other.

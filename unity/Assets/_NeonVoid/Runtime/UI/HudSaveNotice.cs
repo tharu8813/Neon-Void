@@ -37,12 +37,22 @@ namespace NeonVoid.UI
         public bool Shown => !string.IsNullOrEmpty(Text);
 
         /// <summary>The line for a save in the given state.</summary>
+        /// <summary>What the HUD says while the session is written to a 샌드박스 path.</summary>
+        public const string SandboxText = "샌드박스 저장 · 복제 소모 없음";
+
         public static HudSaveNotice For(SaveCommitReadiness readiness)
         {
             switch (readiness)
             {
                 case SaveCommitReadiness.SwitchedOff:
                     return new HudSaveNotice("진행 저장 꺼짐", isFailure: false);
+
+                // Written down, but not where the player's own save lives. Shown rather than
+                // silent: a session that counts and one that counts somewhere disposable are
+                // different things to be in the middle of, and the difference is whose 복제 a
+                // death spends.
+                case SaveCommitReadiness.Sandbox:
+                    return new HudSaveNotice(SandboxText, isFailure: false);
 
                 case SaveCommitReadiness.Unavailable:
                     return new HudSaveNotice("저장 연결 실패 · 진행이 기록되지 않습니다", isFailure: true);

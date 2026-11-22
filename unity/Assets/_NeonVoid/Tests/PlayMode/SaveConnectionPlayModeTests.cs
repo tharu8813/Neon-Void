@@ -63,7 +63,14 @@ namespace NeonVoid.Tests.PlayModeTests
         /// Adds the director without letting its Awake resolve the real save root: a component
         /// added to a deactivated object does not wake until the object is activated.
         /// </summary>
-        private VaccineSaveDirector AddDirector(bool writeToRealSaveDirectory, SaveStore store)
+        /// <param name="sandbox">
+        /// Off unless a test says otherwise. [확정] docs/04 section 4: a test must be handed a
+        /// temporary directory and must never reach a real save path - and the 샌드박스 is a real
+        /// path under <c>Application.persistentDataPath</c>. A test that wants a store injects
+        /// one over its own temporary root instead.
+        /// </param>
+        private VaccineSaveDirector AddDirector(
+            bool writeToRealSaveDirectory, SaveStore store, bool sandbox = false)
         {
             _saveObject = new GameObject("Vaccine Save Director");
             _saveObject.SetActive(false);
@@ -72,6 +79,9 @@ namespace NeonVoid.Tests.PlayModeTests
             typeof(VaccineSaveDirector)
                 .GetField("writeToRealSaveDirectory", BindingFlags.NonPublic | BindingFlags.Instance)
                 .SetValue(director, writeToRealSaveDirectory);
+            typeof(VaccineSaveDirector)
+                .GetField("useSandboxSaveWhenRealWritesAreOff", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(director, sandbox);
 
             if (store != null)
                 director.UseStore(store, sessionNonce: "playmode-session");

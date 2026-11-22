@@ -67,6 +67,41 @@ namespace NeonVoid.Progression.Save
         /// being guarded against is writing into the previous project's data.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// The folder name a 샌드박스 저장 sits in, beside the player's real save rather than
+        /// inside it.
+        /// </summary>
+        public const string SandboxDirectoryName = "sandbox";
+
+        /// <summary>
+        /// A root for writes that must not reach the player's real files.
+        /// <para>
+        /// <b>Why a separate root rather than a separate slot id.</b> A slot id only changes a
+        /// file name, so a sandbox slot would sit in the same directory as the real one and a
+        /// mistake in a name would land on top of real data. A root of its own puts the whole
+        /// product/schema tree somewhere else, so nothing a sandbox writes can be a real save
+        /// file even if every name below it were wrong.
+        /// </para>
+        /// <para>
+        /// It is under the persistent data path, never the legacy location: <see cref="Resolve"/>
+        /// has already refused that, and <see cref="LegacyDataGuard"/> still refuses the five
+        /// legacy file names wherever they appear.
+        /// </para>
+        /// </summary>
+        public static string SandboxUnder(string realRoot)
+        {
+            if (string.IsNullOrWhiteSpace(realRoot))
+                throw new ArgumentException("A sandbox needs a root to sit beside.", nameof(realRoot));
+
+            if (IsLegacyRoot(realRoot))
+            {
+                throw new InvalidOperationException(
+                    $"'{realRoot}' is the legacy Python save location; a sandbox must not be put inside it.");
+            }
+
+            return System.IO.Path.Combine(realRoot, SandboxDirectoryName);
+        }
+
         public static string Resolve()
         {
             string root = Application.persistentDataPath;

@@ -539,7 +539,12 @@ namespace NeonVoid.UI
         private HudPrompt AreaPrompt(HardwareAreaRuntime standing)
         {
             if (standing.IsExtractionArmed)
-                return new HudPrompt("철수 패드", "철수 준비 완료", true);
+            {
+                // Names the key, because the pad only arms: 철수 ends the 의뢰 and gives up every
+                // area not yet cleared, so it waits for a deliberate press. A prompt that only
+                // said 준비 완료 left the player with nothing to do, which is how this shipped.
+                return new HudPrompt("철수 패드", $"{KeyFor("Interact", interactKey)} 키로 철수", true);
+            }
 
             DwellGate pad = standing.ExtractionDwell;
             if (pad != null && pad.IsOccupied)
