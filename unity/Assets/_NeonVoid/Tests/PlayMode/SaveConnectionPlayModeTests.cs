@@ -228,5 +228,48 @@ namespace NeonVoid.Tests.PlayModeTests
             return runId;
         }
 
+    
+        // --- what the HUD says about it ---------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator TheHudSaysWhetherTheSessionIsBeingWrittenDown()
+        {
+            // Permanent writes are off by default now, which trades an unrecoverable mistake
+            // for a recoverable one - but only if the player is told. Unspoken, a session that
+            // records nothing is indistinguishable from one that does until they quit.
+            _arena = PrototypeArena.Build();
+            VaccineSaveDirector off = AddDirector(false, null);
+
+            var hudObject = new GameObject("HUD Model");
+            hudObject.SetActive(false);
+            hudObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+            var hud = hudObject.AddComponent<NeonVoid.UI.HudController>();
+
+            try
+            {
+                hud.Configure(_arena.Player, saveDirector: off);
+                NeonVoid.UI.HudSaveNotice notice = hud.GatherSaveNotice();
+
+                Assert.AreEqual(SaveCommitReadiness.SwitchedOff, off.Readiness);
+                Assert.IsTrue(notice.Shown, "a session that saves nothing said nothing");
+                Assert.IsFalse(notice.IsFailure);
+
+                // And a session that is counting does not carry the line at all.
+                UnityEngine.Object.Destroy(_saveObject);
+                yield return null;
+
+                VaccineSaveDirector on = AddDirector(true, NewStore());
+                Assert.IsTrue(on.CanCommit, on.Result.Detail);
+
+                hud.Configure(_arena.Player, saveDirector: on);
+                Assert.IsFalse(
+                    hud.GatherSaveNotice().Shown,
+                    "the HUD warned about a save that is working");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(hudObject);
+            }
+        }
     }
 }

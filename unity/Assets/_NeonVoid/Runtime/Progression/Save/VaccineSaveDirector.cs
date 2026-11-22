@@ -3,15 +3,37 @@ using UnityEngine;
 
 namespace NeonVoid.Progression.Save
 {
+    /// <summary>Whether a death reaching the save would be written, and if not, why not.</summary>
+    public enum SaveCommitReadiness
+    {
+        /// <summary>A death will be written and will spend a clone.</summary>
+        Committing = 0,
+
+        /// <summary>Permanent writes are off on purpose. The default.</summary>
+        SwitchedOff = 1,
+
+        /// <summary>Writes are on but the slot could not be opened or prepared.</summary>
+        Unavailable = 2,
+
+        /// <summary>Writes were on and the store stopped accepting them mid-session.</summary>
+        Halted = 3,
+    }
+
     /// <summary>
     /// The one thing in the scene that constructs a save store over the player's real files,
     /// prepares the slot, and hands the death director a service that can commit.
     /// <para>
-    /// <b>This writes to the player's save directory.</b> Everything it does goes through the
-    /// transaction in <see cref="SaveStore"/> - checksummed, backed up, verified by re-reading,
-    /// idempotent per receipt - but a death committed here really does spend a clone, and
-    /// [확정] docs/04 section 2: 복제 회복은 어떤 수단으로도 불가. The fourth death destroys the
-    /// vaccine's growth, skills and database.
+    /// <b>Permanent writes are off until someone turns them on.</b> Everything this does goes
+    /// through the transaction in <see cref="SaveStore"/> - checksummed, backed up, verified by
+    /// re-reading, idempotent per receipt - but a death committed here really does spend a
+    /// clone, and [확정] docs/04 section 2: 복제 회복은 어떤 수단으로도 불가. The fourth death
+    /// destroys the vaccine's growth, skills and database.
+    /// </para>
+    /// <para>
+    /// So the default is the mistake that can be undone. Entering Play mode with this on costs
+    /// a clone that nothing in the project can give back; entering it with this off costs the
+    /// session's progress, which can simply be played again. The expensive direction is the one
+    /// that has to be chosen deliberately, and the HUD states which way it is set.
     /// </para>
     /// <para>
     /// <b>Nothing is shown before it is written.</b> The commit service raises its
@@ -32,10 +54,11 @@ namespace NeonVoid.Progression.Save
     {
         [Header("Permanent state")]
         [Tooltip(
-            "Writes to the real save directory under Application.persistentDataPath. " +
-            "Turn this off to play without permanent consequences: deaths are then reported " +
-            "and left uncommitted, and no clone is spent.")]
-        [SerializeField] private bool writeToRealSaveDirectory = true;
+            "Writes to the real save directory under Application.persistentDataPath. Off by " +
+            "default: deaths are then reported and left uncommitted, no clone is spent, and " +
+            "the HUD says so. Turn it on for a session that is meant to count - a death then " +
+            "spends a clone, and [확정] docs/04 section 2 makes 복제 회복 impossible.")]
+        [SerializeField] private bool writeToRealSaveDirectory = false;
 
         [Tooltip("Save slot. One vaccine lineage per slot; generations within it.")]
         [SerializeField] private string slotId = "slot-1";
@@ -68,6 +91,28 @@ namespace NeonVoid.Progression.Save
 
         /// <summary>True when a death reaching the store will actually be written.</summary>
         public bool CanCommit => Store != null && Result.CanCommit;
+
+        /// <summary>
+        /// Why a death would or would not be written, in the save's own terms.
+        /// <para>
+        /// The three reasons nothing can be committed are not one state. One was chosen and is
+        /// the default; one means the slot was never reachable; one means writing stopped part
+        /// way through a session that had been counting. A player told only "not saving" could
+        /// not tell the deliberate case from the two that need looking at.
+        /// </para></summary>
+        public SaveCommitReadiness Readiness
+        {
+            get
+            {
+                if (!writeToRealSaveDirectory)
+                    return SaveCommitReadiness.SwitchedOff;
+
+                if (Store != null && Store.State == SaveStoreState.Halted)
+                    return SaveCommitReadiness.Halted;
+
+                return CanCommit ? SaveCommitReadiness.Committing : SaveCommitReadiness.Unavailable;
+            }
+        }
 
         /// <summary>
         /// What this session's save commands are retried under. Stable for the process and

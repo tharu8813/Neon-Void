@@ -7,6 +7,8 @@
       <ui:VisualElement name="boardRows" picking-mode="Ignore" />
     </ui:VisualElement>
 
+    <ui:Label name="saveNotice" class="save-notice hidden" text="" picking-mode="Ignore" />
+
     <ui:VisualElement name="hudTop" class="hud__top" picking-mode="Ignore">
       <ui:VisualElement name="bossPanel" class="boss hidden" picking-mode="Ignore">
         <ui:Label name="bossName" class="boss__name" text="BOSS" />

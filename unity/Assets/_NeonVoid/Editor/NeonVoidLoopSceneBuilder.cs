@@ -99,9 +99,10 @@ namespace NeonVoid.EditorTools
             SimulationRunner runner = simulation.AddComponent<SimulationRunner>();
 
             // Permanent state first, so the mission director finds it while resolving its commit
-            // gate and its run id. A death here spends a clone in the real save, and [확정]
-            // docs/04 section 2: 복제 회복은 어떤 수단으로도 불가. Turn off 'Write To Real Save
-            // Directory' on this component to walk the loop without permanent consequences.
+            // gate and its run id. 'Write To Real Save Directory' is off by default, so nothing
+            // here spends a clone until someone turns it on: [확정] docs/04 section 2 makes
+            // 복제 회복 impossible, and a session lost to writes being off can be played again.
+            // The HUD states which way it is set, so the choice is never silent.
             var saveObject = new GameObject("Vaccine Save Director");
             VaccineSaveDirector saveDirector = saveObject.AddComponent<VaccineSaveDirector>();
 
@@ -173,7 +174,7 @@ namespace NeonVoid.EditorTools
 
             // The real HUD. docs/06 puts UI Toolkit first, and the combat HUD's framework is
             // to be chosen 실제 검증 후 - which needs a HUD to verify.
-            BuildHud(vaccine.Actor, motherboard, hub);
+            BuildHud(vaccine.Actor, motherboard, hub, saveDirector);
 
             CreateDirectionalLight();
 
@@ -236,7 +237,11 @@ namespace NeonVoid.EditorTools
         /// The UI Toolkit HUD: a UIDocument with the project's PanelSettings and the
         /// controller that fills it from the simulation.
         /// </summary>
-        private static void BuildHud(NeonVoid.Combat.CombatActor player, MotherboardDirector board, HubRuntime hub)
+        private static void BuildHud(
+            NeonVoid.Combat.CombatActor player,
+            MotherboardDirector board,
+            HubRuntime hub,
+            VaccineSaveDirector save)
         {
             var asset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Assets/_NeonVoid/Runtime/UI/NeonVoidHud.uxml");
@@ -259,7 +264,9 @@ namespace NeonVoid.EditorTools
             document.visualTreeAsset = asset;
 
             HudController controller = host.AddComponent<HudController>();
-            controller.Configure(player, board, null, hub);
+            // Wired rather than found, so the notice that says whether this session is being
+            // written down cannot be the thing that silently went missing.
+            controller.Configure(player, board, null, hub, save);
 
             host.SetActive(true);
         }

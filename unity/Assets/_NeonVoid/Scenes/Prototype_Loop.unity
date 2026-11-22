@@ -153,6 +153,7 @@ MonoBehaviour:
   motherboard: {fileID: 1843914032}
   area: {fileID: 0}
   hub: {fileID: 2123269494}
+  save: {fileID: 1217997894}
   skillKeys:
   - Q
   - E
@@ -634,7 +635,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f7137f908a12ec04bb1cd2a8faedd992, type: 3}
   m_Name: 
   m_EditorClassIdentifier: NeonVoid.Runtime::NeonVoid.Progression.Save.VaccineSaveDirector
-  writeToRealSaveDirectory: 1
+  writeToRealSaveDirectory: 0
   slotId: slot-1
   autoStartNextVaccine: 1
   deathDirector: {fileID: 1392016106}

@@ -142,12 +142,13 @@ namespace NeonVoid.EditorTools
             PrototypeDeathBanner banner = deathObject.AddComponent<PrototypeDeathBanner>();
             AssignSerialized(banner, "deathDirector", director);
 
-            // Permanent state, approved and connected: a death here spends a clone in the real
-            // save under Application.persistentDataPath, and [확정] docs/04 section 2 says
-            // 복제 회복은 어떤 수단으로도 불가. It allocates this run's id too, because a run id
-            // from a serialized constant mints the same death receipt every launch and the save
-            // would refuse every death after the first one. Turn off 'Write To Real Save
-            // Directory' on this component to play without permanent consequences.
+            // Permanent state, connected but not writing: 'Write To Real Save Directory' is
+            // off by default, because a death with it on spends a clone in the real save under
+            // Application.persistentDataPath and [확정] docs/04 section 2 says 복제 회복은
+            // 어떤 수단으로도 불가. It still allocates this run's id, because a run id from a
+            // serialized constant mints the same death receipt every launch and the save would
+            // refuse every death after the first one. Turn the flag on for a session that is
+            // meant to count; the HUD says which way it is set.
             var saveObject = new GameObject("Vaccine Save Director");
             VaccineSaveDirector saveDirector = saveObject.AddComponent<VaccineSaveDirector>();
             AssignSerialized(saveDirector, "deathDirector", director);

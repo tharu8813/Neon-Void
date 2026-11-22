@@ -3,6 +3,7 @@ using NeonVoid.Combat;
 using NeonVoid.Combat.Skills;
 using NeonVoid.Core;
 using NeonVoid.Missions;
+using NeonVoid.Progression.Save;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -45,6 +46,11 @@ namespace NeonVoid.UI
         [Tooltip("The 디펜더 허브, whose terminals the prompt names. Found when left empty.")]
         [SerializeField] private HubRuntime hub;
 
+        [Tooltip(
+            "The save, so the HUD can say whether this session is being written down. " +
+            "Found when left empty.")]
+        [SerializeField] private VaccineSaveDirector save;
+
         [Header("[초안] labels")]
         [Tooltip("[초안] D-009 has not settled the keys; these are the prototype's Q/E/R.")]
         [SerializeField] private string[] skillKeys = { "Q", "E", "R" };
@@ -68,6 +74,8 @@ namespace NeonVoid.UI
         private readonly ProgressBar[] _skillBars = new ProgressBar[HudSnapshot.SkillSlots];
         private readonly Label[] _skillKeyLabels = new Label[HudSnapshot.SkillSlots];
 
+        private Label _saveNotice;
+
         private VisualElement _boardPanel;
         private VisualElement _boardRows;
 
@@ -90,6 +98,7 @@ namespace NeonVoid.UI
         private bool _bound;
 
         private const string Hidden = "hidden";
+        private const string SaveNoticeFailure = "save-notice--failure";
         private const string SkillReady = "skill--ready";
         private const string SkillEmpty = "skill--empty";
         private const string GaugeArmed = "area__gauge--armed";
@@ -108,6 +117,12 @@ namespace NeonVoid.UI
         /// </summary>
         public IReadOnlyList<HudBoardRow> Board => _board;
 
+        /// <summary>
+        /// What the HUD last said about whether this session is being saved. Public so it can
+        /// be read without a panel to draw it on.
+        /// </summary>
+        public HudSaveNotice SaveNotice { get; private set; }
+
         private readonly List<HudBoardRow> _board = new List<HudBoardRow>();
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Effects + 10;
@@ -117,12 +132,14 @@ namespace NeonVoid.UI
             CombatActor vaccine,
             MotherboardDirector board = null,
             HardwareAreaRuntime areaRuntime = null,
-            HubRuntime hubRuntime = null)
+            HubRuntime hubRuntime = null,
+            VaccineSaveDirector saveDirector = null)
         {
             player = vaccine;
             motherboard = board;
             area = areaRuntime;
             hub = hubRuntime;
+            save = saveDirector;
         }
 
         private void Awake()
@@ -140,6 +157,9 @@ namespace NeonVoid.UI
 
             if (hub == null)
                 hub = FindFirstObjectByType<HubRuntime>();
+
+            if (save == null)
+                save = FindFirstObjectByType<VaccineSaveDirector>();
         }
 
         private void OnEnable()
@@ -173,6 +193,9 @@ namespace NeonVoid.UI
             HudSnapshot snapshot = Gather();
             Last = snapshot;
             Draw(snapshot);
+
+            SaveNotice = GatherSaveNotice();
+            DrawSaveNotice(SaveNotice);
 
             HudPrompt prompt = GatherPrompt();
             Prompt = prompt;
@@ -509,6 +532,24 @@ namespace NeonVoid.UI
         /// a UIDocument's root is null before the panel is attached, and an Awake that assumed
         /// otherwise would silently never draw.
         /// </summary>
+        /// <summary>
+        /// Whether this session is being written down. Read every tick rather than once,
+        /// because a store that halts mid-session changes the answer and that is exactly the
+        /// case the player most needs told.
+        /// </summary>
+        public HudSaveNotice GatherSaveNotice() =>
+            save == null ? HudSaveNotice.None : HudSaveNotice.For(save.Readiness);
+
+        private void DrawSaveNotice(HudSaveNotice notice)
+        {
+            Show(_saveNotice, notice.Shown);
+            if (_saveNotice == null || !notice.Shown)
+                return;
+
+            _saveNotice.text = notice.Text;
+            Toggle(_saveNotice, SaveNoticeFailure, notice.IsFailure);
+        }
+
         private bool Bind()
         {
             if (_bound)
@@ -536,6 +577,8 @@ namespace NeonVoid.UI
                 if (_skillKeyLabels[i] != null && skillKeys != null && i < skillKeys.Length)
                     _skillKeyLabels[i].text = skillKeys[i];
             }
+
+            _saveNotice = root.Q<Label>("saveNotice");
 
             _boardPanel = root.Q<VisualElement>("boardPanel");
             _boardRows = root.Q<VisualElement>("boardRows");
