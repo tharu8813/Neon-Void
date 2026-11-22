@@ -271,5 +271,111 @@ namespace NeonVoid.Tests.PlayModeTests
 
             Assert.AreEqual(playedBefore, audio.Played);
         }
+    
+        // --- the cues the game fires ---------------------------------------------------------
+
+        [UnityTest]
+        public IEnumerator ADashSoundsOnceWhenItStartsAndNotWhileItRuns()
+        {
+            // The rising edge. A dash lasts several ticks, and a sound per tick of it would be
+            // the buzz the per-cue interval exists to stop - but the interval should not be
+            // what is doing the work here.
+            _arena = PrototypeArena.Build();
+            GameAudio audio = Audio(Settings(), _arena.Player);
+            yield return _arena.Tick(1);
+
+            int dashes = 0;
+            _arena.Driver.DashStarted += _ => ++dashes;
+
+            int playedBefore = audio.Played;
+            _arena.Driver.RequestDash(new Vector2(1f, 0f));
+            yield return _arena.Tick(20);
+
+            Assert.AreEqual(1, dashes, "the dash was reported more than once");
+            Assert.AreEqual(playedBefore + 1, audio.Played, "the dash made no sound, or too many");
+        }
+
+        [UnityTest]
+        public IEnumerator ABossWarningSoundsAndTheTelegraphDoesNotDependOnIt()
+        {
+            // [초안] docs/05 section 6: 위험 공격은 음향 없이도 피할 수 있어야 한다. The sound
+            // is a second channel; the telegraph is the one that must always be there.
+            _arena = PrototypeArena.Build();
+
+            CombatStats playerStats = PrototypeArena.PlayerStats();
+            playerStats.MaxHealth = 1_000_000f;
+            _arena.Player.Configure(PrototypeArena.PlayerTeam, playerStats);
+
+            GameObject bossObject = _arena.Track(GameObject.CreatePrimitive(PrimitiveType.Capsule));
+            bossObject.transform.position = _arena.PlayerObject.transform.position + new Vector3(0f, 0f, 4f);
+
+            CombatStats bossStats = CombatStats.StartingVaccine();
+            bossStats.MaxHealth = 500_000f;
+            var boss = bossObject.AddComponent<CombatActor>();
+            boss.Configure(PrototypeArena.EnemyTeam, bossStats);
+
+            var brain = bossObject.AddComponent<NeonVoid.Combat.AI.AreaBossBrain>();
+            brain.Configure(boss, _arena.Player);
+            brain.UseCycle(NeonVoid.Combat.AI.BossCatalog.CoreWatcher());
+            brain.RefreshHostiles();
+
+            GameAudio audio = Audio(Settings(), _arena.Player);
+
+            // 효과음 off before the boss ever acts: the telegraph still has to appear.
+            audio.ApplyMix(audio.Mix.WithMuted(AudioBus.Effects, true));
+
+            var warning = bossObject.AddComponent<NeonVoid.Presentation.BossWarningSound>();
+            warning.Configure(audio);
+
+            int playedBefore = audio.Played;
+            bool telegraphed = false;
+            for (int i = 0; i < 400 && !telegraphed; ++i)
+            {
+                yield return _arena.Tick(1);
+                telegraphed = brain.TryGetTelegraph(out _);
+            }
+
+            Assert.IsTrue(telegraphed, "the boss never telegraphed, so this proves nothing");
+            Assert.GreaterOrEqual(warning.Warnings, 1, "the warning never reached the sound");
+            Assert.AreEqual(playedBefore, audio.Played, "a muted 효과음 still played the warning");
+
+            // Unmuted, the same warning sounds.
+            audio.ApplyMix(audio.Mix.WithMuted(AudioBus.Effects, false));
+            Assert.IsTrue(audio.Play(AudioCue.BossWarning).Ok);
+        }
+
+        [UnityTest]
+        public IEnumerator AMissingAudioDoesNotStopTheBossFromWarning()
+        {
+            // The component must survive having nothing to play into: a scene with no GameAudio
+            // is every test fixture in this project.
+            _arena = PrototypeArena.Build();
+
+            GameObject bossObject = _arena.Track(GameObject.CreatePrimitive(PrimitiveType.Capsule));
+            bossObject.transform.position = _arena.PlayerObject.transform.position + new Vector3(0f, 0f, 4f);
+
+            CombatStats bossStats = CombatStats.StartingVaccine();
+            bossStats.MaxHealth = 500_000f;
+            var boss = bossObject.AddComponent<CombatActor>();
+            boss.Configure(PrototypeArena.EnemyTeam, bossStats);
+
+            var brain = bossObject.AddComponent<NeonVoid.Combat.AI.AreaBossBrain>();
+            brain.Configure(boss, _arena.Player);
+            brain.UseCycle(NeonVoid.Combat.AI.BossCatalog.CoreWatcher());
+            brain.RefreshHostiles();
+
+            var warning = bossObject.AddComponent<NeonVoid.Presentation.BossWarningSound>();
+            warning.Configure(null);
+
+            bool telegraphed = false;
+            for (int i = 0; i < 400 && !telegraphed; ++i)
+            {
+                yield return _arena.Tick(1);
+                telegraphed = brain.TryGetTelegraph(out _);
+            }
+
+            Assert.IsTrue(telegraphed);
+            Assert.GreaterOrEqual(warning.Warnings, 1);
+        }
     }
 }

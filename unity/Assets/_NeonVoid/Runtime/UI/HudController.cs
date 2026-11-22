@@ -645,8 +645,19 @@ namespace NeonVoid.UI
                 OpenSettings();
         }
 
+        /// <summary>
+        /// One UI sound. [초안] docs/05 section 6 keeps UI on its own bus, so a player who
+        /// turns the menu down keeps the combat they can hear.
+        /// </summary>
+        private void Sound(AudioCue cue)
+        {
+            if (gameAudio != null)
+                gameAudio.Play(cue);
+        }
+
         public void OpenSettings()
         {
+            Sound(AudioCue.UiClick);
             SettingsOpen = true;
             Capture = KeyCapture.Idle;
             _settingsSignature = string.Empty;
@@ -660,6 +671,7 @@ namespace NeonVoid.UI
             if (gameAudio != null && !gameAudio.PersistMix(out string detail) && detail.Length > 0)
                 Debug.LogWarning($"{name}: 음량을 기록하지 못했습니다 - {detail}", this);
 
+            Sound(AudioCue.UiClick);
             SettingsOpen = false;
             Capture = KeyCapture.Idle;
             _settingsSignature = string.Empty;
@@ -675,11 +687,13 @@ namespace NeonVoid.UI
             KeyBindingSlot slot = bindings.Table.Find(bindingId);
             if (!slot.IsRebindable)
             {
+                Sound(AudioCue.UiRefuse);
                 Capture = KeyCapture.Refused(
                     slot.Kind == KeyBindingKind.Pointer ? "조준은 키로 바꿀 수 없습니다" : "방향은 하나씩 바꿉니다");
                 return;
             }
 
+            Sound(AudioCue.UiClick);
             Capture = KeyCapture.Listening(bindingId, slot.Label);
             _settingsSignature = string.Empty;
         }
@@ -699,6 +713,7 @@ namespace NeonVoid.UI
 
             if (KeyCapturePath.IsCancel(layoutPath))
             {
+                Sound(AudioCue.UiClick);
                 Capture = KeyCapture.Cancelled();
                 _settingsSignature = string.Empty;
                 return true;
@@ -708,6 +723,7 @@ namespace NeonVoid.UI
             string label = Capture.Label;
             RebindResult result = bindings.Rebind(bindingId, layoutPath);
 
+            Sound(result.Ok ? AudioCue.UiConfirm : AudioCue.UiRefuse);
             Capture = result.Ok
                 ? KeyCapture.Took(label, KeyBindings.DisplayKey(layoutPath))
                 : KeyCapture.Refused(result.Detail);
@@ -722,7 +738,10 @@ namespace NeonVoid.UI
             if (bindings == null)
                 return;
 
-            Capture = bindings.ResetAll()
+            bool reset = bindings.ResetAll();
+            Sound(reset ? AudioCue.UiConfirm : AudioCue.UiRefuse);
+
+            Capture = reset
                 ? KeyCapture.Refused(string.Empty)
                 : KeyCapture.Refused(bindings.LastRefusal);
 
@@ -1138,14 +1157,20 @@ namespace NeonVoid.UI
 
         private void Buy(InvestableStat stat)
         {
-            if (hub != null && hub.Growth != null)
-                hub.Growth.TryInvest(stat);
+            if (hub == null || hub.Growth == null)
+                return;
+
+            // The sound follows the save's answer, not the click: a purchase the store refused
+            // must not be confirmed in the player's ear.
+            Sound(hub.Growth.TryInvest(stat) ? AudioCue.UiConfirm : AudioCue.UiRefuse);
         }
 
         private void Redistribute()
         {
-            if (hub != null && hub.Growth != null)
-                hub.Growth.TryRedistribute();
+            if (hub == null || hub.Growth == null)
+                return;
+
+            Sound(hub.Growth.TryRedistribute() ? AudioCue.UiConfirm : AudioCue.UiRefuse);
         }
 
         /// <summary>

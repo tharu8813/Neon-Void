@@ -46,6 +46,7 @@ namespace NeonVoid.Presentation
         private VoiceLimiter _limiter;
         private SimulationRunner _runner;
         private CombatActor _subscribed;
+        private PlayerSimulationDriver _driver;
 
         /// <summary>The volumes in force. Read from 전역 설정 and written back to it.</summary>
         public AudioMix Mix { get; private set; } = AudioMix.Default;
@@ -74,11 +75,10 @@ namespace NeonVoid.Presentation
             if (settingsOwner == null)
                 settingsOwner = FindFirstObjectByType<InputBindingDirector>();
 
+            _driver = FindFirstObjectByType<PlayerSimulationDriver>();
+
             if (player == null)
-            {
-                var driver = FindFirstObjectByType<PlayerSimulationDriver>();
-                player = driver != null ? driver.GetComponent<CombatActor>() : null;
-            }
+                player = _driver != null ? _driver.GetComponent<CombatActor>() : null;
 
             _limiter = new VoiceLimiter(Mathf.Max(0, voices));
             _sources = new AudioSource[Mathf.Max(0, voices)];
@@ -104,9 +104,20 @@ namespace NeonVoid.Presentation
         {
             _runner = _runner != null ? _runner : FindFirstObjectByType<SimulationRunner>();
             Subscribe(player);
+
+            if (_driver != null)
+                _driver.DashStarted += OnDashStarted;
         }
 
-        private void OnDisable() => Subscribe(null);
+        private void OnDisable()
+        {
+            Subscribe(null);
+
+            if (_driver != null)
+                _driver.DashStarted -= OnDashStarted;
+        }
+
+        private void OnDashStarted(Player.PlayerMotionState state) => Play(AudioCue.Dash);
 
         private void Subscribe(CombatActor actor)
         {

@@ -58,6 +58,15 @@ namespace NeonVoid.Player
         }
 
         /// <summary>No movement, no buttons, aiming at the given point.</summary>
+        /// <summary>
+        /// The same command with 대시 pressed in a given direction, for something other than a
+        /// key. A zero direction keeps the one already in the command.
+        /// </summary>
+        public PlayerInputCommand WithDash(Vector2 directionXZ) =>
+            new PlayerInputCommand(
+                directionXZ.sqrMagnitude > 0f ? directionXZ : MoveXZ,
+                AimWorldXZ, true, Skill1Pressed, Skill2Pressed, Skill3Pressed, InteractPressed);
+
         public static PlayerInputCommand Idle(Vector2 aimWorldXZ) =>
             new PlayerInputCommand(Vector2.zero, aimWorldXZ);
     }

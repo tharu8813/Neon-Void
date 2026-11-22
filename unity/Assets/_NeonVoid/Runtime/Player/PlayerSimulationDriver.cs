@@ -47,6 +47,8 @@ namespace NeonVoid.Player
 
         private CharacterController _character;
         private PlayerMotionState _state;
+        private bool _bankedDash;
+        private Vector2 _bankedDashDirection;
         private SimulationRunner _runner;
 
         // Optional: movement does not require combat. A driver with no actor beside it is
@@ -61,6 +63,40 @@ namespace NeonVoid.Player
         /// domain knowing they exist. It is the same flag <see cref="State"/> already carries.
         /// </summary>
         public bool IsDashing => _state.IsDashing;
+
+        /// <summary>
+        /// Raised on the tick a 대시 begins, for whatever wants to react to it.
+        /// <para>
+        /// An event rather than a flag a listener polls on the render frame: a poll samples
+        /// <see cref="IsDashing"/> once per frame, and on a slow frame a dash that started and
+        /// ended between two of them would never be noticed. The tick is where it happens.
+        /// </para>
+        /// <para>
+        /// Raised after the state is written, so a listener reading <see cref="State"/> sees
+        /// the dash that just started rather than the one before it.
+        /// </para>
+        /// </summary>
+        public event System.Action<PlayerMotionState> DashStarted;
+
+        /// <summary>
+        /// Banks a 대시 for the next tick, in the direction the player is moving, as if the key
+        /// had been pressed.
+        /// <para>
+        /// It exists because a key press is not the only thing that should be able to move the
+        /// player - a skill, a plugin or a boss shove all end here - and because a dash the
+        /// router is the only source of cannot be driven without a keyboard. The banked press
+        /// is consumed by one tick, the same as a real one, so the cooldown and the duration
+        /// still decide whether it actually happens.
+        /// </para>
+        /// </summary>
+        public void RequestDash(Vector2 directionXZ)
+        {
+            // The direction comes with it because [확정] docs/08 C05 makes a dash follow the
+            // movement vector and never the cursor - a banked press with no direction would
+            // either do nothing or have to invent one.
+            _bankedDash = true;
+            _bankedDashDirection = directionXZ;
+        }
 
         int ISimulationTickReceiver.TickOrder => SimulationRunner.Order.Player;
 
@@ -132,8 +168,18 @@ namespace NeonVoid.Player
             // Until this was passed, enemies respected a slow and the player did not.
             float speedMultiplier = _actor != null ? _actor.MoveSpeedMultiplier : 1f;
 
+            if (_bankedDash)
+            {
+                command = command.WithDash(_bankedDashDirection);
+                _bankedDash = false;
+            }
+
+            bool wasDashing = _state.IsDashing;
             _state = PlayerMotionSimulation.Step(
                 _state, command, motionConfig, out Vector2 desired, speedMultiplier);
+
+            // The rising edge. A dash that is still running is not a new one.
+            bool dashBegan = _state.IsDashing && !wasDashing;
 
             _character.Move(new Vector3(desired.x, 0f, desired.y));
 
@@ -141,6 +187,10 @@ namespace NeonVoid.Player
             // simulation too instead of letting the rules walk through it on their own ledger.
             Vector3 resolved = transform.position;
             _state.PositionXZ = new Vector2(resolved.x, resolved.z);
+
+            // Last, so the state a listener reads is the reconciled one.
+            if (dashBegan)
+                DashStarted?.Invoke(_state);
         }
 
         /// <summary>

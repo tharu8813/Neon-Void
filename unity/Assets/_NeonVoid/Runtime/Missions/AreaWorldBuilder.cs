@@ -372,6 +372,12 @@ namespace NeonVoid.Missions
             var brain = bossActor.gameObject.AddComponent<AreaBossBrain>();
             brain.Configure(bossActor, player != null ? player.GetComponent<CombatActor>() : null);
             brain.UseCycle(cycle);
+
+            // Presentation, beside the brain, the way ActorDeathReaction sits beside an actor.
+            // [초안] docs/05 section 6 wants 보스 경고 to have a face of its own, and section 6
+            // also says 위험 공격은 음향 없이도 피할 수 있어야 한다 - so this is a second
+            // channel on a warning the telegraph already draws, never the only one.
+            bossActor.gameObject.AddComponent<NeonVoid.Presentation.BossWarningSound>();
         }
 
         /// <summary>
